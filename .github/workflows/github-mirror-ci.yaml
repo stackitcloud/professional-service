@@ -12,7 +12,7 @@ jobs:
     runs-on: "stackit-ubuntu-22"
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
