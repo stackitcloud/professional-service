@@ -1,0 +1,41 @@
+name: "Mirror to Public GitHub"
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-to-github:
+    name: "Sync Repository"
+    if: github.server_url == 'https://professional-service.git.onstackit.cloud'
+    runs-on: "stackit-ubuntu-22"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH Key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+
+      - name: Push to Public Repo
+        run: |
+          echo "Setting up remote..."
+          git config --global user.name "prof-service-sync-bot"
+          git config --global user.email "prof-service-sync-bot@digits.schwarz"
+
+          # Add the GitHub remote using the SSH protocol
+          git remote add public git@github.com:stackitcloud/professional-services.git
+
+          echo "Pushing main branch to GitHub..."
+          git push public main --force
+
+          echo "Pushing tags to GitHub..."
+          git push public --tags --force

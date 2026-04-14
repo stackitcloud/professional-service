@@ -25,6 +25,8 @@ repos:
     rev: v1.88.0
     hooks:
       - id: terraform_fmt
+        args:
+          - --args=-recursive
 
   - repo: https://github.com/psf/black
     rev: 24.3.0
@@ -48,7 +50,7 @@ repos:
         name: Add License Headers
         description: Ensures all files have the Apache 2.0 license header
         # Requires `addlicense` to be installed locally (go install github.com/google/addlicense@latest)
-        entry: addlicense -c "Your Company Name" -l apache
+        entry: addlicense -c "Schwarz Digits Cloud GmbH & Co. KG" -l apache
         language: system
         types_or: [terraform, python, go, javascript]
         pass_filenames: true

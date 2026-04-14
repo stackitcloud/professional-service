@@ -1,0 +1,73 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+resource "stackit_network" "default" {
+  project_id       = var.stackit_project_id
+  ipv4_prefix      = "10.1.2.0/24"
+  name             = "default"
+  ipv4_nameservers = ["9.9.9.9", "1.1.1.1"]
+}
+
+resource "stackit_security_group" "active-passive" {
+  project_id = var.stackit_project_id
+  name       = "ha-active-passive"
+}
+
+resource "stackit_security_group_rule" "icmp" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.active-passive.security_group_id
+  direction         = "ingress"
+  icmp_parameters = {
+    code = 0
+    type = 8
+  }
+  protocol = {
+    name = "icmp"
+  }
+}
+
+resource "stackit_security_group_rule" "ssh" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.active-passive.security_group_id
+  direction         = "ingress"
+  port_range = {
+    min = 22
+    max = 22
+  }
+  protocol = {
+    name = "tcp"
+  }
+}
+
+resource "stackit_security_group_rule" "http" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.active-passive.security_group_id
+  direction         = "ingress"
+  port_range = {
+    min = 80
+    max = 80
+  }
+  protocol = {
+    name = "tcp"
+  }
+}
+
+resource "stackit_security_group_rule" "vrrp" {
+  project_id        = var.stackit_project_id
+  security_group_id = stackit_security_group.active-passive.security_group_id
+  direction         = "ingress"
+  protocol = {
+    name = "vrrp"
+  }
+}

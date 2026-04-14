@@ -1,6 +1,18 @@
 # STACKIT Professional Services
 
-Welcome to our central repository for examples, scripts, and boilerplate code!
+Welcome to the central repository for STACKIT Professional Services examples, scripts, and boilerplate code!
+
+> **⚠️ REPOSITORY MIRROR NOTICE**
+>
+> This GitHub repository is a **mirror**.
+> The primary, internal source of truth for this codebase lives at:
+> `https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-services`
+>
+> We automatically sync changes from our STACKIT managed GIT instance to this public GitHub repository.
+>
+> **Want to contribute?** > If you are an external contributor or do not have access to our internal systems, you are more than welcome to open Pull Requests directly here on GitHub! We will review them and merge them upstream.
+
+---
 
 ## The Philosophy
 
@@ -26,5 +38,4 @@ Whenever you are starting a new project, looking for a specific implementation, 
 
 Did you find a script that is broken because of a recent update? Did you build a new, awesome example that could help your colleagues?
 
-Since this is a best-effort repository, we highly encourage you to open a Pull Request and share your fixes or additions!
-We all benefit from a growing, shared knowledge base.
+Since this is a best-effort repository, we highly encourage you to open a Pull Request and share your fixes or additions! We all benefit from a growing, shared knowledge base. Please refer to our `CONTRIBUTING.md` for guidelines on how to format your code before submitting.

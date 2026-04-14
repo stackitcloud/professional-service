@@ -1,0 +1,73 @@
+#cloud-config
+# Update apt database on first boot (run 'apt-get update').
+# Note, if packages are given, or package_upgrade is true, then
+# update will be done independent of this setting.
+#
+# Default: false
+package_update: true
+
+# Upgrade the instance on first boot
+#
+# Default: false
+package_upgrade: true
+
+# Install additional packages on first boot
+#
+# Default: none
+#
+# if packages are specified, then package_update will be set to true
+#
+# packages may be supplied as a single package name or as a list
+# with the format [<package>, <version>] wherein the specific
+# package version will be installed.
+packages:
+  - apache2
+  - libapache2-mod-php
+  - keepalived
+  - htop
+
+# This is the configuration syntax that the write_files module
+# will know how to understand. Encoding can be given b64 or gzip or (gz+b64).
+# The content will be decoded accordingly and then written to the path that is
+# provided.
+#
+# Note: Content strings here are truncated for example purposes.
+write_files:
+  - content: |
+      <center><h1><?php print(gethostname()); ?></h1>
+    path: /var/www/html/index.php
+  - content: |
+      global_defs {
+         router_id 1337
+
+         # This 3 settings make sure that the inital garp request will be sended 5 times with 1 sec in between to make
+         # sure the garp will be processed also if one request was missed by openstack.
+         vrrp_garp_master_repeat 5
+         vrrp_garp_interval 1
+         vrrp_garp_lower_prio_repeat 1
+
+         # Send garp every 5 min again to make sure everything is set in openstack if something failes.
+         vrrp_garp_master_refresh 300
+         vrrp_garp_master_refresh_repeat 1
+
+         # Make sure that in case 2 keepalived are in master state that the new master will send a garp again.
+         vrrp_higher_prio_send_advert true
+       }
+       vrrp_instance VI_1 {
+               state ${type}
+               interface enp3s0
+               virtual_router_id 51
+               priority ${priority}
+               advert_int 1
+               authentication {
+                     auth_type PASS
+                     auth_pass 12345
+               }
+               virtual_ipaddress {
+                     ${vip}/24
+               }
+       }
+    path: /etc/keepalived/keepalived.conf
+
+runcmd:
+  - [systemctl, restart, keepalived.service]

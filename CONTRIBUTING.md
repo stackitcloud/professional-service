@@ -24,7 +24,40 @@ To keep our codebase clean and secure, we enforce a strict CI pipeline on all Pu
   - Go: `gofmt -w .`
   - JavaScript: `npx prettier --write "**/*.js"`
 - **Add License Headers:** Every file must contain our Apache 2.0 license header.
-  - Run: `addlicense -c "Your Company Name" -l apache .` (Requires the [google/addlicense](https://github.com/google/addlicense) tool).
+  - Run: `addlicense -c "Schwarz Digits Cloud GmbH & Co. KG" -l apache .` (Requires the [google/addlicense](https://github.com/google/addlicense) tool).
+
+```terraform
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+```
+
+```go
+// Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+```
+
 - **Scan for Secrets:** Never commit credentials. We use `gitleaks` in the CI pipeline. Ensure you have no hardcoded tokens or passwords in your code.
 
 ### Repository structure
