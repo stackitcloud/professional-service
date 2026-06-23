@@ -40,7 +40,10 @@ terraform apply
 After `apply`, visit the output domain:
 
 ```
-cdn_managed_domain = "https://abc123.stackit.cdn"
+bucket_name = "firm-dassie"
+cdn_distribution_id = "xxxxxxx-xxxxxxx-xxxxxxx-xxxxxxx"
+cdn_managed_domain = "https://xxxxxxx.cdn.onstackit.cloud"
+cdn_status = "ACTIVE"
 ```
 
 ---
@@ -59,29 +62,7 @@ cdn_managed_domain = "https://abc123.stackit.cdn"
 
 ---
 
-## Verify Redirect and WAF
-
-### Redirect
-
-The example configures a **301 redirect** from `/old/home` to `/`. Test it:
-
-```bash
-URL=$(terraform output -raw cdn_managed_domain)
-
-# Should return 301 with Location header pointing to /
-curl -sI "${URL}/old/home"
-
-# Direct access should return 200
-curl -sI "${URL}/"
-```
-
-Expected redirect response:
-
-```
-HTTP/2 301
-location: /
-...
-```
+## Verify WAF
 
 ### WAF
 

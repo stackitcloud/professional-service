@@ -37,6 +37,7 @@ resource "stackit_cdn_distribution" "website" {
       enabled = false
     }
 
+    // Work-in-Progress: redirects are not working with buckets
     /*redirects = {
       rules = [
         {
@@ -55,27 +56,19 @@ resource "stackit_cdn_distribution" "website" {
       ]
     }*/
 
-    /*waf = {
+    waf = {
       mode           = "ENABLED"
       type           = "FREE"
       paranoia_level = "L1"
 
       enabled_rule_collection_ids  = ["@builtin/crs/request"]
-      disabled_rule_collection_ids = []
       log_only_rule_collection_ids = ["@builtin/crs/response"]
 
-      enabled_rule_group_ids  = []
-      disabled_rule_group_ids = []
-      log_only_rule_group_ids = []
-
-      enabled_rule_ids  = []
-      disabled_rule_ids = []
-      log_only_rule_ids = []
 
       allowed_http_versions         = ["HTTP/1.1", "HTTP/2"]
       allowed_http_methods          = ["GET", "HEAD"]
       allowed_request_content_types = ["text/html", "text/css", "text/plain", "application/javascript"]
-    }*/
+    }
   }
 
   depends_on = [

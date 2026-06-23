@@ -19,7 +19,7 @@ output "cdn_distribution_id" {
 
 output "cdn_managed_domain" {
   description = "The managed CDN domain for the distribution"
-  value       = stackit_cdn_distribution.website.domains[0].name
+  value       = "https://${stackit_cdn_distribution.website.domains[0].name}"
 }
 
 output "cdn_status" {
