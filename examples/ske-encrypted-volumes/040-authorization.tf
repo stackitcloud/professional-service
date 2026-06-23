@@ -1,0 +1,30 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+resource "stackit_service_account" "kms_manager" {
+  project_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  name       = "volume-encryptor"
+}
+
+resource "stackit_authorization_project_role_assignment" "kms_user" {
+  resource_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  role        = "kms.admin"
+  subject     = stackit_service_account.kms_manager.email
+}
+
+resource "stackit_authorization_service_account_role_assignment" "ske_impersonation" {
+  resource_id = stackit_service_account.kms_manager.service_account_id
+  role        = "user"
+  subject     = data.stackit_service_accounts.ske_internal.items[0].email
+}

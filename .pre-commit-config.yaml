@@ -60,11 +60,19 @@ repos:
 
   - repo: local
     hooks:
+      # Requires `addlicense` to be installed locally (go install github.com/google/addlicense@latest)
       - id: addlicense
         name: Add License Headers
         description: Ensures all files have the Apache 2.0 license header
-        # Requires `addlicense` to be installed locally (go install github.com/google/addlicense@latest)
         entry: addlicense -c "Schwarz Digits Cloud GmbH & Co. KG" -l apache
         language: system
         types_or: [terraform, python, go, javascript, yaml, json]
+        pass_filenames: true
+
+      - id: terraform-numbered-files
+        name: Terraform Files Must Have Number Prefix
+        description: Ensures all committed .tf files start with a number (e.g., 01-, 010-, 100-)
+        entry: scripts/check-terraform-numbered-files.sh
+        language: script
+        types: [terraform]
         pass_filenames: true

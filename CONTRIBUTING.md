@@ -58,6 +58,7 @@ To maintain a clean and secure codebase, we enforce a strict CI pipeline on all 
 // limitations under the License.
 ```
 
+- **Terraform file naming:** All `.tf` files in examples **must** be prefixed with exactly 3 digits to enforce consistent ordering (e.g., `010-provider.tf`, `020-variables.tf`, `030-resources.tf`, `100-outputs.tf`). Files inside `modules/` directories are exempt from this rule. This check is enforced automatically by pre-commit.
 - **Scan for Secrets:** Never commit credentials. We use `trufflehog` in the CI pipeline. Ensure you have no hardcoded tokens or passwords in your code.
 
 ### Repository structure
@@ -78,8 +79,7 @@ If you built a great module for a customer project and want to share it, follow 
    - `variables.tf` (Inputs with clear descriptions and types)
    - `outputs.tf` (Values to return to the caller)
    - `README.md` (Documentation on what the module does and its inputs/outputs. We recommend using `terraform-docs` to generate this automatically).
-3. **Provide an example:** A module is only as good as its documentation. Create a working example in the `examples/` folder showing how to instantiate your module.
-4. **Test it locally:** Run `terraform init`, `terraform plan`, and ideally `terraform apply` in a sandbox environment to ensure your code works before opening a PR.
+3. **Test it locally:** Run `terraform init`, `terraform plan`, and ideally `terraform apply` in a sandbox environment to ensure your code works before opening a PR.
 
 ### Adding a new Script
 

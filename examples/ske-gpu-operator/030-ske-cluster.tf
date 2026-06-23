@@ -12,56 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-terraform {
-  required_providers {
-    stackit = {
-      source  = "stackitcloud/stackit"
-      version = ">=0.60.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = ">=2.14.0"
-    }
-  }
-}
-
-variable "project_id" {
-  default = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-}
-
-variable "stackit_service_account_key_path" {
-  default = ""
-}
-
-provider "kubernetes" {
-  host                   = yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
-  client_certificate     = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
-  client_key             = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
-  cluster_ca_certificate = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
-}
-
-provider "helm" {
-  kubernetes = {
-    host                   = yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
-    client_certificate     = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
-    client_key             = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
-    cluster_ca_certificate = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
-  }
-}
-
-provider "stackit" {
-  default_region           = "eu01"
-  service_account_key_path = var.stackit_service_account_key_path
-}
-
-resource "stackit_ske_kubeconfig" "this" {
-  project_id   = var.project_id
-  cluster_name = stackit_ske_cluster.this.name
-  refresh      = true
-
-  depends_on = [stackit_ske_cluster.this]
-}
-
 data "stackit_ske_kubernetes_versions" "this" {
   version_state = "SUPPORTED"
 }
@@ -85,7 +35,6 @@ locals {
       if mi.name == "ubuntu"
     ]
   ]))
-  gpu_operator_helm_values = templatefile("${path.module}/gpu-operator-values.yaml.tftpl", {})
 }
 
 resource "stackit_ske_cluster" "this" {
@@ -138,20 +87,10 @@ resource "stackit_ske_cluster" "this" {
   ]
 }
 
-resource "kubernetes_namespace_v1" "gpu_operator" {
-  metadata {
-    name = "gpu-operator"
-  }
-}
+resource "stackit_ske_kubeconfig" "this" {
+  project_id   = var.project_id
+  cluster_name = stackit_ske_cluster.this.name
+  refresh      = true
 
-resource "helm_release" "gpu_operator" {
-  name       = "gpu-operator"
-  namespace  = kubernetes_namespace_v1.gpu_operator.metadata[0].name
-  repository = "https://helm.ngc.nvidia.com/nvidia"
-  chart      = "gpu-operator"
-  version    = "25.3.1"
-
-  values = [
-    local.gpu_operator_helm_values
-  ]
+  depends_on = [stackit_ske_cluster.this]
 }
