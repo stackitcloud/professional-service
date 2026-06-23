@@ -59,6 +59,9 @@ resource "stackit_server" "opnsense" {
     source_type = "volume"
     source_id   = stackit_volume.opnsense_volume.volume_id
   }
+  # Default OPNsense credentials:
+  #   Username: root
+  #   Password: STACKIT123!
   # WAN boots first (vtnet0); LAN and MGMT are attached in order below → vtnet1–2.
   network_interfaces = [stackit_network_interface.nic_wan.network_interface_id]
 }

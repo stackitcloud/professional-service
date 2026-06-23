@@ -192,6 +192,13 @@ OPNsense is provisioned from a qcow2 image with three network interfaces:
 | LAN       | `10.28.0.16/28` | `10.28.0.20` | Default gateway for spokes |
 | MGMT      | `10.28.0.32/28` | `10.28.0.36` | Web UI / SSH access        |
 
+**Default credentials:**
+
+| Field    | Value         |
+| -------- | ------------- |
+| Username | `root`        |
+| Password | `STACKIT123!` |
+
 The WAN interface boots first (`vtnet0`); LAN and MGMT are attached sequentially and appear as `vtnet1` and `vtnet2`. The MGMT interface is protected by a security group that restricts SSH, HTTP, and HTTPS access to the CIDR set in `mgmt_ip_range`.
 
 **OPNsense image:** The image is downloaded automatically during `terraform apply` via a `null_resource` provisioner. The qcow2 image is fetched from the STACKIT Object Storage endpoint and uploaded to STACKIT as a custom image.
