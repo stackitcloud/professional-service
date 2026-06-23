@@ -23,23 +23,3 @@ resource "stackit_secretsmanager_user" "example" {
   description   = "Example user"
   write_enabled = true
 }
-
-resource "stackit_observability_instance" "example" {
-  project_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  name       = "example-instance"
-  plan_name  = "Observability-Monitoring-Medium-EU01"
-}
-
-resource "vault_kv_secret_v2" "example" {
-  mount               = stackit_secretsmanager_instance.example.instance_id
-  name                = "my-secret"
-  cas                 = 1
-  delete_all_versions = true
-
-  data_json = jsonencode(
-    {
-      grafana_password = stackit_observability_instance.example.grafana_initial_admin_password,
-      other_secret     = "your-other-secret-value"
-    }
-  )
-}

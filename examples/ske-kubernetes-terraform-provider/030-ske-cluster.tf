@@ -12,29 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-terraform {
-  required_providers {
-    stackit = {
-      source  = "stackitcloud/stackit"
-      version = "~> 0.35"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.24"
-    }
-  }
-}
-
-variable "project_id" {
-  description = "The STACKIT Project ID"
-  type        = string
-}
-
-provider "stackit" {
-  default_region           = "eu01"
-  service_account_key_path = ""
-}
-
 resource "stackit_ske_cluster" "example" {
   project_id             = var.project_id
   name                   = "example"
@@ -55,22 +32,8 @@ resource "stackit_ske_cluster" "example" {
   ]
 }
 
-
 resource "stackit_ske_kubeconfig" "example" {
   project_id   = var.project_id
   cluster_name = stackit_ske_cluster.example.name
   expiration   = 3600
-}
-
-provider "kubernetes" {
-  host                   = yamldecode(stackit_ske_kubeconfig.example.kube_config).clusters[0].cluster.server
-  client_certificate     = base64decode(yamldecode(stackit_ske_kubeconfig.example.kube_config).users[0].user["client-certificate-data"])
-  client_key             = base64decode(yamldecode(stackit_ske_kubeconfig.example.kube_config).users[0].user["client-key-data"])
-  cluster_ca_certificate = base64decode(yamldecode(stackit_ske_kubeconfig.example.kube_config).clusters[0].cluster["certificate-authority-data"])
-}
-
-resource "kubernetes_namespace" "example" {
-  metadata {
-    name = "stackit-demo-namespace"
-  }
 }
