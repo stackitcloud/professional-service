@@ -20,7 +20,7 @@ for f; do
   esac
   b="$(basename "$f")"
   if ! echo "$b" | grep -qE '^[0-9]{3}-'; then
-    echo "ERROR: ${b} does not follow the 3-digit naming convention (e.g., 010-provider.tf, 020-variables.tf, 100-outputs.tf)"
+    echo "ERROR: ${f}/${b} does not follow the 3-digit naming convention (e.g., 010-provider.tf, 020-variables.tf, 100-outputs.tf)"
     fail=1
   fi
 done
