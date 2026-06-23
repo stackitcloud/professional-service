@@ -1,0 +1,5 @@
+stackit_project_id                = "your-project-id"
+stackit_region                    = "eu01"
+stackit_service_account_key_path  = "./keys/service-account.json"
+cdn_enabled_regions               = ["EU"]
+cdn_blocked_countries             = []
