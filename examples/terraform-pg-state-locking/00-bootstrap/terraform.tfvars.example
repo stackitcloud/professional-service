@@ -1,0 +1,31 @@
+# ---------------------------------------------------------------------------
+# terraform.tfvars.example
+#
+# Copy this file into a project directory (e.g. 00-bootcamp/terraform.tfvars)
+# and fill in your values. Do NOT commit terraform.tfvars to version control.
+#
+# Alternatively, export variables as environment variables:
+#   export TF_VAR_stackit_organization_id="<uuid>"
+# ---------------------------------------------------------------------------
+
+# --- STACKIT Identity --------------------------------------------------------
+
+# Your STACKIT Organization ID.
+# Portal: Organization > Settings > Organization ID
+stackit_organization_id = "<your-organization-id>"
+
+## Name of the bootstrapping project
+stackit_project_name = "01-example-project"
+
+# Email address of the STACKIT user set as project owner.
+stackit_org_admin = "<your-admin@mail.com"
+
+# --- Service Account ---------------------------------------------------------
+
+# Path to the STACKIT service account key file.
+# Download: STACKIT portal > Service Accounts > Keys > Create key
+stackit_service_account_key_path = "./keys/service-account.json"
+
+# --- Region ------------------------------------------------------------------
+stackit_region = "eu01"
+default_zone   = "eu01-1"
