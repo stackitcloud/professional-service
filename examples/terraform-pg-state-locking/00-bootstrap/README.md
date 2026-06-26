@@ -6,18 +6,18 @@ This module provisions the STACKIT PostgreSQL Flex instance, the `terraform_stat
 
 1. Initialize Terraform with the default local backend:
 
-    ```sh
-    terraform init
-    ```
+   ```sh
+   terraform init
+   ```
 
 2. Provision the PostgreSQL Flex resources:
 
-    ```sh
-    terraform apply
-    ```
+   ```sh
+   terraform apply
+   ```
 
 3. Extract the generated PostgreSQL connection string from the Terraform outputs. This URI is required to configure the remote backend in the next phase.
 
-    ```sh
-    terraform output -raw pg_connection_uri
-    ```
+   ```sh
+   terraform output -raw pg_connection_uri
+   ```
