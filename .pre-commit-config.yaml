@@ -63,8 +63,8 @@ repos:
       # Requires `addlicense` to be installed locally (go install github.com/google/addlicense@latest)
       - id: addlicense
         name: Add License Headers
-        description: Ensures all files have the Apache 2.0 license header
-        entry: addlicense -c "Schwarz Digits Cloud GmbH & Co. KG" -l apache
+        description: Ensures all files have the Apache 2.0 license header (skips files starting with #cloud-config)
+        entry: bash -c 'for f in "$@"; do head -n 1 "$f" | grep -q "^#cloud-config" || addlicense -c "Schwarz Digits Cloud GmbH & Co. KG" -l apache "$f"; done' --
         language: system
         types_or: [terraform, python, go, javascript, yaml, json, html, css]
         pass_filenames: true
