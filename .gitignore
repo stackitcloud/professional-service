@@ -72,3 +72,8 @@ keys
 ### K8s
 .kubeconfig
 /examples/telemetry-router-hub-spoke-setup/scripts/downloads/
+
+*.DS_Store
+
+# ignore backend.conf files, but keep backend.conf.example
+*backend.conf
