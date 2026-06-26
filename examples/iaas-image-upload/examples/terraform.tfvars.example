@@ -1,0 +1,48 @@
+# Copy this file to terraform.tfvars and fill in the required values.
+# terraform.tfvars is gitignored — never commit real project IDs or credentials.
+
+# ─── Provider ─────────────────────────────────────────────────────────────────
+
+stackit_region                   = "eu01"
+stackit_service_account_key_path = "keys/sa-key.json"
+
+# ─── Project ──────────────────────────────────────────────────────────────────
+
+# Find your project ID in the STACKIT Portal or via: stackit project list
+project_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# ─── Image ────────────────────────────────────────────────────────────────────
+
+image_name = "custom-image-v1"
+
+# Path to the local image file — this file must exist before running terraform apply.
+# The images/ directory is gitignored; place your image file there.
+image_file_path = "./images/custom-image.qcow2"
+
+disk_format = "qcow2" # supported: qcow2, raw, iso
+min_disk_size = 20
+min_ram       = 2048
+
+# ─── Image Config ─────────────────────────────────────────────────────────────
+
+uefi        = true
+secure_boot = false
+
+# ─── Server ───────────────────────────────────────────────────────────────────
+
+server_name         = "custom-image-server"
+machine_type        = "g1.1"
+availability_zone   = "eu01-1"
+boot_volume_size_gb = 20
+network_cidr        = "10.10.0.0/24"
+keypair_name        = "custom-image-key"
+
+# Paste your SSH public key here (never the private key)
+ssh_public_key = "ssh-ed25519 AAAA... your-key-comment"
+
+# ─── Labels ───────────────────────────────────────────────────────────────────
+
+labels = {
+  managed-by = "terraform"
+  example    = "image-upload"
+}
