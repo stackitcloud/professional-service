@@ -31,6 +31,7 @@ resource "stackit_postgresflex_instance" "this" {
   backup_schedule = "00 00 * * *"
 
   acl = [
+    # WARNING: Open ACL is for development only. Restrict to your specific egress IP ranges in production.
     "0.0.0.0/0"
   ]
 
