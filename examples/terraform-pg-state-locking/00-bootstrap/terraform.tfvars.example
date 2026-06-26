@@ -15,7 +15,7 @@
 stackit_organization_id = "<your-organization-id>"
 
 ## Name of the bootstrapping project
-stackit_project_name = "01-example-project"
+stackit_project_name = "00-bootstrap"
 
 # Email address of the STACKIT user set as project owner.
 stackit_org_admin = "<your-admin@mail.com"
