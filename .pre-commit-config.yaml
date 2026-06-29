@@ -58,6 +58,11 @@ repos:
       - id: prettier
         types_or: [javascript, yaml, json, markdown]
 
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+
   - repo: local
     hooks:
       # Requires `addlicense` to be installed locally (go install github.com/google/addlicense@latest)

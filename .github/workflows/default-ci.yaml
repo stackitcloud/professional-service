@@ -21,16 +21,6 @@ on:
     branches: ["main"]
 
 jobs:
-  secret-scan:
-    name: "Secret Scanner (TruffleHog)"
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-docker' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: TruffleHog Scan
-        uses: edplato/trufflehog-actions-scan@master
-
   todo-check:
     name: "Check for Open TODOs"
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
