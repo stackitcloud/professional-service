@@ -22,6 +22,6 @@ locals {
 
 output "pg_connection_uri" {
   description = "PostgreSQL Flex User Connection String"
-  value       = "postgres://${local.pg_username}:${local.pg_password}@${local.pg_host}:${local.pg_port}/${local.pg_database}?sslmode=require" # trufflehog:ignore
+  value       = "postgres://${local.pg_username}:${local.pg_password}@${local.pg_host}:${local.pg_port}/${local.pg_database}?sslmode=require"
   sensitive   = true
 }

@@ -30,7 +30,7 @@ To ensure high standards and security, we follow a strict contribution process:
 - **Automated Validation:** Every Pull Request must pass the CI pipeline, which includes:
   - Linting and formatting checks.
   - License header verification (Apache 2.0).
-  - Secret scanning (Trufflehog).
+  - Secret scanning (GitLeaks).
 - **Best Effort Policy:** While we strive for quality, the content is provided "as-is." Use in production environments requires independent validation by the user.
 
 ## 4. Mirroring Process

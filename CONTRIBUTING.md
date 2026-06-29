@@ -59,7 +59,7 @@ To maintain a clean and secure codebase, we enforce a strict CI pipeline on all 
 ```
 
 - **Terraform file naming:** All `.tf` files in examples **must** be prefixed with exactly 3 digits to enforce consistent ordering (e.g., `010-provider.tf`, `020-variables.tf`, `030-resources.tf`, `100-outputs.tf`). Files inside `modules/` directories are exempt from this rule. This check is enforced automatically by pre-commit.
-- **Scan for Secrets:** Never commit credentials. We use `trufflehog` in the CI pipeline. Ensure you have no hardcoded tokens or passwords in your code.
+- **Scan for Secrets:** Never commit credentials. We use `gitleaks` in the CI pipeline. Ensure you have no hardcoded tokens or passwords in your code.
 
 ### Repository structure
 
