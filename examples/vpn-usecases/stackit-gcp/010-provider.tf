@@ -16,10 +16,7 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">=0.95.0"
-    }
-    restful = {
-      source = "magodo/restful"
+      version = ">=0.101.0"
     }
     google = {
       source  = "hashicorp/google"
@@ -39,18 +36,4 @@ provider "google" {
   region      = "europe-west4"
   zone        = "europe-west4-a"
   credentials = file(var.gcp_service_account_key_path)
-}
-
-ephemeral "stackit_access_token" "this" {}
-
-provider "restful" {
-  alias    = "stackit"
-  base_url = "https://vpn.api.eu01.stackit.cloud"
-  security = {
-    http = {
-      token = {
-        token = ephemeral.stackit_access_token.this.access_token
-      }
-    }
-  }
 }
