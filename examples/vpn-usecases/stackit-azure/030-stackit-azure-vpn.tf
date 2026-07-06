@@ -14,7 +14,7 @@
 
 # STACKIT Side (vpn-sna-01)
 module "vpn_sna_01" {
-  source                    = "../module/stackit-sna-with-debug-machine"
+  source                    = "../modules/stackit-sna-with-debug-machine"
   machine_availability_zone = "eu01-1"
   machine_ipv4_prefix       = "10.10.10.0/24"
   machine_network_name      = "vpn-sna-01"
@@ -28,34 +28,26 @@ module "vpn_sna_01" {
   ]
 }
 
-resource "restful_resource" "vpn_01_gateway" {
-  provider = restful.stackit
-  path     = "/v1/projects/${module.vpn_sna_01.project_id}/regions/eu01/gateways"
-  body = {
-    availabilityZones = {
-      tunnel1 = "eu01-1"
-      tunnel2 = "eu01-2"
-    }
-    bgp = {
-      localAsn                 = 64512
-      overrideAdvertisedRoutes = ["10.10.0.0/16"]
-    }
-    displayName = "vpn01"
-    labels      = null
-    planId      = "p500"
-    routingType = "BGP_ROUTE_BASED"
+resource "stackit_vpn_gateway" "vpn_01_gateway" {
+  project_id   = module.vpn_sna_01.project_id
+  display_name = "vpn01"
+  plan_id      = "p500"
+  routing_type = "BGP_ROUTE_BASED"
+
+  availability_zones = {
+    tunnel1 = "eu01-1"
+    tunnel2 = "eu01-2"
   }
 
-  read_path     = "$(path)/$(body.id)"
-  update_path   = "$(path)/$(body.id)"
-  update_method = "PUT"
-  delete_path   = "$(path)/$(body.id)"
-  delete_method = "DELETE"
+  bgp = {
+    local_asn                  = 64512
+    override_advertised_routes = ["10.10.0.0/16"]
+  }
 }
 
-data "restful_resource" "vpn_01_gateway_status" {
-  provider = restful.stackit
-  id       = "${restful_resource.vpn_01_gateway.id}/status"
+data "stackit_vpn_gateway_status" "vpn_01_gateway_status" {
+  project_id = module.vpn_sna_01.project_id
+  gateway_id = stackit_vpn_gateway.vpn_01_gateway.gateway_id
 }
 
 resource "random_password" "vpn_psk" {
@@ -162,7 +154,7 @@ resource "azurerm_local_network_gateway" "stackit_tunnel1" {
   name                = "stackit-tunnel-1"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  gateway_address     = data.restful_resource.vpn_01_gateway_status.output.tunnels[0].publicIP
+  gateway_address     = data.stackit_vpn_gateway_status.vpn_01_gateway_status.tunnels[0].public_ip
 
   bgp_settings {
     asn                 = 64512
@@ -174,7 +166,7 @@ resource "azurerm_local_network_gateway" "stackit_tunnel2" {
   name                = "stackit-tunnel-2"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  gateway_address     = data.restful_resource.vpn_01_gateway_status.output.tunnels[1].publicIP
+  gateway_address     = data.stackit_vpn_gateway_status.vpn_01_gateway_status.tunnels[1].public_ip
 
   bgp_settings {
     asn                 = 64512
@@ -230,67 +222,58 @@ resource "azurerm_virtual_network_gateway_connection" "azure_tunnel2" {
 }
 
 # Connection from STACKIT to Azure
-resource "restful_resource" "vpn_01_connection" {
-  provider = restful.stackit
-  path     = "${restful_resource.vpn_01_gateway.id}/connections"
-  body = {
-    displayName = "conn-to-azure"
-    tunnel1 = {
-      bgp = {
-        remoteAsn = 64513
-      }
-      peering = {
-        localAddress  = "169.254.21.1"
-        remoteAddress = "169.254.21.2"
-      }
-      phase1 = {
-        dhGroups             = ["modp2048"]
-        encryptionAlgorithms = ["aes256gcm16"]
-        integrityAlgorithms  = ["sha2_256"]
-      }
-      phase2 = {
-        dhGroups             = ["modp2048"]
-        encryptionAlgorithms = ["aes256gcm16"]
-        integrityAlgorithms  = ["sha2_256"]
-      }
-      preSharedKey  = random_password.vpn_psk.result
-      remoteAddress = azurerm_public_ip.azure_gw_pip1.ip_address
+resource "stackit_vpn_connection" "vpn_01_connection" {
+  project_id   = module.vpn_sna_01.project_id
+  gateway_id   = stackit_vpn_gateway.vpn_01_gateway.gateway_id
+  display_name = "conn-to-azure"
+
+  tunnel1 = {
+    remote_address            = azurerm_public_ip.azure_gw_pip1.ip_address
+    pre_shared_key_wo         = random_password.vpn_psk.result
+    pre_shared_key_wo_version = 1
+
+    bgp = {
+      remote_asn = 64513
     }
-    tunnel2 = {
-      bgp = {
-        remoteAsn = 64513
-      }
-      peering = {
-        localAddress  = "169.254.21.5"
-        remoteAddress = "169.254.21.6"
-      }
-      phase1 = {
-        dhGroups             = ["modp2048"]
-        encryptionAlgorithms = ["aes256gcm16"]
-        integrityAlgorithms  = ["sha2_256"]
-      }
-      phase2 = {
-        dhGroups             = ["modp2048"]
-        encryptionAlgorithms = ["aes256gcm16"]
-        integrityAlgorithms  = ["sha2_256"]
-      }
-      preSharedKey  = random_password.vpn_psk.result
-      remoteAddress = azurerm_public_ip.azure_gw_pip2.ip_address
+    peering = {
+      local_address  = "169.254.21.1"
+      remote_address = "169.254.21.2"
+    }
+    phase1 = {
+      dh_groups             = ["modp2048"]
+      encryption_algorithms = ["aes256gcm16"]
+      integrity_algorithms  = ["sha2_256"]
+    }
+    phase2 = {
+      dh_groups             = ["modp2048"]
+      encryption_algorithms = ["aes256gcm16"]
+      integrity_algorithms  = ["sha2_256"]
     }
   }
 
-  lifecycle {
-    ignore_changes = [
-      body.tunnel1.preSharedKey,
-      body.tunnel2.preSharedKey
-    ]
-  }
+  tunnel2 = {
+    remote_address            = azurerm_public_ip.azure_gw_pip2.ip_address
+    pre_shared_key_wo         = random_password.vpn_psk.result
+    pre_shared_key_wo_version = 1
 
-  read_path     = "$(path)/$(body.id)"
-  update_path   = "$(path)/$(body.id)"
-  update_method = "PUT"
-  delete_path   = "$(path)/$(body.id)"
-  delete_method = "DELETE"
+    bgp = {
+      remote_asn = 64513
+    }
+    peering = {
+      local_address  = "169.254.21.5"
+      remote_address = "169.254.21.6"
+    }
+    phase1 = {
+      dh_groups             = ["modp2048"]
+      encryption_algorithms = ["aes256gcm16"]
+      integrity_algorithms  = ["sha2_256"]
+    }
+    phase2 = {
+      dh_groups             = ["modp2048"]
+      encryption_algorithms = ["aes256gcm16"]
+      integrity_algorithms  = ["sha2_256"]
+    }
+  }
 }
 
 # Azure Test VM & NSG

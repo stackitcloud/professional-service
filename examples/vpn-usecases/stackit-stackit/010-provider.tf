@@ -16,14 +16,7 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">=0.95.0"
-    }
-    restapi = {
-      source  = "Mastercard/restapi"
-      version = ">= 3.0.0"
-    }
-    restful = {
-      source = "magodo/restful"
+      version = ">=0.101.0"
     }
   }
 }
@@ -33,18 +26,4 @@ provider "stackit" {
   service_account_key_path = var.stackit_service_account_key_path
   enable_beta_resources    = true
   experiments              = ["iam"]
-}
-
-ephemeral "stackit_access_token" "this" {}
-
-provider "restful" {
-  alias    = "stackit"
-  base_url = "https://vpn.api.eu01.stackit.cloud"
-  security = {
-    http = {
-      token = {
-        token = ephemeral.stackit_access_token.this.access_token
-      }
-    }
-  }
 }
