@@ -1,0 +1,169 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-ca-injector
+  namespace: kube-system
+  labels:
+    app: node-ca-injector
+spec:
+  selector:
+    matchLabels:
+      app: node-ca-injector
+  template:
+    metadata:
+      labels:
+        app: node-ca-injector
+    spec:
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: injector
+          image: alpine:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              HOST_CA="/host/tmp/node-ca-injector-custom-root-ca.crt"
+              HOST_SCRIPT="/host/tmp/node-ca-injector.sh"
+
+              cp /custom-ca/fake-ca.crt "${HOST_CA}"
+
+              cat >"${HOST_SCRIPT}" <<'HOST_SCRIPT_EOF'
+              #!/bin/sh
+              set -eu
+
+              CA_SOURCE="/tmp/node-ca-injector-custom-root-ca.crt"
+              CA_NAME="node-ca-injector-custom-root-ca.crt"
+              RESTART_SENTINEL="/var/lib/node-ca-injector/containerd-restart-scheduled"
+
+              copy_if_possible() {
+                target_dir="$1"
+                target_file="$2"
+
+                if mkdir -p "${target_dir}" 2>/dev/null; then
+                  cp "${CA_SOURCE}" "${target_dir}/${target_file}"
+                  echo "Installed custom CA at ${target_dir}/${target_file}"
+                  return 0
+                fi
+
+                echo "Skipping ${target_dir}; directory is unavailable or read-only."
+                return 1
+              }
+
+              append_to_bundle_if_needed() {
+                bundle="$1"
+                marker="node-ca-injector custom root ca"
+
+                if [ ! -f "${bundle}" ]; then
+                  echo "Skipping ${bundle}; bundle file does not exist."
+                  return 0
+                fi
+
+                if grep -q "${marker}" "${bundle}" 2>/dev/null; then
+                  echo "Custom CA marker already present in ${bundle}; not appending again."
+                  return 0
+                fi
+
+                if [ -w "${bundle}" ]; then
+                  {
+                    echo
+                    echo "# BEGIN ${marker}"
+                    cat "${CA_SOURCE}"
+                    echo "# END ${marker}"
+                  } >>"${bundle}"
+                  echo "Appended custom CA to ${bundle}"
+                else
+                  echo "Skipping ${bundle}; file is not writable."
+                fi
+              }
+
+              echo "Detecting host OS..."
+              if [ -f /etc/os-release ]; then
+                cat /etc/os-release
+              else
+                echo "No /etc/os-release found on host."
+              fi
+
+              echo "Installing custom CA into known host trust locations..."
+              copy_if_possible /usr/local/share/ca-certificates "${CA_NAME}" || true
+              copy_if_possible /etc/pki/ca-trust/source/anchors "${CA_NAME}" || true
+              copy_if_possible /etc/ssl/certs "${CA_NAME}" || true
+
+              UPDATED=0
+
+              if command -v update-ca-certificates >/dev/null 2>&1; then
+                update-ca-certificates && UPDATED=1 || echo "WARNING: update-ca-certificates failed; continuing."
+              fi
+
+              if command -v update-ca-trust >/dev/null 2>&1; then
+                update-ca-trust extract && UPDATED=1 || echo "WARNING: update-ca-trust extract failed; continuing."
+              fi
+
+              if [ "${UPDATED}" -eq 0 ]; then
+                echo "No host CA refresh command found; attempting direct bundle append for Flatcar-style hosts."
+                append_to_bundle_if_needed /etc/ssl/certs/ca-certificates.crt
+                append_to_bundle_if_needed /etc/pki/tls/certs/ca-bundle.crt
+              fi
+
+              if command -v systemctl >/dev/null 2>&1; then
+                mkdir -p "$(dirname "${RESTART_SENTINEL}")"
+                if [ ! -f "${RESTART_SENTINEL}" ]; then
+                  touch "${RESTART_SENTINEL}"
+                  echo "Scheduling asynchronous containerd restart in 10 seconds."
+                  nohup sh -c 'sleep 10; systemctl restart containerd || true' >/tmp/node-ca-injector-containerd-restart.log 2>&1 &
+                else
+                  echo "containerd restart was already scheduled previously; skipping."
+                fi
+              else
+                echo "systemctl unavailable on this node; skipping containerd restart."
+              fi
+              HOST_SCRIPT_EOF
+
+              chmod +x "${HOST_SCRIPT}"
+
+              if command -v nsenter >/dev/null 2>&1; then
+                nsenter --mount=/proc/1/ns/mnt -- /bin/sh /tmp/node-ca-injector.sh
+              elif [ -x /host/usr/bin/nsenter ]; then
+                chroot /host /usr/bin/nsenter --mount=/proc/1/ns/mnt -- /bin/sh /tmp/node-ca-injector.sh
+              elif [ -x /host/bin/nsenter ]; then
+                chroot /host /bin/nsenter --mount=/proc/1/ns/mnt -- /bin/sh /tmp/node-ca-injector.sh
+              else
+                echo "WARNING: nsenter is unavailable; falling back to chroot-based host root execution."
+                chroot /host /bin/sh /tmp/node-ca-injector.sh
+              fi
+
+              sleep infinity
+          volumeMounts:
+            - name: custom-ca
+              mountPath: /custom-ca
+              readOnly: true
+            - name: host-root
+              mountPath: /host
+      volumes:
+        - name: custom-ca
+          configMap:
+            name: custom-ca-store
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
