@@ -17,13 +17,6 @@ resource "stackit_ske_cluster" "ske_cluster_01" {
   name                   = "secret-test"
   kubernetes_version_min = "1.33"
 
-  maintenance = {
-    enable_kubernetes_version_updates    = true
-    enable_machine_image_version_updates = true
-    start                                = "01:00:00Z"
-    end                                  = "02:00:00Z"
-  }
-
   node_pools = [
     {
       name               = "standard"

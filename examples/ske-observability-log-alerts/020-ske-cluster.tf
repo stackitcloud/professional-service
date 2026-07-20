@@ -30,12 +30,6 @@ resource "stackit_ske_cluster" "example" {
       volume_type        = "storage_premium_perf6"
     }
   ]
-  maintenance = {
-    enable_kubernetes_version_updates    = true
-    enable_machine_image_version_updates = true
-    start                                = "01:00:00Z"
-    end                                  = "02:00:00Z"
-  }
 }
 
 resource "stackit_ske_kubeconfig" "example" {

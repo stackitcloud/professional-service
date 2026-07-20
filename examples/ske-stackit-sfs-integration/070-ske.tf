@@ -28,12 +28,6 @@ resource "stackit_ske_cluster" "sfs" {
   network = {
     id = stackit_network.sfs-example.network_id
   }
-  maintenance = {
-    enable_kubernetes_version_updates    = true
-    enable_machine_image_version_updates = true
-    start                                = "01:00:00Z"
-    end                                  = "02:00:00Z"
-  }
 }
 
 resource "stackit_network" "sfs-example" {
