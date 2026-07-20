@@ -40,8 +40,8 @@ variable "maintenance" {
   default = {
     enable_kubernetes_version_updates    = true
     enable_machine_image_version_updates = true
-    start                                = "01:00:00Z"
-    end                                  = "02:00:00Z"
+    start                                = "04:00:00Z"
+    end                                  = "05:00:00Z"
   }
 }
 

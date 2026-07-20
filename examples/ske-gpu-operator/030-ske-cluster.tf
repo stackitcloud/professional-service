@@ -42,13 +42,6 @@ resource "stackit_ske_cluster" "this" {
   name                   = "ske-gpu"
   kubernetes_version_min = data.stackit_ske_kubernetes_versions.this.kubernetes_versions.0.version
 
-  maintenance = {
-    enable_kubernetes_version_updates    = true
-    enable_machine_image_version_updates = true
-    start                                = "01:00:00Z"
-    end                                  = "02:00:00Z"
-  }
-
   node_pools = [
     {
       name               = "standard"
