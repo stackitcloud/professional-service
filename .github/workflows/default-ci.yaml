@@ -32,7 +32,7 @@ jobs:
         run: |
           # Searches recursively (-r), showing line numbers (-n), ignoring binary files (-I)
           # Excludes the .git directory to prevent false positives
-          if grep -rnIE "# ?TODO" --exclude-dir=.git --exclude-dir=.github .; then
+          if grep -rnIE "(#|//) ?TODO" --exclude-dir=.git --exclude-dir=.github .; then
             echo "Error: TODOs found in the codebase. Please resolve them before merging."
             exit 1
           fi
@@ -48,7 +48,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v4

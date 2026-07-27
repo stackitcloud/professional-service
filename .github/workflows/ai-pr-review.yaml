@@ -1,0 +1,54 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "AI PR Review"
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  ai-review:
+    name: "AI PR Review"
+    # Only run on the self-hosted Forgejo instance, not on the GitHub mirror.
+    if: github.server_url != 'https://github.com'
+    runs-on: stackit-ubuntu-22
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Run AI review
+        env:
+          # Repository variables (non-sensitive): set under Settings → Variables
+          AI_API_URL: ${{ vars.AI_API_URL }}
+          AI_MODEL: ${{ vars.AI_MODEL }}
+          # Repository secret: set under Settings → Secrets
+          AI_BEARER_TOKEN: ${{ secrets.AI_BEARER_TOKEN }}
+          # Automatically provided by Forgejo Actions
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python .github/scripts/ai_pr_review.py
