@@ -123,12 +123,16 @@ def get_commit_messages():
         return ""
 
 
+# General brand rule applied to every check.
+_BRAND_NOTE = "Brand note: the correct spelling is STACKIT (all caps). Flag any occurrence of StackIT, Stackit, stackit, or any other variant as a branding error.\n"
+
 # Used for checks where only newly added lines are relevant (spelling, security, consistency).
 _SCOPE_ADDITIONS = (
     "You are reviewing a pull request diff. "
     "Only flag issues on lines that are additions in the diff (lines starting with `+`). "
     "Do not report issues on context lines (starting with a space) or removed lines (starting with `-`).\n"
-    "Respond ONLY with the requested bullet list or the exact success phrase. "
+    + _BRAND_NOTE
+    + "Respond ONLY with the requested bullet list or the exact success phrase. "
     "Do not include introductory text, explanations, or preambles.\n\n"
 )
 
@@ -138,7 +142,8 @@ _SCOPE_CHANGES = (
     "You are reviewing a pull request diff. "
     "Consider both added lines (starting with `+`) and removed lines (starting with `-`) "
     "to understand the full scope of the change. Ignore context lines (starting with a space).\n"
-    "Respond ONLY with the requested bullet list or the exact success phrase. "
+    + _BRAND_NOTE
+    + "Respond ONLY with the requested bullet list or the exact success phrase. "
     "Do not include introductory text, explanations, or preambles.\n\n"
 )
 
@@ -275,7 +280,7 @@ If no issues are found respond with exactly: ✅ No security issues found.""",
         lambda: get_diff("examples/"),
         """Given a git diff introducing or modifying a Terraform example, check whether the
 added lines follow these conventions:
-- Terraform files use 3-digit numeric prefixes (010-, 020-, 030-, …)
+- Terraform files use 3-digit numeric prefixes (000-, 010-, 020-, 030-, …)
 - Each example has a README.md and a MAINTAINERS.md
 - All variables have a description attribute
 - All providers in required_providers blocks have an explicit version constraint (e.g. version = ">=0.96.0")
