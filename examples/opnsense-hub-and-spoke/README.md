@@ -254,6 +254,30 @@ A single generic module used by all spokes. Select the OS by passing the appropr
 
 ---
 
+## Post-Deployment: Configuring OPNsense
+
+Terraform provisions the VM and networking; OPNsense itself still needs first-boot setup and ongoing
+configuration. See:
+
+- [`docs/initial-setup.md`](docs/initial-setup.md) — first login over WAN and assigning the MGMT (OPT1)
+  interface. Interface assignment can't be automated — see `docs/mgmt-standardization.md` for background.
+- [`docs/webui-access.md`](docs/webui-access.md) — the public MGMT web UI routing issue, its
+  validated fix, and switching admin access from WAN to MGMT.
+
+---
+
+## Limitations
+
+- **No OPNsense HA.** This example deploys a single firewall instance with no CARP/failover. For
+  resilience, front OPNsense with a STACKIT L3 Load Balancer (load-balancer sandwich) instead — see
+  [`docs/limitations.md`](docs/limitations.md).
+- **MGMT setup is manual.** OPNsense has no cloud-init hook and no API for interface assignment, so
+  assigning MGMT (OPT1) requires one GUI session — see
+  [`docs/mgmt-standardization.md`](docs/mgmt-standardization.md) for what was evaluated for automation and
+  why it stays manual.
+
+---
+
 ## References
 
 - [STACKIT Terraform Provider](https://registry.terraform.io/providers/stackitcloud/stackit/latest/docs)

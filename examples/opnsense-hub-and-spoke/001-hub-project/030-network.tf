@@ -26,33 +26,6 @@ resource "stackit_routing_table" "rt_firewall_wan" {
   system_routes   = true
 }
 
-resource "stackit_routing_table_route" "fw_network" {
-  network_area_id  = stackit_network_area.sna.network_area_id
-  organization_id  = var.stackit_organization_id
-  routing_table_id = stackit_routing_table.rt_firewall_lan.routing_table_id
-  destination = {
-    type  = "cidrv4"
-    value = "0.0.0.0/0"
-  }
-  next_hop = {
-    type  = "ipv4"
-    value = stackit_network_interface.nic_lan.ipv4
-  }
-}
-
-resource "stackit_routing_table_route" "fw_network_wan" {
-  network_area_id  = stackit_network_area.sna.network_area_id
-  organization_id  = var.stackit_organization_id
-  routing_table_id = stackit_routing_table.rt_firewall_wan.routing_table_id
-  destination = {
-    type  = "cidrv4"
-    value = "0.0.0.0/0"
-  }
-  next_hop = {
-    type = "internet"
-  }
-}
-
 resource "stackit_network" "wan_network" {
   project_id       = local.hub_project_id
   name             = "wan-network"

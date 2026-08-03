@@ -13,19 +13,21 @@
 # limitations under the License.
 
 terraform {
-  backend "s3" {
-    bucket = "<your-state-bucket-name>"
-    key    = "001-hub-project/terraform.tfstate"
-    endpoints = {
-      s3 = "https://object.storage.eu01.onstackit.cloud"
-    }
-    region                      = "eu01"
-    skip_credentials_validation = true
-    skip_region_validation      = true
-    skip_s3_checksum            = true
-    skip_requesting_account_id  = true
-    # Credentials: set via backend.conf or environment variables (see above)
-    # access_key = "<your-access-key>"
-    # secret_key = "<your-secret-key>"
-  }
+  # LOCAL OVERRIDE — do not commit: falls back to Terraform's default local backend
+  # (terraform.tfstate in this directory) instead of the example's documented S3 remote state.
+  # backend "s3" {
+  #   bucket = "<your-state-bucket-name>"
+  #   key    = "001-hub-project/terraform.tfstate"
+  #   endpoints = {
+  #     s3 = "https://object.storage.eu01.onstackit.cloud"
+  #   }
+  #   region                      = "eu01"
+  #   skip_credentials_validation = true
+  #   skip_region_validation      = true
+  #   skip_s3_checksum            = true
+  #   skip_requesting_account_id  = true
+  #   # Credentials: set via backend.conf or environment variables (see above)
+  #   # access_key = "<your-access-key>"
+  #   # secret_key = "<your-secret-key>"
+  # }
 }
