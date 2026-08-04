@@ -12,34 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-output "example01-wan-ip" {
-  value = stackit_public_ip.example01-wan.ip
+output "active01_wan_ip" {
+  value = stackit_public_ip.active01_wan.ip
 }
 
-output "example01-master-server-id" {
-  value = stackit_server.example01.server_id
+output "active01_server_id" {
+  value = stackit_server.active01.server_id
 }
 
-output "example02-wan-ip" {
-  value = stackit_public_ip.example02-wan.ip
+output "passive02_wan_ip" {
+  value = stackit_public_ip.passive02_wan.ip
 }
 
-output "example02-backup-server-id" {
-  value = stackit_server.example02.server_id
+output "passive02_passive_server_id" {
+  value = stackit_server.passive02.server_id
 }
 
-output "vip01-wan-ip" {
-  value = stackit_public_ip.vip01-wan.ip
+output "vip01_wan_ip" {
+  value = stackit_public_ip.vip01_wan.ip
 }
 
-output "vip01-lan-ip" {
+output "vip01_lan_ip" {
   value = stackit_network_interface.vip01.ipv4
 }
 
-output "vip01-network-interface" {
+output "vip01_network_interface" {
   value = stackit_network_interface.vip01.network_interface_id
 }
 
-output "default-network-id" {
+output "default_network_id" {
   value = stackit_network.default.network_id
 }

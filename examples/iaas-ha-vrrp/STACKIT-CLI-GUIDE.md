@@ -1,3 +1,13 @@
+## Important: vMAC-less VRRP Required on STACKIT
+
+STACKIT's network fabric (OVN) enforces MAC anti-spoofing. Standard VRRP uses a virtual MAC address
+(`00:00:5e:00:01:<vrid>`) which OVN blocks as MAC spoofing. You **must** configure keepalived with
+`no_virtual_mac` in every `vrrp_instance` block so that GARP packets use the real NIC MAC instead.
+
+See [README.md](README.md) for full background.
+
+---
+
 ## Step 1: Create a STACKIT Network
 
 Create a new network where the VMs and network interfaces will be deployed.

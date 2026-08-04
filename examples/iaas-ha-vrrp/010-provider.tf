@@ -18,7 +18,7 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">= 0.87.0"
+      version = ">= 0.107.0"
     }
     random = {
       source  = "hashicorp/random"
@@ -30,4 +30,5 @@ terraform {
 provider "stackit" {
   default_region           = var.stackit_region
   service_account_key_path = var.stackit_service_account_key_path
+  enable_beta_resources    = true
 }

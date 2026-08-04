@@ -124,7 +124,7 @@ def get_commit_messages():
 
 
 # General brand rule applied to every check.
-_BRAND_NOTE = "Brand note: the correct spelling is STACKIT (all caps). Flag any occurrence of StackIT, Stackit, stackit, or any other variant as a branding error.\n"
+_BRAND_NOTE = "Brand note: the correct and only acceptable spelling is STACKIT (all caps). Do NOT flag STACKIT — it is already correct. Only flag incorrect variants such as StackIT, Stackit, stackit, Stack IT, or any other casing or spacing variant.\n"
 
 # Used for checks where only newly added lines are relevant (spelling, security, consistency).
 _SCOPE_ADDITIONS = (
@@ -283,6 +283,7 @@ added lines follow these conventions:
 - Terraform files use 3-digit numeric prefixes (000-, 010-, 020-, 030-, …)
 - Each example has a README.md and a MAINTAINERS.md
 - All variables have a description attribute
+- All variable names use snake_case (e.g. my_variable, not myVariable, my-variable, or MyVariable)
 - All providers in required_providers blocks have an explicit version constraint (e.g. version = ">=0.96.0")
 - A .terraform.lock.hcl file is present and committed for new examples
 - Apache 2.0 license headers are present on all .tf files

@@ -59,6 +59,10 @@ write_files:
                virtual_router_id 51
                priority ${priority}
                advert_int 1
+               # Required on STACKIT: OVN blocks the standard VRRP virtual MAC (00:00:5e:00:01:XX)
+               # as MAC spoofing. no_virtual_mac makes keepalived use the real NIC MAC in GARP
+               # packets instead, which OVN accepts.
+               no_virtual_mac
                authentication {
                      auth_type PASS
                      auth_pass 12345

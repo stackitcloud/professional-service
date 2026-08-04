@@ -1,0 +1,7 @@
+flowchart TD
+    vipnic["NIC vIP\nholds Virtual IP"]
+    nic1["NIC active01\nallowed_addresses: [vIP]"]
+    nic2["NIC passive02\nallowed_addresses: [vIP]"]
+
+    vipnic -->|"allowed address whitelist"| nic1
+    vipnic -->|"allowed address whitelist"| nic2
