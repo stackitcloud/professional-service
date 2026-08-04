@@ -14,19 +14,19 @@
 
 resource "stackit_network" "default" {
   project_id       = var.stackit_project_id
-  ipv4_prefix      = "10.1.2.0/24"
+  ipv4_prefix      = "10.1.3.0/24"
   name             = "default"
   ipv4_nameservers = ["9.9.9.9", "1.1.1.1"]
 }
 
-resource "stackit_security_group" "active-passive" {
+resource "stackit_security_group" "active_passive" {
   project_id = var.stackit_project_id
   name       = "ha-active-passive"
 }
 
 resource "stackit_security_group_rule" "icmp" {
   project_id        = var.stackit_project_id
-  security_group_id = stackit_security_group.active-passive.security_group_id
+  security_group_id = stackit_security_group.active_passive.security_group_id
   direction         = "ingress"
   icmp_parameters = {
     code = 0
@@ -39,7 +39,7 @@ resource "stackit_security_group_rule" "icmp" {
 
 resource "stackit_security_group_rule" "ssh" {
   project_id        = var.stackit_project_id
-  security_group_id = stackit_security_group.active-passive.security_group_id
+  security_group_id = stackit_security_group.active_passive.security_group_id
   direction         = "ingress"
   port_range = {
     min = 22
@@ -52,7 +52,7 @@ resource "stackit_security_group_rule" "ssh" {
 
 resource "stackit_security_group_rule" "http" {
   project_id        = var.stackit_project_id
-  security_group_id = stackit_security_group.active-passive.security_group_id
+  security_group_id = stackit_security_group.active_passive.security_group_id
   direction         = "ingress"
   port_range = {
     min = 80
@@ -65,7 +65,7 @@ resource "stackit_security_group_rule" "http" {
 
 resource "stackit_security_group_rule" "vrrp" {
   project_id        = var.stackit_project_id
-  security_group_id = stackit_security_group.active-passive.security_group_id
+  security_group_id = stackit_security_group.active_passive.security_group_id
   direction         = "ingress"
   protocol = {
     name = "vrrp"

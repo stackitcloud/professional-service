@@ -1,0 +1,10 @@
+flowchart LR
+    inet(["🌐 Internet"])
+    pubip["Public IP"]
+    vipnic["Virtual IP NIC"]
+    active["active01\nMASTER · priority 255"]
+    passive["passive02\nBACKUP · priority 254"]
+
+    inet --> pubip --> vipnic --> active
+    active <-->|"VRRP heartbeat"| passive
+    passive -.->|"failover: takes over\nvIP on active failure"| vipnic

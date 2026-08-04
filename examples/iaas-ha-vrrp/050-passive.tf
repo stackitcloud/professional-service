@@ -12,34 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_server" "example02" {
+resource "stackit_server" "passive02" {
   project_id = var.stackit_project_id
-  name       = "example02"
+  name       = "passive02"
   boot_volume = {
     size                  = 64
     source_type           = "image"
-    source_id             = var.debian_image_id
+    source_id             = data.stackit_image_v2.debian.image_id
     performance_class     = "storage_premium_perf6"
     delete_on_termination = true
   }
-  machine_type      = "c2i.4"
+  machine_type      = "c3i.4"
   availability_zone = "eu01-2"
-  user_data         = local.user_data_backup
+  user_data         = local.user_data_passive
   keypair_name      = stackit_key_pair.admin_keypair.name
-  depends_on        = [stackit_network_interface.example02]
+  depends_on        = [stackit_network_interface.passive02]
   network_interfaces = [
-    stackit_network_interface.example02.network_interface_id
+    stackit_network_interface.passive02.network_interface_id
   ]
 }
 
-resource "stackit_network_interface" "example02" {
+resource "stackit_network_interface" "passive02" {
   project_id         = var.stackit_project_id
   network_id         = stackit_network.default.network_id
   allowed_addresses  = [format("%s/%s", stackit_network_interface.vip01.ipv4, "32")]
-  security_group_ids = [stackit_security_group.active-passive.security_group_id]
+  security_group_ids = [stackit_security_group.active_passive.security_group_id]
 }
 
-resource "stackit_public_ip" "example02-wan" {
+resource "stackit_public_ip" "passive02_wan" {
   project_id           = var.stackit_project_id
-  network_interface_id = stackit_network_interface.example02.network_interface_id
+  network_interface_id = stackit_network_interface.passive02.network_interface_id
 }

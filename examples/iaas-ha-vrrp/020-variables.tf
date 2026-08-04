@@ -13,39 +13,35 @@
 # limitations under the License.
 
 variable "stackit_project_id" {
-  type    = string
-  default = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  type        = string
+  description = "The STACKIT project ID to deploy resources into."
 }
 
 variable "stackit_region" {
-  type    = string
-  default = "eu01"
+  type        = string
+  default     = "eu01"
+  description = "The STACKIT region to deploy resources into."
 }
 
 variable "stackit_service_account_key_path" {
-  type    = string
-  default = "./keys/stackit-sa.json"
-}
-
-variable "debian_image_id" {
-  type    = string
-  default = "b7aedfad-3be7-46e0-9ece-19fd50e2d83e"
+  type        = string
+  description = "Path to the STACKIT service account key JSON file used for provider authentication."
 }
 
 resource "stackit_key_pair" "admin_keypair" {
-  name       = "admin-keypair"
+  name       = "vrrp-test-keypair"
   public_key = chomp(file("~/.ssh/id_rsa.pub"))
 }
 
 
 locals {
-  user_data_master = templatefile("cloud-init.yaml", {
+  user_data_active = templatefile("cloud-init.yaml", {
     type     = "MASTER"
     priority = "255"
     vip      = stackit_network_interface.vip01.ipv4
   })
 
-  user_data_backup = templatefile("cloud-init.yaml", {
+  user_data_passive = templatefile("cloud-init.yaml", {
     type     = "BACKUP"
     priority = "254"
     vip      = stackit_network_interface.vip01.ipv4

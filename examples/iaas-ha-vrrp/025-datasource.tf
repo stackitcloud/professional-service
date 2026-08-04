@@ -12,13 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_network_interface" "vip01" {
+data "stackit_image_v2" "debian" {
   project_id = var.stackit_project_id
-  network_id = stackit_network.default.network_id
-  security   = false
-}
-
-resource "stackit_public_ip" "vip01_wan" {
-  project_id           = var.stackit_project_id
-  network_interface_id = stackit_network_interface.vip01.network_interface_id
+  name       = "Debian 13"
 }
