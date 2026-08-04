@@ -7,7 +7,7 @@ part of the OPNsense IaC setup. This documents that evaluation and its conclusio
 ## What can't be automated, regardless of tooling
 
 - **Interface assignment.** The OPNsense API has no endpoint for assigning a physical NIC to an interface
-  role. Terraform reserving `10.28.0.36` for the MGMT NIC at the network level does not make OPNsense aware
+  role. Terraform reserving `10.28.2.100` for the MGMT NIC at the network level does not make OPNsense aware
   of that interface — `vtnet2` stays unassigned until it's added via **Interfaces → Assignments**. No
   Ansible module, collection, or first-boot mechanism changes this — it's an OPNsense API limitation, not a
   tooling gap.
@@ -34,7 +34,7 @@ remains manual either way.
 
 ## What's already standardized by Terraform
 
-- **Fixed IP:** the MGMT NIC gets `10.28.0.36` explicitly (`stackit_network_interface.nic_mgmt` in
+- **Fixed IP:** the MGMT NIC gets `10.28.2.100` explicitly (`stackit_network_interface.nic_mgmt` in
   [`030-network.tf`](../001-hub-project/030-network.tf)).
 - **Fixed device order:** MGMT is always the third NIC attached
   (`stackit_server_network_interface_attach.attach_mgmt` in

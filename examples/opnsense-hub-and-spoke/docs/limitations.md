@@ -10,7 +10,7 @@ Practical implications:
 
 - A reboot, host maintenance event, or OPNsense failure is a routing outage for every spoke until the
   instance recovers — there's no automatic failover.
-- Do not treat `10.28.0.20` (the LAN gateway spokes route through) as a highly-available address; it's a
+- Do not treat `10.28.1.100` (the LAN gateway spokes route through) as a highly-available address; it's a
   single VM's NIC.
 
 ### If you need resilience: load-balancer sandwich, not CARP

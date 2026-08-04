@@ -1,7 +1,7 @@
 # Public Web UI Access via the Management Interface
 
 Per [`docs/initial-setup.md`](initial-setup.md), the OPNsense web UI is reached over **WAN** for initial
-setup, then handed over to the **MGMT** interface (OPT1, `10.28.0.36`, reachable via `mgmt_public_ip`) as the
+setup, then handed over to the **MGMT** interface (OPT1, `10.28.2.100`, reachable via `mgmt_public_ip`) as the
 sole long-term admin channel — kept separate from WAN/LAN so that firewall/routing policy for actual traffic
 never has to make an exception for management access. That separation causes one non-obvious failure mode
 worth fixing (and understanding) before you switch admin access over to MGMT and lock WAN back down.

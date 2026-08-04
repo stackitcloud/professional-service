@@ -15,11 +15,11 @@ See the [top-level README](../README.md) for the full architecture and repositor
 - An OPNsense firewall server, built from a qcow2 image uploaded as a custom STACKIT image
 - Public IPs for the WAN and MGMT interfaces
 
-| Interface | Subnet          | IP           | Purpose                    |
-| --------- | --------------- | ------------ | -------------------------- |
-| WAN       | `10.28.0.0/28`  | `10.28.0.4`  | Internet uplink            |
-| LAN       | `10.28.0.16/28` | `10.28.0.20` | Default gateway for spokes |
-| MGMT      | `10.28.0.32/28` | `10.28.0.36` | Web UI / SSH access        |
+| Interface | Subnet         | IP            | Purpose                    |
+| --------- | -------------- | ------------- | -------------------------- |
+| WAN       | `10.28.0.0/24` | `10.28.0.100` | Internet uplink            |
+| LAN       | `10.28.1.0/24` | `10.28.1.100` | Default gateway for spokes |
+| MGMT      | `10.28.2.0/24` | `10.28.2.100` | Web UI / SSH access        |
 
 The MGMT interface is restricted by security group to the CIDR set in `mgmt_ip_range`. Default
 OPNsense credentials are `root` / `STACKIT123!` — change these on first login.
@@ -55,13 +55,13 @@ See `000-variables.tf` for the full list, defaults, and descriptions.
 
 ## Outputs
 
-| Output            | Used for                                                          |
-| ----------------- | ----------------------------------------------------------------- |
-| `network_area_id` | Set as `stackit_network_area_id` in each spoke                    |
-| `firewall_lan_ip` | Set as `hub_firewall_lan_ip` in each spoke (default `10.28.0.20`) |
-| `wan_public_ip`   | WAN public IP of the firewall                                     |
-| `mgmt_public_ip`  | MGMT public IP — web UI at `https://<ip>/`                        |
-| `hub_project_id`  | STACKIT project ID of the hub                                     |
+| Output            | Used for                                                           |
+| ----------------- | ------------------------------------------------------------------ |
+| `network_area_id` | Set as `stackit_network_area_id` in each spoke                     |
+| `firewall_lan_ip` | Set as `hub_firewall_lan_ip` in each spoke (default `10.28.1.100`) |
+| `wan_public_ip`   | WAN public IP of the firewall                                      |
+| `mgmt_public_ip`  | MGMT public IP — web UI at `https://<ip>/`                         |
+| `hub_project_id`  | STACKIT project ID of the hub                                      |
 
 ---
 

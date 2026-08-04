@@ -5,7 +5,7 @@ ships unconfigured, with no automated first-boot hook (see [`docs/mgmt-standardi
 for the constraints behind this). This guide covers the steps to take right after `terraform apply` succeeds
 in `001-hub-project`.
 
-Only **WAN** and **LAN** are assigned automatically. The MGMT NIC (`nic_mgmt`, `10.28.0.32/28`) exists at the
+Only **WAN** and **LAN** are assigned automatically. The MGMT NIC (`nic_mgmt`, `10.28.2.0/24`) exists at the
 STACKIT network level from Terraform, but OPNsense itself doesn't know about it yet — assigning it is part of
 this setup (step 2).
 
@@ -37,7 +37,7 @@ OPNsense has no API endpoint for assigning a physical NIC to an interface role �
    "Assign a new interface" — select it, click **Add**. It's created as `OPT1`.
 2. Open the new **[OPT1]** interface page: **Enable** it, set **IPv4 Configuration Type** to **DHCP**, Save,
    Apply. STACKIT's network fabric hands out the exact IP/gateway Terraform reserved for this NIC
-   (`10.28.0.36/28`, gateway `10.28.0.33`) via DHCP — you don't need to hardcode them.
+   (`10.28.2.100/24`, gateway `10.28.2.1`) via DHCP — you don't need to hardcode them.
 
 This example refers to the interface by its default identifier, `OPT1` — renaming it is optional and purely
 cosmetic.

@@ -30,7 +30,7 @@ resource "stackit_network" "wan_network" {
   project_id       = local.hub_project_id
   name             = "wan-network"
   ipv4_nameservers = ["1.1.1.1", "9.9.9.9"]
-  ipv4_prefix      = "10.28.0.0/28"
+  ipv4_prefix      = "10.28.0.0/24"
   routing_table_id = stackit_routing_table.rt_firewall_wan.routing_table_id
 }
 
@@ -38,7 +38,7 @@ resource "stackit_network" "lan_network" {
   project_id       = local.hub_project_id
   name             = "lan-network"
   ipv4_nameservers = ["1.1.1.1", "9.9.9.9"]
-  ipv4_prefix      = "10.28.0.16/28"
+  ipv4_prefix      = "10.28.1.0/24"
   routing_table_id = stackit_routing_table.rt_firewall_lan.routing_table_id
 }
 
@@ -46,21 +46,23 @@ resource "stackit_network" "mgmt_network" {
   project_id       = local.hub_project_id
   name             = "mgmt-network"
   ipv4_nameservers = ["1.1.1.1", "9.9.9.9"]
-  ipv4_prefix      = "10.28.0.32/28"
+  ipv4_prefix      = "10.28.2.0/24"
 }
 
 resource "stackit_network_interface" "nic_wan" {
   project_id = local.hub_project_id
   network_id = stackit_network.wan_network.network_id
+  name       = "WAN_interface"
   security   = false
-  ipv4       = "10.28.0.4"
+  ipv4       = "10.28.0.100"
 }
 
 resource "stackit_network_interface" "nic_lan" {
   project_id = local.hub_project_id
   network_id = stackit_network.lan_network.network_id
+  name       = "LAN_interface"
   security   = false
-  ipv4       = "10.28.0.20"
+  ipv4       = "10.28.1.100"
 }
 
 resource "stackit_security_group" "mgmt_sg" {
@@ -120,7 +122,8 @@ resource "stackit_security_group_rule" "allow_https" {
 resource "stackit_network_interface" "nic_mgmt" {
   project_id         = local.hub_project_id
   network_id         = stackit_network.mgmt_network.network_id
+  name               = "MGMT_interface"
   security           = true
-  ipv4               = "10.28.0.36"
+  ipv4               = "10.28.2.100"
   security_group_ids = [stackit_security_group.mgmt_sg.security_group_id]
 }

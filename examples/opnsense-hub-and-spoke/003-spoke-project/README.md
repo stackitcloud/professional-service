@@ -10,7 +10,7 @@ See the [top-level README](../README.md) for the full architecture and repositor
 ## What this deploys
 
 - A STACKIT project attached to the hub's shared network area (SNA)
-- A dedicated subnet (default `10.28.2.0/28`) with a routing table pointing the default route at
+- A dedicated subnet (default `10.28.20.0/24`) with a routing table pointing the default route at
   the OPNsense LAN IP
 - Two example Windows Server instances via the generic [`modules/server`](../modules/server) module
 
@@ -38,14 +38,14 @@ See the [top-level README](../README.md) for the full architecture and repositor
 
 ## Required variables
 
-| Variable                  | Description                                                         |
-| ------------------------- | ------------------------------------------------------------------- |
-| `stackit_organization_id` | STACKIT organization UUID                                           |
-| `stackit_folder_id`       | Folder that will contain this project                               |
-| `stackit_network_area_id` | Output of `001-hub-project` (`terraform output network_area_id`)    |
-| `org_admin`               | Email of the STACKIT user set as project owner                      |
-| `spoke_subnet`            | This spoke's network prefix (default `10.28.2.0/28`)                |
-| `hub_firewall_lan_ip`     | OPNsense LAN IP, output of `001-hub-project` (default `10.28.0.20`) |
+| Variable                  | Description                                                          |
+| ------------------------- | -------------------------------------------------------------------- |
+| `stackit_organization_id` | STACKIT organization UUID                                            |
+| `stackit_folder_id`       | Folder that will contain this project                                |
+| `stackit_network_area_id` | Output of `001-hub-project` (`terraform output network_area_id`)     |
+| `org_admin`               | Email of the STACKIT user set as project owner                       |
+| `spoke_subnet`            | This spoke's network prefix (default `10.28.20.0/24`)                |
+| `hub_firewall_lan_ip`     | OPNsense LAN IP, output of `001-hub-project` (default `10.28.1.100`) |
 
 See `000-variables.tf` for the full list, defaults, and descriptions.
 
