@@ -17,7 +17,7 @@ See the [top-level README](../README.md) for the full architecture and repositor
 | Server     | Machine Type | Purpose                  |
 | ---------- | ------------ | ------------------------ |
 | `server-a` | `c2i.2`      | General-purpose compute  |
-| `server-b` | `m1a.8d`     | Memory-optimized compute |
+| `server-b` | `m2a.8d`     | Memory-optimized compute |
 
 ---
 

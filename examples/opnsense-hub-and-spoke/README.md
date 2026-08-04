@@ -215,7 +215,7 @@ Two servers showing different machine type profiles:
 | Server     | Machine Type | Purpose                  |
 | ---------- | ------------ | ------------------------ |
 | `server-a` | `c2i.2`      | General-purpose compute  |
-| `server-b` | `m1a.8d`     | Memory-optimized compute |
+| `server-b` | `m2a.8d`     | Memory-optimized compute |
 
 ### 003-spoke-project — Windows Server instances
 
@@ -264,6 +264,8 @@ configuration. See:
   interface. Interface assignment can't be automated — see `docs/mgmt-standardization.md` for background.
 - [`docs/webui-access.md`](docs/webui-access.md) — the public MGMT web UI routing issue, its
   validated fix, and switching admin access from WAN to MGMT.
+- [`docs/automation-options.md`](docs/automation-options.md) — Terraform and Ansible tooling options if you
+  want to automate OPNsense's own configuration beyond what this example does manually.
 
 ---
 

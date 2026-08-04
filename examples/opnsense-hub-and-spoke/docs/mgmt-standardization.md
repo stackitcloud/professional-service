@@ -29,8 +29,9 @@ version in use) for a reference implementation. Configure the rules manually per
 [`docs/webui-access.md`](webui-access.md) instead.
 
 If your deployment grows beyond a couple of rules — more firewall policy, NAT, DHCP, VPN — revisit
-Ansible-based configuration against the OPNsense REST API at that point; the interface-assignment step above
-remains manual either way.
+Ansible- or Terraform-based configuration against the OPNsense REST API at that point; see
+[`docs/automation-options.md`](automation-options.md) for what's available. The interface-assignment step
+above remains manual either way.
 
 ## What's already standardized by Terraform
 
