@@ -11,34 +11,35 @@ The hub deploys an **OPNsense firewall** as the central routing and security com
 ```
                               Internet
                                   |
-  +-------------------------------------------------------------------+
-  |                      STACKIT Network Area                         |
-  |                                                                   |
-  |   +-------------------------------------------------------------+ |
-  |   |                     001-hub-project                         | |
-  |   |                                                             | |
-  |   |   OPNsense Firewall                                         | |
-  |   |   +------------------+------------------+                   | |
-  |   |   | Interface        | IP               |                   | |
-  |   |   +------------------+------------------+                   | |
-  |   |   | WAN              | 10.28.0.4        |                   | |
-  |   |   | LAN              | 10.28.0.20  <--  |                   | |
-  |   |   | MGMT             | 10.28.0.36       |                   | |
-  |   |   +------------------+------------------+                   | |
-  |   |                                                             | |
-  |   |   default route next-hop: 10.28.0.20                        | |
-  |   +---------------------------+---------------------------------+ |
-  |                               |                                   |
-  |              +----------------+----------------+                  |
-  |              |                                 |                  |
-  |   +----------+----------+         +------------+---------+        |
-  |   |   002-spoke-project |         |  003-spoke-project   |        |
-  |   |   10.28.1.0/28      |         |  10.28.2.0/28        |        |
-  |   +---------------------+         +----------------------+        |
-  +-------------------------------------------------------------------+
+  +------------------------------------------------+
+  |              STACKIT Network Area               |
+  |                                                  |
+  |    +-------------------------------------+      |
+  |    | 001-hub-project                     |      |
+  |    |                                     |      |
+  |    | OPNsense Firewall                   |      |
+  |    | +-----------+-----------------+     |      |
+  |    | | Interface | IP              |     |      |
+  |    | +-----------+-----------------+     |      |
+  |    | | WAN       | 10.28.0.100     |     |      |
+  |    | | LAN       | 10.28.1.100 <-- |     |      |
+  |    | | MGMT      | 10.28.2.100     |     |      |
+  |    | +-----------+-----------------+     |      |
+  |    |                                     |      |
+  |    | default route next-hop: 10.28.1.100 |      |
+  |    +-------------------------------------+      |
+  |                                                  |
+  |                       |                         |
+  |           +------------------------+            |
+  |           |                        |            |
+  | +-------------------+    +-------------------+  |
+  | | 002-spoke-project |    | 003-spoke-project |  |
+  | | 10.28.10.0/24     |    | 10.28.20.0/24     |  |
+  | +-------------------+    +-------------------+  |
+  +------------------------------------------------+
 ```
 
-**Traffic flow:** All spoke traffic (including internet-bound) is forwarded to the OPNsense LAN NIC (`10.28.0.20`) via a routing table route attached to each spoke network. OPNsense handles routing, NAT, and firewall policy centrally.
+**Traffic flow:** All spoke traffic (including internet-bound) is forwarded to the OPNsense LAN NIC (`10.28.1.100`) via a routing table route attached to each spoke network. OPNsense handles routing, NAT, and firewall policy centrally.
 
 ---
 
@@ -168,7 +169,7 @@ terraform apply
 
 # Step 2 — Copy outputs into spoke terraform.tfvars
 terraform output network_area_id  # → set as stackit_network_area_id in spokes
-terraform output firewall_lan_ip  # → set as hub_firewall_lan_ip in spokes (default: 10.28.0.20)
+terraform output firewall_lan_ip  # → set as hub_firewall_lan_ip in spokes (default: 10.28.1.100)
 
 # Step 3 — Deploy spokes (independently, in any order)
 cd ../002-spoke-project
@@ -186,11 +187,11 @@ terraform apply
 
 OPNsense is provisioned from a qcow2 image with three network interfaces:
 
-| Interface | Subnet          | IP           | Purpose                    |
-| --------- | --------------- | ------------ | -------------------------- |
-| WAN       | `10.28.0.0/28`  | `10.28.0.4`  | Internet uplink            |
-| LAN       | `10.28.0.16/28` | `10.28.0.20` | Default gateway for spokes |
-| MGMT      | `10.28.0.32/28` | `10.28.0.36` | Web UI / SSH access        |
+| Interface | Subnet         | IP            | Purpose                    |
+| --------- | -------------- | ------------- | -------------------------- |
+| WAN       | `10.28.0.0/24` | `10.28.0.100` | Internet uplink            |
+| LAN       | `10.28.1.0/24` | `10.28.1.100` | Default gateway for spokes |
+| MGMT      | `10.28.2.0/24` | `10.28.2.100` | Web UI / SSH access        |
 
 **Default credentials:**
 
@@ -214,7 +215,7 @@ Two servers showing different machine type profiles:
 | Server     | Machine Type | Purpose                  |
 | ---------- | ------------ | ------------------------ |
 | `server-a` | `c2i.2`      | General-purpose compute  |
-| `server-b` | `m1a.8d`     | Memory-optimized compute |
+| `server-b` | `m2a.8d`     | Memory-optimized compute |
 
 ### 003-spoke-project — Windows Server instances
 
@@ -251,6 +252,32 @@ A single generic module used by all spokes. Select the OS by passing the appropr
 | Backend credentials       | `backend.conf` per project              | Object Storage bucket + S3 keys                         |
 | Service account key       | `keys/service-account.json` per project | Downloaded from STACKIT portal                          |
 | Cloud-init password       | `cloud-init/*.yml`                      | Replace placeholder hash with a real one                |
+
+---
+
+## Post-Deployment: Configuring OPNsense
+
+Terraform provisions the VM and networking; OPNsense itself still needs first-boot setup and ongoing
+configuration. See:
+
+- [`docs/initial-setup.md`](docs/initial-setup.md) — first login over WAN and assigning the MGMT (OPT1)
+  interface. Interface assignment can't be automated — see `docs/mgmt-standardization.md` for background.
+- [`docs/webui-access.md`](docs/webui-access.md) — the public MGMT web UI routing issue, its
+  validated fix, and switching admin access from WAN to MGMT.
+- [`docs/automation-options.md`](docs/automation-options.md) — Terraform and Ansible tooling options if you
+  want to automate OPNsense's own configuration beyond what this example does manually.
+
+---
+
+## Limitations
+
+- **No OPNsense HA.** This example deploys a single firewall instance with no CARP/failover. For
+  resilience, front OPNsense with a STACKIT L3 Load Balancer (load-balancer sandwich) instead — see
+  [`docs/limitations.md`](docs/limitations.md).
+- **MGMT setup is manual.** OPNsense has no cloud-init hook and no API for interface assignment, so
+  assigning MGMT (OPT1) requires one GUI session — see
+  [`docs/mgmt-standardization.md`](docs/mgmt-standardization.md) for what was evaluated for automation and
+  why it stays manual.
 
 ---
 

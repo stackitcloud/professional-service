@@ -47,10 +47,10 @@ default_zone   = "eu01-1"
 # --- Spoke: networking (002 and 003 spoke projects) --------------------------
 
 # Subnet for this spoke. Must be within the network area range (10.28.0.0/16).
-# 002-spoke-project default: 10.28.1.0/28
-# 003-spoke-project default: 10.28.2.0/28
-# spoke_subnet = "10.28.1.0/28"
+# 002-spoke-project default: 10.28.10.0/24
+# 003-spoke-project default: 10.28.20.0/24
+# spoke_subnet = "10.28.10.0/24"
 
 # LAN IP of the OPNsense firewall — used as the default route next-hop for spoke traffic.
 # Run `terraform output firewall_lan_ip` in 001-hub-project.
-# hub_firewall_lan_ip = "10.28.0.20"
+# hub_firewall_lan_ip = "10.28.1.100"

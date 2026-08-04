@@ -59,11 +59,11 @@ variable "org_admin" {
 variable "spoke_subnet" {
   description = "IPv4 prefix for this spoke's network. Must be within the network area range (10.28.0.0/16)."
   type        = string
-  default     = "10.28.2.0/28"
+  default     = "10.28.20.0/24"
 }
 
 variable "hub_firewall_lan_ip" {
   description = "LAN IP of the active OPNsense node. Used as the default route next-hop for all spoke traffic. Run `terraform output firewall_lan_ip` in 001-hub-project."
   type        = string
-  default     = "10.28.0.20"
+  default     = "10.28.1.100"
 }
