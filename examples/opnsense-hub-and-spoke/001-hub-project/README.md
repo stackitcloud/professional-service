@@ -28,40 +28,40 @@ OPNsense credentials are `root` / `STACKIT123!` — change these on first login.
 
 ## Files
 
-| File                      | Purpose                                                        |
-| ------------------------- | --------------------------------------------------------------- |
-| `000-backend.tf`           | S3-compatible remote state backend                              |
-| `000-variables.tf`         | Input variables (org/folder IDs, `mgmt_ip_range`, machine type)  |
-| `010-provider.tf`          | STACKIT provider configuration                                  |
-| `020-projects.tf`          | STACKIT project + shared network area (SNA)                     |
-| `030-network.tf`           | Subnets, routing tables, NICs, security groups                  |
-| `040-hub-fw-opnsense.tf`   | OPNsense image upload, boot volume, server, public IPs           |
-| `050-outputs.tf`           | `network_area_id`, `firewall_lan_ip`, public IPs (used by spokes)|
-| `backend.conf.example`     | Backend credential template — copy to `backend.conf`            |
+| File                     | Purpose                                                           |
+| ------------------------ | ----------------------------------------------------------------- |
+| `000-backend.tf`         | S3-compatible remote state backend                                |
+| `000-variables.tf`       | Input variables (org/folder IDs, `mgmt_ip_range`, machine type)   |
+| `010-provider.tf`        | STACKIT provider configuration                                    |
+| `020-projects.tf`        | STACKIT project + shared network area (SNA)                       |
+| `030-network.tf`         | Subnets, routing tables, NICs, security groups                    |
+| `040-hub-fw-opnsense.tf` | OPNsense image upload, boot volume, server, public IPs            |
+| `050-outputs.tf`         | `network_area_id`, `firewall_lan_ip`, public IPs (used by spokes) |
+| `backend.conf.example`   | Backend credential template — copy to `backend.conf`              |
 
 ---
 
 ## Required variables
 
-| Variable                    | Description                                                   |
-| ---------------------------- | --------------------------------------------------------------- |
-| `stackit_organization_id`    | STACKIT organization UUID                                        |
-| `stackit_folder_id`          | Folder that will contain this project                            |
-| `org_admin`                  | Email of the STACKIT user set as project owner                   |
-| `mgmt_ip_range`               | CIDR allowed to reach the firewall MGMT interface                 |
-| `opnsense_machine_type`       | Machine type for the firewall (default `c2i.2`)                  |
+| Variable                  | Description                                       |
+| ------------------------- | ------------------------------------------------- |
+| `stackit_organization_id` | STACKIT organization UUID                         |
+| `stackit_folder_id`       | Folder that will contain this project             |
+| `org_admin`               | Email of the STACKIT user set as project owner    |
+| `mgmt_ip_range`           | CIDR allowed to reach the firewall MGMT interface |
+| `opnsense_machine_type`   | Machine type for the firewall (default `c2i.2`)   |
 
 See `000-variables.tf` for the full list, defaults, and descriptions.
 
 ## Outputs
 
-| Output             | Used for                                          |
-| ------------------- | ---------------------------------------------------- |
-| `network_area_id`   | Set as `stackit_network_area_id` in each spoke        |
-| `firewall_lan_ip`   | Set as `hub_firewall_lan_ip` in each spoke (default `10.28.0.20`) |
-| `wan_public_ip`     | WAN public IP of the firewall                         |
-| `mgmt_public_ip`    | MGMT public IP — web UI at `https://<ip>/`            |
-| `hub_project_id`    | STACKIT project ID of the hub                         |
+| Output            | Used for                                                          |
+| ----------------- | ----------------------------------------------------------------- |
+| `network_area_id` | Set as `stackit_network_area_id` in each spoke                    |
+| `firewall_lan_ip` | Set as `hub_firewall_lan_ip` in each spoke (default `10.28.0.20`) |
+| `wan_public_ip`   | WAN public IP of the firewall                                     |
+| `mgmt_public_ip`  | MGMT public IP — web UI at `https://<ip>/`                        |
+| `hub_project_id`  | STACKIT project ID of the hub                                     |
 
 ---
 

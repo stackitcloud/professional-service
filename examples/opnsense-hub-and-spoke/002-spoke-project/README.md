@@ -23,39 +23,39 @@ See the [top-level README](../README.md) for the full architecture and repositor
 
 ## Files
 
-| File                | Purpose                                                             |
-| -------------------- | ---------------------------------------------------------------------- |
-| `000-backend.tf`     | S3-compatible remote state backend                                     |
-| `000-variables.tf`   | Input variables (org/folder IDs, `spoke_subnet`, `hub_firewall_lan_ip`) |
-| `010-provider.tf`    | STACKIT provider configuration                                         |
-| `020-projects.tf`    | STACKIT project attached to the hub's network area                     |
-| `030-network.tf`     | Spoke subnet + routing table (default route → OPNsense LAN)            |
-| `040-servers.tf`     | `server-a` and `server-b`, via `modules/server`                        |
-| `050-outputs.tf`     | `spoke_project_id`, `server_a_ip`, `server_b_ip`                       |
-| `backend.conf.example` | Backend credential template — copy to `backend.conf`                 |
+| File                   | Purpose                                                                 |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `000-backend.tf`       | S3-compatible remote state backend                                      |
+| `000-variables.tf`     | Input variables (org/folder IDs, `spoke_subnet`, `hub_firewall_lan_ip`) |
+| `010-provider.tf`      | STACKIT provider configuration                                          |
+| `020-projects.tf`      | STACKIT project attached to the hub's network area                      |
+| `030-network.tf`       | Spoke subnet + routing table (default route → OPNsense LAN)             |
+| `040-servers.tf`       | `server-a` and `server-b`, via `modules/server`                         |
+| `050-outputs.tf`       | `spoke_project_id`, `server_a_ip`, `server_b_ip`                        |
+| `backend.conf.example` | Backend credential template — copy to `backend.conf`                    |
 
 ---
 
 ## Required variables
 
-| Variable                   | Description                                                              |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `stackit_organization_id`    | STACKIT organization UUID                                                     |
-| `stackit_folder_id`          | Folder that will contain this project                                        |
-| `stackit_network_area_id`    | Output of `001-hub-project` (`terraform output network_area_id`)             |
-| `org_admin`                  | Email of the STACKIT user set as project owner                               |
-| `spoke_subnet`                | This spoke's network prefix (default `10.28.1.0/28`)                        |
-| `hub_firewall_lan_ip`        | OPNsense LAN IP, output of `001-hub-project` (default `10.28.0.20`)          |
+| Variable                  | Description                                                         |
+| ------------------------- | ------------------------------------------------------------------- |
+| `stackit_organization_id` | STACKIT organization UUID                                           |
+| `stackit_folder_id`       | Folder that will contain this project                               |
+| `stackit_network_area_id` | Output of `001-hub-project` (`terraform output network_area_id`)    |
+| `org_admin`               | Email of the STACKIT user set as project owner                      |
+| `spoke_subnet`            | This spoke's network prefix (default `10.28.1.0/28`)                |
+| `hub_firewall_lan_ip`     | OPNsense LAN IP, output of `001-hub-project` (default `10.28.0.20`) |
 
 See `000-variables.tf` for the full list, defaults, and descriptions.
 
 ## Outputs
 
-| Output             | Description                            |
-| ------------------- | ------------------------------------------ |
-| `spoke_project_id`  | STACKIT project ID of this spoke            |
-| `server_a_ip`       | Primary IP of `server-a`                    |
-| `server_b_ip`       | Primary IP of `server-b`                    |
+| Output             | Description                      |
+| ------------------ | -------------------------------- |
+| `spoke_project_id` | STACKIT project ID of this spoke |
+| `server_a_ip`      | Primary IP of `server-a`         |
+| `server_b_ip`      | Primary IP of `server-b`         |
 
 ---
 

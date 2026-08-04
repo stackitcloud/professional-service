@@ -12,7 +12,7 @@ Symptom: `https://<mgmt_public_ip>/` times out or resets, even though the MGMT s
 (`firewall-mgmt-sg` in [`030-network.tf`](../001-hub-project/030-network.tf)) allows TCP/443 from your
 `mgmt_ip_range`, and the OPNsense-side rule for the OPT1/MGMT interface looks correct.
 
-**Root cause:** OPNsense's firewall evaluates *floating* rules before interface-specific rules. If a floating
+**Root cause:** OPNsense's firewall evaluates _floating_ rules before interface-specific rules. If a floating
 rule permits TCP/443 (a common pattern when opening HTTPS broadly, e.g. for reverse-proxied services), it
 can match the inbound MGMT WebUI request first — and floating rules use the system's default gateway (WAN)
 for routing decisions unless told otherwise. The reply then leaves via WAN instead of MGMT. Because the
