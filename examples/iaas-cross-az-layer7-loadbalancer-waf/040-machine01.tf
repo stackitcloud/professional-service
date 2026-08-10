@@ -22,6 +22,7 @@ module "test-machine01" {
 
   name         = "machine01"
   machine_type = var.jumphost_flavor
+  image_id     = data.stackit_image_v2.debian.image_id
   disk_size    = 48
 
   user_data = templatefile("${path.module}/apache-debug-user.yaml", {})

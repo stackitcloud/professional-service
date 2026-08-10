@@ -18,27 +18,13 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">= 0.87.0"
+      version = ">= 0.110.0"
     }
     random = {
       source  = "hashicorp/random"
       version = ">= 3.6.3"
     }
-    restapi = {
-      source  = "Mastercard/restapi"
-      version = ">= 3.0.0"
-    }
   }
-}
-
-ephemeral "stackit_access_token" "alb" {}
-
-provider "restapi" {
-  uri          = "https://alb-waf.api.stackit.cloud"
-  bearer_token = ephemeral.stackit_access_token.alb.access_token
-
-  id_attribute         = "name"
-  write_returns_object = true
 }
 
 provider "stackit" {
