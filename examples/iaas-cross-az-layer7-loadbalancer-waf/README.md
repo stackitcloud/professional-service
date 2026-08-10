@@ -4,33 +4,36 @@
 
 A classic highly-available architecture: provisioning multiple VMs across different Availability Zones (AZs) and putting them behind a STACKIT L7 Load Balancer. This example also includes a Web Application Firewall (WAF) configuration to secure the backend workloads against malicious traffic.
 
-## ⚠️ Important Note: [WAF Implementation](06-waf.tf)
+## WAF Resources
 
-Currently, the official STACKIT Terraform provider does not natively support Web Application Firewall (WAF) resources.
+WAF resources are managed natively by the STACKIT Terraform provider (>= 0.110.0):
 
-To bridge this gap and fully automate the deployment, this example utilizes a `restapi` provider as a workaround. This allows Terraform to interact directly with the STACKIT WAF REST API (`/v1alpha/projects/...`) to create and attach the Core Rule Sets and custom SecLang rules until native support is released.
+| Resource                            | Purpose                                               |
+| ----------------------------------- | ----------------------------------------------------- |
+| `stackit_alb_waf_managed_rule_set`  | Activates the OWASP Core Rule Set (CRS)               |
+| `stackit_alb_waf_custom_rule_group` | Defines custom block rules                            |
+| `stackit_alb_waf_configuration`     | Attaches both rule sets to the load balancer listener |
+
+> **Note:** WAF resources are currently in beta. `enable_beta_resources = true` must be set in the `stackit` provider block.
 
 ## Testing the WAF
 
-This deployment includes rules written in SecLang. These rules are specifically designed to safely verify that the WAF is successfully deployed, actively intercepting traffic, and applying your configurations.
-
-Once `terraform apply` completes successfully, extract the public IP of your Load Balancer from the Terraform outputs:
+Once `terraform apply` completes, extract the public IP of your Load Balancer from the Terraform outputs:
 
 ```bash
-# Export the Load Balancer IP to an environment variable
 export ALB_IP=$(terraform output -raw alb_external_address)
 ```
 
-Now, use curl to trigger the custom rules. Because the WAF is configured to block these specific signatures, both of the following commands should return an HTTP 403 Forbidden status code.
+Use `curl` to trigger the custom block rules. Both commands should return HTTP `403 Forbidden`.
 
-Test 1: Trigger via Query Parameter
+**Test 1 — Query parameter**
 
-```Bash
+```bash
 curl -k -I -X GET "https://${ALB_IP}/?waf_test=trigger"
 ```
 
-Test 2: Trigger via Custom HTTP Header
+**Test 2 — Custom HTTP header**
 
-```Bash
+```bash
 curl -k -I -H "X-WAF-Test: trigger" "https://${ALB_IP}/"
 ```
