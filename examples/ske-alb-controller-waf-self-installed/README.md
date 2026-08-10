@@ -7,6 +7,9 @@ Deploys the [STACKIT ALB Controller](https://github.com/stackitcloud/application
 >
 > If you are running SKE and the [ALB extension](../ske-alb-controller-waf-extension) is available for your account, prefer it over this approach.
 
+> **Do not use this approach for SKE clusters.**
+> STACKIT plans to enable the ALB controller by default for new SKE clusters in the future. Running a self-installed controller alongside the managed one can cause conflicts, for example due to differing labels that make the controllers fight over the same resources. Use the [managed extension](../ske-alb-controller-waf-extension) for SKE instead.
+
 ## How it works
 
 The ALB Controller is a Kubernetes controller that watches `Ingress` objects and translates them into STACKIT Application Load Balancers, a fully managed L7 product. In this example the controller runs as a regular Pod deployed by Terraform, authenticating to the STACKIT API with a service account key.
