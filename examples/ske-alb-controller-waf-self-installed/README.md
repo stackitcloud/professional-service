@@ -3,9 +3,9 @@
 Deploys the [STACKIT ALB Controller](https://github.com/stackitcloud/application-load-balancer-controller) manually into an SKE cluster and wires it to a WAF configuration. This gives you full control over the controller lifecycle and configuration.
 
 > **Who should use this?**
-> This approach is relevant for anyone hosting their own Kubernetes cluster on STACKIT, including non-SKE clusters (e.g. kubeadm, k3s, RKE2) or SKE clusters where the managed extension is not available or not desired. You manage the controller pod, its service account, RBAC, and key rotation yourself.
+> This approach is relevant for anyone hosting their own Kubernetes cluster on STACKIT, including non-SKE clusters (e.g. kubeadm, k3s, RKE2). You manage the controller pod, its service account, RBAC, and key rotation yourself.
 >
-> If you are running SKE and the [ALB extension](../ske-alb-controller-extension/) is available for your account, prefer it over this approach.
+> If you are running SKE and the [ALB extension](../ske-alb-controller-waf-extension) is available for your account, prefer it over this approach.
 
 ## How it works
 
