@@ -16,23 +16,15 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">=0.95.0"
+      version = ">= 0.110.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = ">=2.30.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = ">=3.0.0"
-    }
-    time = {
-      source  = "hashicorp/time"
-      version = ">=0.9.1"
+      version = ">= 2.30.0"
     }
     tls = {
       source  = "hashicorp/tls"
-      version = ">=4.0.0"
+      version = ">= 4.0.0"
     }
   }
 }
@@ -41,12 +33,11 @@ provider "stackit" {
   default_region           = var.stackit_region
   service_account_key_path = var.stackit_service_account_key_path
   enable_beta_resources    = true
-  experiments              = ["iam"]
 }
 
 provider "kubernetes" {
-  host                   = yamldecode(module.ske.kubeconfig).clusters.0.cluster.server
-  client_certificate     = base64decode(yamldecode(module.ske.kubeconfig).users.0.user.client-certificate-data)
-  client_key             = base64decode(yamldecode(module.ske.kubeconfig).users.0.user.client-key-data)
-  cluster_ca_certificate = base64decode(yamldecode(module.ske.kubeconfig).clusters.0.cluster.certificate-authority-data)
+  host                   = yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
+  client_certificate     = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
+  client_key             = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
+  cluster_ca_certificate = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
 }

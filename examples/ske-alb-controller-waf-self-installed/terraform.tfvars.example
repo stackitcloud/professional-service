@@ -1,0 +1,3 @@
+stackit_org_id                   = "<your-organization-uuid>"
+stackit_admin_email              = "<your-admin-email>"
+stackit_service_account_key_path = "<path-to-sa-key.json>"

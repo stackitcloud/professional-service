@@ -45,6 +45,12 @@ variable "maintenance" {
   }
 }
 
+variable "extensions" {
+  description = "SKE cluster extensions (e.g. application_load_balancer, acl, dns). Passed through directly to the stackit_ske_cluster resource."
+  type        = any
+  default     = null
+}
+
 variable "node_pools" {
   description = "Configuration for the cluster node pools"
   type        = any
