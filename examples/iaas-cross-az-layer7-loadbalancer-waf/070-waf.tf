@@ -12,35 +12,67 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "restapi_object" "waf_crs" {
-  path = "/v1alpha/projects/${var.stackit_project_id}/regions/${var.stackit_region}/core-rule-sets"
-  data = jsonencode({
-    name   = "example-crs"
-    active = true
-  })
-
-  ignore_server_additions = true
+resource "stackit_alb_waf_managed_rule_set" "crs" {
+  project_id = var.stackit_project_id
+  name       = "example-crs"
+  type       = "TYPE_OWASP_CRS"
 }
 
-resource "restapi_object" "waf_rules" {
-  path = "/v1alpha/projects/${var.stackit_project_id}/regions/${var.stackit_region}/rules"
-  data = jsonencode({
-    name  = "example-rules"
-    rules = file("${path.module}/example-waf.conf")
-  })
+resource "stackit_alb_waf_custom_rule_group" "rules" {
+  project_id = var.stackit_project_id
+  name       = "example-rules"
 
-  ignore_server_additions = true
-  depends_on              = [restapi_object.waf_crs]
+  rules = [
+    {
+      description = "Block based on a specific query parameter (?waf_test=trigger)"
+      conditions = [
+        {
+          variable = {
+            type  = "VARIABLE_ARGS_GET"
+            value = "waf_test"
+          }
+          operator = {
+            type  = "OPERATOR_STREQ"
+            value = "trigger"
+          }
+        }
+      ]
+      behavior = {
+        action  = "ACTION_DENY"
+        log     = true
+        log_msg = "WAF Test Rule Triggered via Query Parameter"
+      }
+    },
+    {
+      description = "Block based on a specific custom header (X-WAF-Test: trigger)"
+      conditions = [
+        {
+          variable = {
+            type  = "VARIABLE_REQUEST_HEADERS"
+            value = "X-WAF-Test"
+          }
+          operator = {
+            type  = "OPERATOR_STREQ"
+            value = "trigger"
+          }
+        }
+      ]
+      behavior = {
+        action  = "ACTION_DENY"
+        log     = true
+        log_msg = "WAF Test Rule Triggered via Custom Header"
+      }
+    }
+  ]
+
+  depends_on = [stackit_alb_waf_managed_rule_set.crs]
 }
 
-resource "restapi_object" "waf" {
-  path = "/v1alpha/projects/${var.stackit_project_id}/regions/${var.stackit_region}/wafs"
-  data = jsonencode({
-    name            = "example-waf"
-    coreRuleSetName = restapi_object.waf_crs.api_data.name
-    rulesConfigName = restapi_object.waf_rules.api_data.name
-  })
+resource "stackit_alb_waf_configuration" "waf" {
+  project_id             = var.stackit_project_id
+  name                   = "example-waf"
+  managed_rule_set_name  = stackit_alb_waf_managed_rule_set.crs.name
+  custom_rule_group_name = stackit_alb_waf_custom_rule_group.rules.name
 
-  ignore_server_additions = true
-  depends_on              = [restapi_object.waf_rules]
+  depends_on = [stackit_alb_waf_custom_rule_group.rules]
 }

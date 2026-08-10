@@ -78,7 +78,7 @@ resource "stackit_application_load_balancer" "this" {
           ]
         }
       }
-      waf_config_name = restapi_object.waf.api_data.name
+      waf_config_name = stackit_alb_waf_configuration.waf.name
       protocol        = "PROTOCOL_HTTPS"
     }
   ]
