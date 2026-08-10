@@ -33,7 +33,7 @@ variable "stackit_admin_email" {
 variable "stackit_project_name" {
   description = "The name of the STACKIT project that hosts the SKE cluster and the ALBs."
   type        = string
-  default     = "ske-alb-controller"
+  default     = "ske-alb-self-installed"
 }
 
 variable "stackit_region" {
@@ -47,9 +47,9 @@ variable "stackit_service_account_key_path" {
 }
 
 variable "sna_name" {
-  description = "The name of the STACKIT Network Area (SNA). The SKE cluster is deployed into a network inside this SNA so that the network ID for the ALB controller is known."
+  description = "The name of the STACKIT Network Area (SNA)."
   type        = string
-  default     = "ske-alb-controller-sna"
+  default     = "ske-alb-self-installed-sna"
 }
 
 variable "sna_transfer_range" {
@@ -65,7 +65,7 @@ variable "sna_network_range" {
 }
 
 variable "sna_default_nameserver" {
-  description = "A list of STACKIT SNA default nameservers (IP addresses)."
+  description = "A list of STACKIT SNA default nameservers."
   type        = list(string)
   default     = ["1.1.1.1"]
 }
@@ -77,13 +77,13 @@ variable "network_ipv4_prefix" {
 }
 
 variable "alb_controller_image" {
-  description = "Container image of the STACKIT Application Load Balancer Controller. The image tag will still change while the controller PR is under review, see https://github.com/stackitcloud/application-load-balancer-controller/pull/3."
+  description = "Container image of the STACKIT Application Load Balancer Controller."
   type        = string
   default     = "ghcr.io/stackitcloud/application-load-balancer-controller:v0.1.0"
 }
 
 variable "test_app_hostname" {
-  description = "Hostname used for the demo Ingress and the self-signed TLS certificate. Does not need to be a registered DNS name; the verification uses curl --resolve."
+  description = "Hostname used for the demo Ingress and the self-signed TLS certificate. Does not need to be a registered DNS name; verification uses curl --resolve."
   type        = string
   default     = "alb-demo.example.com"
 }

@@ -24,6 +24,8 @@ resource "kubernetes_ingress_class_v1" "stackit_alb" {
     annotations = {
       # Mandatory; NodePort is currently the only supported network mode.
       "alb.stackit.cloud/network-mode" = "NodePort"
+      # Attaches the pre-provisioned WAF configuration to all listeners on this IngressClass.
+      "alb.stackit.cloud/web-application-firewall-name" = stackit_alb_waf_configuration.waf.name
     }
   }
 
