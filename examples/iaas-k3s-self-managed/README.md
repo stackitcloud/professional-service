@@ -2,7 +2,7 @@
 
 > **This example exists solely to validate STACKIT's open-source Kubernetes controllers on a self-managed cluster. It is not a production blueprint.**
 >
-> Running your own Kubernetes means you own etcd backups, control-plane upgrades, OS patching, certificate rotation, and monitoring. For any real workload, use **[STACKIT Kubernetes Engine (SKE)](https://docs.stackit.cloud/stackit/en/getting-started-kubernetes-75137142.html)** — a fully managed service covered by STACKIT SLAs. The same controllers validated here install identically on SKE: see [`ske-alb-controller-waf-self-installed`](../ske-alb-controller-waf-self-installed).
+> Running your own Kubernetes means you own etcd backups, control-plane upgrades, OS patching, certificate rotation, and monitoring. For any real workload, use **[STACKIT Kubernetes Engine (SKE)](https://docs.stackit.cloud/products/runtime/kubernetes-engine)** our fully managed service covered by STACKIT SLAs. The same controllers validated here install identically on SKE: see [`ske-alb-controller-waf-extension`](../ske-alb-controller-waf-extension).
 
 Deploys a 6-node k3s + Cilium cluster on STACKIT VMs and validates: L4 NLB, L7 ALB, CSI block storage, Cilium NetworkPolicy, and egress connectivity.
 
