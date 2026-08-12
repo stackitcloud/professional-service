@@ -4,13 +4,15 @@ Welcome to the central repository for STACKIT examples, scripts, and boilerplate
 
 > **⚠️ REPOSITORY MIRROR NOTICE**
 >
-> This GitHub repository is a **mirror**.
 > The primary, internal source of truth for this codebase lives at:
 > `https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service`
 >
-> We automatically sync changes from our STACKIT managed GIT instance to this public GitHub repository.
+> A public mirror is available on GitHub at:
+> https://github.com/stackitcloud/professional-service
 >
-> **Want to contribute?** > If you are an external contributor or do not have access to our internal systems, you are more than welcome to open Pull Requests directly here on GitHub! We will review them and merge them upstream.
+> We automatically sync changes from our STACKIT managed GIT instance to the public GitHub mirror.
+>
+> **Want to contribute?** If you are an external contributor or do not have access to our internal systems, you are more than welcome to open Pull Requests directly on GitHub! We will review them and merge them upstream.
 
 ---
 
