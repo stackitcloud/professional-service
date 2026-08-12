@@ -1,0 +1,70 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test: STACKIT Network Load Balancer (L4) via cloud-provider-stackit CCM
+#
+# Creates a Service type=LoadBalancer. The CCM watches for this and provisions a
+# STACKIT NLB automatically, wiring the worker nodes as targets on the NodePort.
+#
+# Verify: kubectl get svc -n test-l4-lb test-nlb-svc -o wide
+#   EXTERNAL-IP column shows the NLB's public IP once provisioned (~30–60 s).
+# Test:   curl http://<EXTERNAL-IP>
+#
+# STACKIT-specific NLB annotations (all optional):
+#   lb.stackit.cloud/internal-lb: "true"         — private NLB (no public IP)
+#   lb.stackit.cloud/service-plan-id: "p50"       — plan: p10 (default), p50, p250, p750
+#   lb.stackit.cloud/tcp-proxy-protocol: "true"   — enable PROXY protocol on TCP ports
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-l4-lb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo-server
+  namespace: test-l4-lb
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: echo-server
+  template:
+    metadata:
+      labels:
+        app: echo-server
+    spec:
+      containers:
+        - name: echo
+          image: nginxdemos/hello:plain-text
+          ports:
+            - containerPort: 80
+---
+# type: LoadBalancer triggers the CCM to provision a STACKIT NLB.
+# No provider-specific annotations are required for basic usage.
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-nlb-svc
+  namespace: test-l4-lb
+spec:
+  type: LoadBalancer
+  selector:
+    app: echo-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP

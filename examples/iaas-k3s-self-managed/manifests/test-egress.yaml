@@ -1,0 +1,66 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test: Cilium egress — one netshoot debug pod per node via DaemonSet
+#
+# Spawns a nicolaka/netshoot container on every node (including control planes).
+# Use it to test outbound connectivity, DNS, and egress NetworkPolicy enforcement.
+#
+# Get a shell on any node:
+#   kubectl get pods -n test-egress -o wide          # pick a pod / check its node
+#   kubectl exec -n test-egress -it <pod> -- bash
+#
+# Useful commands inside the shell:
+#   curl -s https://ifconfig.me                      # external egress + HTTPS
+#   curl -s http://httpbin.org/get                   # HTTP egress
+#   dig google.com                                   # DNS resolution
+#   ping -c 3 8.8.8.8                               # ICMP (blocked by SG by default)
+#   curl -s http://web-server.test-cilium/           # intra-cluster (no NetworkPolicy here)
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-egress
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: debug
+  namespace: test-egress
+spec:
+  selector:
+    matchLabels:
+      app: debug
+  template:
+    metadata:
+      labels:
+        app: debug
+    spec:
+      # Run on all nodes, including control-plane nodes (which carry NoSchedule taints).
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: netshoot
+          image: nicolaka/netshoot:latest
+          command: ["sleep", "infinity"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]

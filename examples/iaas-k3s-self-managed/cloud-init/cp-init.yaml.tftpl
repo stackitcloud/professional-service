@@ -1,0 +1,84 @@
+#cloud-config
+# First control plane: initialises the k3s HA cluster and installs Cilium CNI.
+# Subsequent control planes and workers join via cp-join / worker templates.
+#
+# Template variables (injected by Terraform):
+#   k3s_version    — e.g. "v1.31.4+k3s1"
+#   k3s_token      — shared cluster secret (pre-generated, same across all nodes)
+#   cp1_public_ip  — public IP of this node (used in TLS SAN for external kubectl)
+#   cp1_private_ip — private IP of this node (used by joining nodes)
+#   cluster_name   — used for the stackit.cloud/cluster node label
+
+package_update: true
+packages:
+  - curl
+  - jq
+  - git
+
+write_files:
+  # k3s configuration for the init control plane.
+  # flannel-backend=none and disable-network-policy=true are required for Cilium.
+  # disable traefik: the ALB controller handles Ingress instead.
+  # disable servicelb: the CCM provisions STACKIT NLBs for Service type=LoadBalancer.
+  # cloud-provider=external: tells kubelet to wait for CCM to initialise the node.
+  - path: /etc/rancher/k3s/config.yaml
+    content: |
+      cluster-init: true
+      flannel-backend: none
+      disable-network-policy: true
+      disable:
+        - traefik
+        - servicelb
+      cluster-cidr: 10.42.0.0/16
+      service-cidr: 10.43.0.0/16
+      tls-san:
+        - ${cp1_public_ip}
+        - ${cp1_private_ip}
+      token: ${k3s_token}
+      kubelet-arg:
+        - cloud-provider=external
+      node-label:
+        - stackit.cloud/node-role=control-plane
+        - stackit.cloud/cluster=${cluster_name}
+
+  # Helm + Cilium install script — runs after k3s API server is up.
+  - path: /opt/install-cilium.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -eo pipefail
+      export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+      echo "[CNI] Waiting for k3s API server..."
+      until k3s kubectl get nodes --no-headers 2>/dev/null | grep -qv "^$"; do
+        sleep 5
+      done
+
+      echo "[CNI] Installing Helm..."
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      echo "[CNI] Adding Cilium Helm repo..."
+      helm repo add cilium https://helm.cilium.io/
+      helm repo update
+
+      echo "[CNI] Installing Cilium..."
+      helm upgrade --install cilium cilium/cilium \
+        --namespace kube-system \
+        --set ipam.mode=kubernetes \
+        --set operator.replicas=1 \
+        --set kubeProxyReplacement=false \
+        --wait \
+        --timeout=5m0s || echo "[CNI] Cilium helm wait timed out (operator may still be initialising); continuing."
+
+      echo "[CNI] Cilium install done."
+
+runcmd:
+  # Install k3s server (cluster-init mode). Config is read from /etc/rancher/k3s/config.yaml.
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - server
+  # Make kubeconfig accessible to the ubuntu user (k3s creates it root-only).
+  - mkdir -p /home/ubuntu/.kube
+  - install -o ubuntu -g ubuntu -m 600 /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+  # Install k9s for cluster debugging.
+  - curl -sfL https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz | tar -xz -C /usr/local/bin k9s
+  # Install Cilium after k3s API is ready.
+  - /opt/install-cilium.sh

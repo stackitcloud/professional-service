@@ -1,0 +1,37 @@
+#cloud-config
+# Additional control plane nodes (CP2, CP3): join the k3s cluster initialised by CP1.
+#
+# Template variables (injected by Terraform):
+#   k3s_version    — must match cp-init
+#   k3s_token      — must match cp-init
+#   cp1_private_ip — private IP of CP1 (the cluster-init node)
+#   cluster_name   — used for the stackit.cloud/cluster node label
+
+package_update: true
+packages:
+  - curl
+
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    content: |
+      server: https://${cp1_private_ip}:6443
+      flannel-backend: none
+      disable-network-policy: true
+      disable:
+        - traefik
+        - servicelb
+      cluster-cidr: 10.42.0.0/16
+      service-cidr: 10.43.0.0/16
+      token: ${k3s_token}
+      kubelet-arg:
+        - cloud-provider=external
+      node-label:
+        - stackit.cloud/node-role=control-plane
+        - stackit.cloud/cluster=${cluster_name}
+
+runcmd:
+  # Wait until CP1's API is reachable. k3s v1.36 requires auth on /readyz (returns 401),
+  # so we use -sk without -f — any HTTP response means the server is up.
+  - until curl -sk --max-time 5 --output /dev/null https://${cp1_private_ip}:6443/; do sleep 10; done
+  # Join as an additional control plane server. Config is in /etc/rancher/k3s/config.yaml.
+  - curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="${k3s_version}" sh -s - server

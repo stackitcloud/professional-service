@@ -1,0 +1,102 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test: STACKIT Block Storage CSI driver
+#
+# Creates a StorageClass backed by STACKIT Block Storage, then a PVC and a Pod
+# that mounts it. The CSI driver provisions the volume and attaches it to the node.
+#
+# Also creates a VolumeSnapshotClass for testing snapshot support.
+#
+# Verify:
+#   kubectl get pvc -n test-csi          # Bound
+#   kubectl get pv                        # shows the STACKIT volume ID
+#   kubectl exec -n test-csi test-csi-pod -- cat /data/test.txt
+#
+# Snapshot test:
+#   kubectl apply -f - <<EOF
+#   apiVersion: snapshot.storage.k8s.io/v1
+#   kind: VolumeSnapshot
+#   metadata:
+#     name: test-snap
+#     namespace: test-csi
+#   spec:
+#     volumeSnapshotClassName: stackit-csi-snapshots
+#     source:
+#       persistentVolumeClaimName: test-pvc
+#   EOF
+#   kubectl get volumesnapshot -n test-csi
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-csi
+---
+# StorageClass — provisioner name from the official CSI driver docs.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: stackit-block-storage
+provisioner: block-storage.csi.stackit.cloud
+parameters:
+  type: storage_premium_perf4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+# VolumeSnapshotClass — requires the CSI snapshot controller (installed by bootstrap).
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: stackit-csi-snapshots
+driver: block-storage.csi.stackit.cloud
+deletionPolicy: Delete
+parameters:
+  type: snapshot
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc
+  namespace: test-csi
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: stackit-block-storage
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-csi-pod
+  namespace: test-csi
+spec:
+  containers:
+    - name: writer
+      image: busybox:stable
+      command:
+        [
+          "sh",
+          "-c",
+          "echo 'CSI volume mounted!' > /data/test.txt && sleep 3600",
+        ]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: test-pvc
