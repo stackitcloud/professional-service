@@ -5,7 +5,7 @@ Welcome to the central repository for STACKIT examples, scripts, and boilerplate
 > **⚠️ REPOSITORY MIRROR NOTICE**
 >
 > The primary, internal source of truth for this codebase lives at:
-> `https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service`
+> https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service
 >
 > A public mirror is available on GitHub at:
 > https://github.com/stackitcloud/professional-service
