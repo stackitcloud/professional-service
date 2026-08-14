@@ -1,0 +1,21 @@
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_region                   = "eu01"
+stackit_service_account_key_path = "/path/to/sa-key.json"
+
+# stackit beta edge-cloud plans list
+stec_plan_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# https://image-factory.edge.eu01.stackit.cloud/versions
+talos_version      = "v1.13.5-stackit.v1.7.16"
+kubernetes_version = "v1.33.0"
+
+cluster_name      = "edge-test-cluster"
+availability_zone = "eu01-1"
+
+cp_count     = 3
+worker_count = 3
+
+cp_machine_type     = "c2i.4"
+worker_machine_type = "c2i.8"
+
+disk_size_gb = 100

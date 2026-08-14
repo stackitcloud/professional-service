@@ -43,8 +43,9 @@ jobs:
           # Repository variables (non-sensitive): set under Settings → Variables
           AI_API_URL: ${{ vars.AI_API_URL }}
           AI_MODEL: ${{ vars.AI_MODEL }}
-          # Repository secret: set under Settings → Secrets
+          # Repository secrets: set under Settings → Secrets
           AI_BEARER_TOKEN: ${{ secrets.AI_BEARER_TOKEN }}
+          CLOUDMENT_TOKEN: ${{ secrets.CLOUDMENT_TOKEN }}
           # Automatically provided by Forgejo Actions
           FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
