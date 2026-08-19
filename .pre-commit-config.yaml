@@ -66,7 +66,8 @@ repos:
         description: Ensures all files have the Apache 2.0 license header (skips files starting with #cloud-config)
         entry: bash -c 'for f in "$@"; do head -n 1 "$f" | grep -q "^#cloud-config" || addlicense -c "Schwarz Digits Cloud GmbH & Co. KG" -l apache "$f"; done' --
         language: system
-        types_or: [terraform, python, go, javascript, yaml, json, html, css]
+        types_or:
+          [terraform, python, go, javascript, yaml, json, html, css, shell]
         pass_filenames: true
 
       - id: terraform-numbered-files
