@@ -77,3 +77,7 @@ keys
 
 # ignore backend.conf files, but keep backend.conf.example
 *backend.conf
+
+examples/iaas-edge-k8s-cluster/.generated/*
+examples/iaas-edge-k8s-cluster/downloads/*
+examples/iaas-edge-k8s-cluster/.stec.kubeconfig.json
