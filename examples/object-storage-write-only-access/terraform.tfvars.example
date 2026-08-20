@@ -1,0 +1,5 @@
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+owner_email                      = "user@example.com"
+stackit_service_account_key_path = "./keys/sa-key.json"
+bucket_name                      = "write-only-locked-bucket"
+credentials_project_name         = "s3-credentials-project"
