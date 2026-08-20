@@ -12,6 +12,8 @@ kubernetes_version = "v1.33.0"
 cluster_name      = "edge-test-cluster"
 availability_zone = "eu01-1"
 
+network_ipv4_prefix = "10.0.10.0/24"
+
 cp_count     = 3
 worker_count = 3
 

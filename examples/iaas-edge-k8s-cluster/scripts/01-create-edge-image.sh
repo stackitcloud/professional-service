@@ -100,10 +100,20 @@ RAW="${DOWNLOAD_DIR}/talos.raw"
 if [[ -f "${RAW}" && -s "${RAW}" ]]; then
   >&2 echo "==> talos.raw exists, skipping download."
 else
-  >&2 echo "==> Downloading ${IMAGE_NAME}..."
-  curl --fail --progress-bar -L -o "${RAW_XZ}" "${URL}"
+  # Download to a .part file and rename only on success
+  if [[ -f "${RAW_XZ}" && -s "${RAW_XZ}" ]]; then
+    >&2 echo "==> talos.raw.xz exists, skipping download."
+  else
+    >&2 echo "==> Downloading ${IMAGE_NAME}..."
+    curl --fail --progress-bar -L -o "${RAW_XZ}.part" "${URL}"
+    mv "${RAW_XZ}.part" "${RAW_XZ}"
+  fi
+
+  # Decompress with --decompress, to prevent in-place operations of unxz, rm afterwards
   >&2 echo "==> Decompressing..."
-  unxz "${RAW_XZ}"
+  xz --decompress --stdout "${RAW_XZ}" >"${RAW}.part"
+  mv "${RAW}.part" "${RAW}"
+  rm -f "${RAW_XZ}"
 fi
 
 # --- Upload to STACKIT IaaS -------------------------------------------------

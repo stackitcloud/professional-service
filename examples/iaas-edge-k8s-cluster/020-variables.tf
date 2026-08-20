@@ -92,6 +92,17 @@ variable "disk_size_gb" {
   }
 }
 
+variable "network_ipv4_prefix" {
+  type        = string
+  default     = "10.0.10.0/24"
+  description = "IPv4 prefix of the cluster network (must be a subnet of the SNA network range)."
+
+  validation {
+    condition     = can(cidrhost(var.network_ipv4_prefix, 0))
+    error_message = "Must be a valid IPv4 CIDR, e.g. 10.0.10.0/24."
+  }
+}
+
 variable "availability_zone" {
   type        = string
   default     = "eu01-1"

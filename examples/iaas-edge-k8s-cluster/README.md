@@ -9,7 +9,7 @@ STACKIT Cloud
 ├── STEC Management Plane
 │   └── EdgeImage: talos-<version>  (plain Talos)
 ├── IaaS (eu01-1)
-│   ├── Network (routed, 10.0.10.0/24)
+│   ├── Network (routed, var.network_ipv4_prefix)
 │   ├── Server: edge-cluster-cp-0    -> EdgeHost -> controlplane
 │   ├── Server: edge-cluster-cp-1    -> EdgeHost -> controlplane
 │   ├── Server: edge-cluster-cp-2    -> EdgeHost -> controlplane

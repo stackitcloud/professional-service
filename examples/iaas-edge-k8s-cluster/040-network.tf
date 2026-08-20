@@ -15,7 +15,7 @@
 resource "stackit_network" "cluster" {
   project_id       = var.stackit_project_id
   name             = "${var.cluster_name}-network"
-  ipv4_prefix      = "10.0.10.0/24"
+  ipv4_prefix      = var.network_ipv4_prefix
   ipv4_nameservers = ["9.9.9.9", "1.1.1.1"]
   routed           = true
   labels           = local.common_labels
