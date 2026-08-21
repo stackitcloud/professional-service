@@ -16,7 +16,7 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">= 0.110.0"
+      version = ">= 0.113.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -36,7 +36,6 @@ terraform {
 provider "stackit" {
   default_region           = var.stackit_region
   service_account_key_path = var.stackit_service_account_key_path
-  enable_beta_resources    = true
   experiments              = ["iam"]
 }
 

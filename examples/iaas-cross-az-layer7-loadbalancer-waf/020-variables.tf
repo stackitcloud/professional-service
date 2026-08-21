@@ -13,18 +13,19 @@
 # limitations under the License.
 
 variable "stackit_project_id" {
-  type    = string
-  default = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  type        = string
+  description = "The STACKIT project ID to deploy resources into."
 }
 
 variable "stackit_region" {
-  type    = string
-  default = "eu01"
+  type        = string
+  description = "The STACKIT region to deploy resources into."
+  default     = "eu01"
 }
 
 variable "stackit_service_account_key_path" {
-  type    = string
-  default = "../../keys/stackit-sa.json"
+  type        = string
+  description = "Path to the STACKIT service account key JSON file used for provider authentication."
 }
 
 resource "stackit_key_pair" "admin_keypair" {

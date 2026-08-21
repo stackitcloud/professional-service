@@ -69,9 +69,3 @@ ephemeral "stackit_ske_kubeconfig" "this" {
   project_id   = var.project_id
   cluster_name = stackit_ske_cluster.this.id != "" ? stackit_ske_cluster.this.name : ""
 }
-
-resource "kubernetes_namespace_v1" "test" {
-  metadata {
-    name = "test01"
-  }
-}

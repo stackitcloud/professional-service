@@ -12,23 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Define required providers
-terraform {
-  required_version = ">= 0.14.0"
-  required_providers {
-    stackit = {
-      source  = "stackitcloud/stackit"
-      version = ">= 0.87.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = ">= 3.6.3"
-    }
+resource "kubernetes_namespace_v1" "test" {
+  metadata {
+    name = "test01"
   }
-}
-
-provider "stackit" {
-  default_region           = var.stackit_region
-  service_account_key_path = var.stackit_service_account_key_path
-  enable_beta_resources    = true
 }
