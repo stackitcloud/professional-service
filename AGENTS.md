@@ -140,6 +140,8 @@ Fetch only the files relevant to the task. A typical example contains
   Deploy an SKE cluster and use an ephemeral kubeconfig to configure the Kubernetes provider without writing credentials to state
 - **`ske-kubernetes-terraform-provider`** `[ske, kubernetes, terraform, provider, kubeconfig]`  
   Demonstrates how to use the HashiCorp `kubernetes` provider to manage resources inside a SKE cluster
+- **`ske-nested-virtualization`** `[ske, kubernetes, nested-virtualization, kvm, compute, node-pool, terraform]`  
+  Deploys three node pools and runs a KVM smoke test on each to show which STACKIT flavors expose `/dev/kvm`
 - **`ske-nginx-rate-limit`** `[ske, nginx, rate-limit, kubernetes, ingress, proxy-protocol]`  
   When your application is accessed through a Load Balancer, the original client IP may not be visible to your pods unless the **TCP Proxy Protocol** is enabled and properly configured. STACKIT supports Proxy Protocol version 2. Please follow the steps below to ensure your application and ingress-nginx controller can correctly receive and log the original client IP
 - **`ske-observability-alerting-kube-state-metrics`** `[ske, observability, alerting, prometheus, kube-state-metrics, kubernetes]`  
