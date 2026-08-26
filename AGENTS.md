@@ -133,8 +133,12 @@ Fetch only the files relevant to the task. A typical example contains
   This example demonstrates how to use the **STACKIT Telemetry Router** to centralize observability data across multiple projects, folders, and even the entire organization
 - **`terraform-pg-backend-state-locking`** `[terraform, postgresql, state, backend, remote-state, locking]`  
   This repository demonstrates how to configure STACKIT PostgreSQL Flex as a Terraform backend to enable remote state storage and native state locking
-- **`vpn-usecases`** `[vpn, networking, ipsec, site-to-site, gcp, cross-cloud]`  
-  - [`STACKIT-STACKIT`](stackit-stackit) - [`STACKIT-GCP`](stackit-gcp) - [`STACKIT-AZURE`](stackit-azure)
+- **`vpn-stackit-azure`** `[vpn, networking, ipsec, site-to-site, azure, cross-cloud, ha, bgp]`  
+  This example demonstrates how to establish a secure, Highly Available (HA) IPsec VPN connection between a STACKIT Network Area (SNA) and Microsoft Azure
+- **`vpn-stackit-gcp`** `[vpn, networking, ipsec, site-to-site, gcp, cross-cloud, ha, bgp]`  
+  This example demonstrates how to establish a secure, Highly Available (HA) IPsec VPN connection between a STACKIT Network Area (SNA) and Google Cloud Platform (GCP)
+- **`vpn-stackit-stackit`** `[vpn, networking, ipsec, site-to-site, ha, bgp]`  
+  This example leverages the STACKIT VPN service to establish a secure, Highly Available (HA) connection between two separate STACKIT Network Areas (SNAs)
 
 ## Scripts
 
@@ -159,6 +163,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 ## Modules
 
+- **`stackit-sna-with-debug-machine`** `[vpn, networking, sna, iaas, compute, debug]`  
+  This module is used to quickly spin up a STACKIT Network Area (SNA) with a test virtual machine. We use this module to debug VPN connectivity
 - **`test-machine`** `[iaas, compute, test, vm, cloud-init]`  
   This module is used to quickly spin up a test virtual machine. Internally, we use this module to debug network connectivity and cloud-init configurations in a fast, frictionless manner
 - **`test-ske`** `[ske, kubernetes, test, cluster]`  

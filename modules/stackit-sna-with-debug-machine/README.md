@@ -1,6 +1,8 @@
+<!-- tags: vpn, networking, sna, iaas, compute, debug -->
+
 # SNA with test-machine module
 
-This module is used to quickly spin up a sna with a test virtual machine. We use this module to debug vpn connectivity.
+This module is used to quickly spin up a STACKIT Network Area (SNA) with a test virtual machine. We use this module to debug VPN connectivity.
 
 > ⚠️ **SECURITY WARNING**
 > Be careful: By default, **port security is disabled** on the network interface to allow unrestricted traffic for debugging purposes. **Do not use this module in a production environment**.
