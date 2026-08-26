@@ -7,6 +7,7 @@ Your contribution is welcome! Thank you for your interest in growing our shared 
 - [Developer Guide](#developer-guide)
   - [Pre-Commit Checks & CI](#pre-commit-checks--ci)
   - [Repository structure](#repository-structure)
+  - [Adding a new Example](#adding-a-new-example)
   - [Adding a new Terraform Module](#adding-a-new-terraform-module)
   - [Adding a new Script](#adding-a-new-script)
 - [Code Contributions](#code-contributions)
@@ -59,7 +60,37 @@ To maintain a clean and secure codebase, we enforce a strict CI pipeline on all 
 ```
 
 - **Terraform file naming:** All `.tf` files in examples **must** be prefixed with exactly 3 digits to enforce consistent ordering (e.g., `010-provider.tf`, `020-variables.tf`, `030-resources.tf`, `100-outputs.tf`). Files inside `modules/` directories are exempt from this rule. This check is enforced automatically by pre-commit.
+- **Tags:** Every example and module `README.md` must have a tag comment as its **very first line**. Scripts must have a Tags column entry in the `scripts/README.md` overview table. The `check-readme-tags` pre-commit hook and CI job enforce this automatically — see [the tagging rules](#tagging) below.
+- **AGENTS.md is auto-generated:** Do not edit `AGENTS.md` by hand. The `generate-agents-md` pre-commit hook regenerates it automatically whenever you change an example, module, or script. The `agents-md-check` CI job fails if the file is stale.
+- **No TODO comments:** The CI `todo-check` job rejects open TODO markers in code (prefixed with `#` or `//`) anywhere in the repository. Resolve all TODOs before opening a PR.
 - **Scan for Secrets:** Never commit credentials. We use `gitleaks` in the CI pipeline. Ensure you have no hardcoded tokens or passwords in your code.
+
+#### Tagging
+
+Tags drive the resource index in `AGENTS.md` and are the primary way AI coding assistants (and humans) discover relevant examples. The `check-readme-tags` hook validates both presence and format on every commit.
+
+**Format rules (enforced by CI):**
+
+- Lowercase letters, digits, and hyphens only — e.g. `object-storage`, not `objectStorage` or `object_storage`
+- Place the comment on **line 1** of `README.md`, before any other content
+
+```markdown
+<!-- tags: ske, velero, backup, object-storage, kubernetes -->
+
+# My Example Title
+```
+
+**Recommended tags** (see `AGENTS.md → Tag conventions` for the full vocabulary):
+
+| Category            | Tags                                                                              |
+| ------------------- | --------------------------------------------------------------------------------- |
+| STACKIT services    | `ske` `iaas` `dbaas` `iam` `alb` `waf` `vpn` `cdn` `sfs`                          |
+| Multi-word concepts | `object-storage` `block-storage` `secrets-manager` `load-balancer` `landing-zone` |
+| Kubernetes          | `kubernetes` `k3s` `gpu` `csi` `ingress` `ephemeral`                              |
+| Observability       | `otel` `telemetry` `observability` `metrics` `alerting`                           |
+| Security            | `encryption` `tls` `cert` `pki` `kms` `workload-identity`                         |
+| Networking          | `ha` `vrrp` `layer4` `layer7` `ipsec` `bgp` `sna` `hub-and-spoke`                 |
+| Tools               | `velero` `backup` `vault` `nginx` `opnsense`                                      |
 
 ### Repository structure
 
@@ -68,6 +99,37 @@ To keep things organized for everyone, please place your contributions in the co
 - `modules/`: Reusable Infrastructure-as-Code modules.
 - `examples/`: Working reference architectures.
 - `scripts/`: Helper tools and automation scripts (Python, Bash, Go).
+
+### Adding a new Example
+
+Examples live in `examples/<example-name>/` and should be complete, deployable Terraform configurations.
+
+1. **Create the example folder** using a descriptive, hyphenated name: `examples/vpn-stackit-gcp/`.
+2. **Name your files** with 3-digit numeric prefixes to control apply order:
+   - `010-provider.tf` — provider and `terraform` blocks
+   - `020-variables.tf` — all input variables
+   - `030-<resource>.tf` (or multiple: `030-network.tf`, `040-server.tf`)
+   - `060-outputs.tf` — output values
+3. **Add a `README.md`** with a tag comment on line 1, followed by a description, architecture overview, prerequisites, and usage:
+
+   ```markdown
+   <!-- tags: ske, velero, backup, object-storage, kubernetes -->
+
+   # My Example Title
+
+   ...
+   ```
+
+4. **Add a `terraform.tfvars.example`** with placeholder values for every required variable (no real IDs, keys, or credentials):
+
+   ```hcl
+   stackit_org_id                   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+   stackit_service_account_key_path = "/path/to/stackit-sa.json"
+   ```
+
+5. **Do not commit** `terraform.tfvars`, `terraform.tfstate`, `terraform.tfstate.backup`, `.terraform.lock.hcl`, or the `.terraform/` directory.
+6. **Test it locally:** `terraform init && terraform plan` must succeed before opening a PR.
+7. **AGENTS.md updates automatically** — the `generate-agents-md` pre-commit hook regenerates it from your README tags. No manual edit needed.
 
 ### Adding a new Terraform Module
 
@@ -79,15 +141,28 @@ If you built a great module for a customer project and want to share it, follow 
    - `variables.tf` (Inputs with clear descriptions and types)
    - `outputs.tf` (Values to return to the caller)
    - `README.md` (Documentation on what the module does and its inputs/outputs. We recommend using `terraform-docs` to generate this automatically).
-3. **Test it locally:** Run `terraform init`, `terraform plan`, and ideally `terraform apply` in a sandbox environment to ensure your code works before opening a PR.
+3. **Add tags on line 1** of `README.md` — see [Tagging](#tagging):
+
+   ```markdown
+   <!-- tags: ske, kubernetes, helm -->
+   ```
+
+4. **Test it locally:** Run `terraform init`, `terraform plan`, and ideally `terraform apply` in a sandbox environment to ensure your code works before opening a PR.
 
 ### Adding a new Script
 
-When adding scripts (e.g., data migration tools, API wrappers):
+When adding scripts (e.g., automation tools, API wrappers):
 
-1. Place it in the `scripts/` folder.
-2. Include a `requirements.txt`, `go.mod`, or `package.json` if your script has external dependencies.
-3. Add a short `README.md` in your script's folder explaining how to execute it and what parameters it accepts.
+1. **Place it in `scripts/`.**
+2. **Add a row to the overview table** in `scripts/README.md` — this is the canonical documentation for scripts (not a separate folder README). Include a Purpose, required tools, and a Tags column:
+
+   ```markdown
+   | [`my-script.sh`](#my-scriptsh) | What this script does. | `stackit`, `jq` | `ske, kubernetes` |
+   ```
+
+3. **Tags in the table must follow the same format rules** as README tags (lowercase, hyphens). The `check-readme-tags` hook validates the Tags column on every commit.
+4. **Add the detailed section** for your script below the table in `scripts/README.md`, explaining usage, flags, and examples.
+5. If the script has external package dependencies, include a `requirements.txt`, `go.mod`, or `package.json`.
 
 ## Code Contributions
 
