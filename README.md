@@ -48,3 +48,7 @@ Did you find a script that is broken because of a recent update? Did you build a
 
 Since this is a best-effort repository, we highly encourage you to open a Pull Request and share your fixes or additions! We all benefit from a growing, shared knowledge base. Please refer to our `CONTRIBUTING.md` for guidelines on how to format your code before submitting.
 Because this repository is maintained on a best-effort basis, discussions and reviews may take some time. However, we strive to respond within 7 business days.
+
+## AI Coding Agent Support
+
+[AGENTS.md](AGENTS.md) contains a tagged index of every example, script, and module in this repository, plus instructions the agent follows to fetch source files, verify provider schemas, and adapt examples for a customer's environment. It is **auto-generated** on every commit, do not edit it by hand.
