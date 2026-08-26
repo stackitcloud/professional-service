@@ -1,3 +1,5 @@
+<!-- tags: ske, kubernetes, terraform, provider, kubeconfig, ephemeral -->
+
 # SKE Kubernetes Ephemeral Kubeconfig
 
 ## Overview

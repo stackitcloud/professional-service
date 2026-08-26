@@ -1,3 +1,5 @@
+<!-- tags: ske, nginx, rate-limit, kubernetes, ingress, proxy-protocol -->
+
 # How to Forward the Real Client IP to the Ingress Controller
 
 When your application is accessed through a Load Balancer, the original client IP may not be visible to your pods unless the **TCP Proxy Protocol** is enabled and properly configured.

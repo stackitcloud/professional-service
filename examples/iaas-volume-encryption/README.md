@@ -1,3 +1,5 @@
+<!-- tags: iaas, volume, encryption, kms, block-storage -->
+
 # IaaS Volume Encryption (Terraform)
 
 ## Terraform Examples

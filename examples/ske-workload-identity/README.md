@@ -1,3 +1,5 @@
+<!-- tags: ske, workload-identity, iam, kubernetes, oidc, service-account -->
+
 # SKE Workload Identity
 
 ## Overview

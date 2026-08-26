@@ -1,3 +1,5 @@
+<!-- tags: ske, tls, certificate, pki, root-ca, kubernetes -->
+
 # Kubernetes Custom CA Injection Blueprint
 
 This project is a proof of concept for injecting a custom Root CA into a Kubernetes cluster at two levels:

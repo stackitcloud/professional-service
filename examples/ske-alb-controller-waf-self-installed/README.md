@@ -1,3 +1,5 @@
+<!-- tags: ske, alb, waf, kubernetes, ingress, load-balancer, helm -->
+
 # SKE ALB Controller Self-Installed
 
 Deploys the [STACKIT ALB Controller](https://github.com/stackitcloud/application-load-balancer-controller) manually into an SKE cluster and wires it to a WAF configuration. This gives you full control over the controller lifecycle and configuration.

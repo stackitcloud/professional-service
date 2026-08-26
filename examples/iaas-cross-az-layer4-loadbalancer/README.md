@@ -1,3 +1,5 @@
+<!-- tags: iaas, load-balancer, layer4, ha, networking, cross-az -->
+
 # IaaS cross AZ Layer4 Loadbalancer
 
 ## Overview

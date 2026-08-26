@@ -1,3 +1,5 @@
+<!-- tags: iaas, k3s, kubernetes, self-managed -->
+
 # Self-Managed k3s on STACKIT IaaS
 
 > **This example exists solely to validate STACKIT's open-source Kubernetes controllers on a self-managed cluster. It is not a production blueprint.**

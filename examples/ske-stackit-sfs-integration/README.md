@@ -1,3 +1,5 @@
+<!-- tags: ske, nfs, sfs, storage, kubernetes, rwx, file-storage -->
+
 # STACKIT File Storage Example Deployment
 
 Terraform Example of deploying a STACKIT File Storage NFS Service

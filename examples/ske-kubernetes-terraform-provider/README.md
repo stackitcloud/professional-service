@@ -1,3 +1,5 @@
+<!-- tags: ske, kubernetes, terraform, provider, kubeconfig -->
+
 # Terraform SKE Kubernetes Provider Integration
 
 ## Overview

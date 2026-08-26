@@ -1,3 +1,5 @@
+<!-- tags: terraform, postgresql, state, backend, remote-state, locking -->
+
 # STACKIT Terraform PostgreSQL Backend with State Locking
 
 This repository demonstrates how to configure STACKIT PostgreSQL Flex as a Terraform backend to enable remote state storage and native state locking.

@@ -1,3 +1,5 @@
+<!-- tags: iaas, windows, byol, migration, compute -->
+
 # **Guide: BYOL Migration to STACKIT**
 
 > ⚠️ Example images are still in German. Translating them into English is an open TODO.

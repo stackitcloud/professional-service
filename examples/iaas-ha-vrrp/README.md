@@ -1,3 +1,5 @@
+<!-- tags: iaas, ha, vrrp, networking -->
+
 # Basic High Availability Setup Using VRRP
 
 This guide provides a comprehensive, step-by-step process for setting up a Basic High Availability (HA)

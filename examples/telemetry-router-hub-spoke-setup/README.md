@@ -1,3 +1,5 @@
+<!-- tags: telemetry, otel, observability, metrics, logging, routing, multi-project -->
+
 # Telemetry Router: Hub-and-Spoke Setup
 
 This example demonstrates how to use the **STACKIT Telemetry Router** to centralize observability data across multiple projects, folders, and even the entire organization.

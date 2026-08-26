@@ -1,3 +1,5 @@
+<!-- tags: ske, external-secrets, kubernetes, secrets-manager, secrets -->
+
 # Terraform SKE External-Secrets/STACKIT Secret-Manager Sync
 
 ## Overview

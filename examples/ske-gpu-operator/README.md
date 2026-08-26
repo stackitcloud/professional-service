@@ -1,3 +1,5 @@
+<!-- tags: ske, gpu, kubernetes, nvidia, operator, h100 -->
+
 # SKE Kubernetes GPU Operator Installation
 
 ## Overview

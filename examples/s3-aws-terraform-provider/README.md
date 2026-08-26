@@ -1,3 +1,5 @@
+<!-- tags: s3, object-storage, terraform, aws-provider -->
+
 # Terraform AWS Provider S3 Integration
 
 ## Overview

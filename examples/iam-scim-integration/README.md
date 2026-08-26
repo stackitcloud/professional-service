@@ -1,3 +1,5 @@
+<!-- tags: iam, scim, authentik, oidc, identity, sso, ske -->
+
 # STACKIT IAM-SCIM Integration with Authentik
 
 This repository provides an automated setup for **Authentik** on STACKIT SKE, pre-configured as an Identity Provider (IdP) for STACKIT with both **OIDC** and **SCIM** support.

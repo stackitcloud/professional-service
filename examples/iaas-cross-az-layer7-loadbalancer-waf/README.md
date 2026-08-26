@@ -1,3 +1,5 @@
+<!-- tags: iaas, alb, load-balancer, layer7, ha, networking, waf, cross-az -->
+
 # IaaS cross AZ Layer 7 Loadbalancer
 
 ## Overview
