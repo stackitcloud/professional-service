@@ -1,3 +1,5 @@
+<!-- tags: cdn, s3, object-storage, static-website, waf -->
+
 # Static Website on STACKIT CDN with S3 Backend
 
 A reference implementation showing how to deploy a static website using [STACKIT CDN](https://stackit.com/en/products/network/stackit-cdn) with [STACKIT Object Storage](http://stackit.com/en/products/storage/stackit-object-storage) as the origin.

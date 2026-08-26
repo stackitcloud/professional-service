@@ -1,3 +1,5 @@
+<!-- tags: landing-zone, iam, organization, governance, terraform -->
+
 # STACKIT Landing Zone
 
 For the full Terraform Landing Zone implementation, please visit:

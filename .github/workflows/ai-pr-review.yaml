@@ -52,4 +52,4 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python .github/scripts/ai_pr_review.py
+        run: python3 .github/scripts/ai_pr_review.py

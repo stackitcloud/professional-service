@@ -1,3 +1,5 @@
+<!-- tags: iaas, image, compute, upload, custom-image -->
+
 # iaas-image-upload
 
 Upload a custom VM image to STACKIT using Terraform.

@@ -1,3 +1,5 @@
+<!-- tags: ske, observability, logging, alerting, promtail, kubernetes -->
+
 # SKE Observability Log-Alerts
 
 ## Overview

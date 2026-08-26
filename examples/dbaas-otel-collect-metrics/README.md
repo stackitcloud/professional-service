@@ -1,3 +1,5 @@
+<!-- tags: dbaas, postgresql, mongodb, otel, observability, metrics, monitoring -->
+
 # DBaaS OpenTelemetry Metrics Collection
 
 Collect metrics from STACKIT PostgreSQL Flex and MongoDB instances using OpenTelemetry (OTel) and export them to STACKIT Observability.

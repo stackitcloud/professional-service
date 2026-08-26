@@ -1,3 +1,5 @@
+<!-- tags: ske, kubernetes, test, cluster -->
+
 # Test SKE Module
 
 This module is designed to quickly spin up an SKE cluster. Internally, we use it to

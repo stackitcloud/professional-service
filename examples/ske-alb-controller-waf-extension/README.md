@@ -1,3 +1,5 @@
+<!-- tags: ske, alb, waf, kubernetes, ingress, load-balancer, managed -->
+
 # SKE ALB Controller Managed Extension
 
 Deploys an SKE cluster with the **Application Load Balancer extension** enabled and wires it to a WAF configuration. STACKIT runs and manages the ALB controller inside the cluster, no manual controller deployment, no service account key management, and no RBAC wiring.

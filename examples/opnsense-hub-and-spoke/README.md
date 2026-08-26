@@ -1,3 +1,5 @@
+<!-- tags: vpn, opnsense, networking, hub-and-spoke, firewall, routing -->
+
 # Hub-and-Spoke VPN on STACKIT — OPNsense Reference Implementation
 
 A reference implementation of a **hub-and-spoke network topology** on [STACKIT](https://www.stackit.de/), provisioned with Terraform.

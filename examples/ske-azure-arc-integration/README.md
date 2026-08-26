@@ -1,3 +1,5 @@
+<!-- tags: ske, azure, arc, kubernetes, hybrid, multi-cloud -->
+
 # STACKIT SKE Azure Arc Integration
 
 This repository contains Terraform and CLI steps to connect a **STACKIT SKE cluster** to **Azure Arc**.

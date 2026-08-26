@@ -1,3 +1,5 @@
+<!-- tags: ske, observability, alerting, prometheus, kube-state-metrics, kubernetes -->
+
 # SKE Observability alerting with Kube-State-Metrics
 
 ## Overview

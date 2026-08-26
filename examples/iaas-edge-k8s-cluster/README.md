@@ -1,3 +1,5 @@
+<!-- tags: iaas, edge, kubernetes, talos, compute -->
+
 # STACKIT Edge Cloud Cluster on IaaS
 
 Deploys a STACKIT Edge Cloud (STEC) management plane and a Talos Linux Kubernetes cluster on STACKIT Compute Engine VMs: three control plane nodes and three worker nodes.

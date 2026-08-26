@@ -1,3 +1,5 @@
+<!-- tags: ske, encryption, kms, block-storage, kubernetes, csi -->
+
 # Encrypted Volumes for SKE
 
 > ⚠️This example assumes that your project or organization has been enabled for a preview version of the STACKIT CSI Driver. If you wish to use encrypted volumes, please contact your account manager.

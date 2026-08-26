@@ -1,3 +1,5 @@
+<!-- tags: object-storage, s3, access-control, secrets-manager, object-lock, iam -->
+
 # Object Storage Write-Only Access with Object Lock
 
 ## Overview

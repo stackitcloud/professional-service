@@ -1,3 +1,5 @@
+<!-- tags: iaas, compute, test, vm, cloud-init -->
+
 # Test Machine Module
 
 This module is used to quickly spin up a test virtual machine. Internally, we use this module to debug network connectivity and cloud-init configurations in a fast, frictionless manner.

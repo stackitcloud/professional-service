@@ -28,15 +28,44 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
 
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
       - name: Search codebase
-        run: |
-          # Searches recursively (-r), showing line numbers (-n), ignoring binary files (-I)
-          # Excludes the .git directory to prevent false positives
-          if grep -rnIE "(#|//) ?TODO" --exclude-dir=.git --exclude-dir=.github .; then
-            echo "Error: TODOs found in the codebase. Please resolve them before merging."
-            exit 1
-          fi
-          echo "No TODOs found. Proceeding."
+        run: python3 .github/scripts/check_todos.py
+
+  agents-md-check:
+    name: "Check AGENTS.md is up to date"
+    needs: [readme-tags-check]
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Check AGENTS.md
+        run: python3 .github/scripts/generate_agents_md.py --check
+
+  readme-tags-check:
+    name: "Check README Tags"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Check tags in examples, modules, and scripts
+        run: python3 .github/scripts/check_readme_tags.py
 
   pre-commit-checks:
     name: "Pre-Commit Hooks"

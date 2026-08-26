@@ -1,3 +1,5 @@
+<!-- tags: secrets-manager, vault, secrets, terraform -->
+
 # STACKIT Secrets Manager Vault Provider Integration
 
 ## Overview

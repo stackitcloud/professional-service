@@ -582,6 +582,54 @@ CHECKS = [
             ),
         },
     },
+    {
+        "title": "🏷️ Tag Quality",
+        "content_fn": lambda: get_diff("examples/", "modules/", "scripts/"),
+        "llm": {
+            "system_prompt": (
+                "Given a git diff of files under examples/, modules/, and scripts/, check whether "
+                "the tags for any new or modified resource accurately reflect what it does.\n\n"
+                "Tag locations differ by resource type:\n"
+                "- examples/  → `<!-- tags: ... -->` comment on line 1 of the example's README.md\n"
+                "- modules/   → `<!-- tags: ... -->` comment on line 1 of the module's README.md\n"
+                "- scripts/   → Tags column in the overview table of scripts/README.md\n\n"
+                "For each touched resource check:\n"
+                "1. Do the tags cover the STACKIT products used? "
+                "(e.g. ske, dbaas, cdn, object-storage, secretsmanager, iaas)\n"
+                "2. Are key technologies or use-cases missing? "
+                "(e.g. velero, nginx, cert-manager, backup, encryption, workload-identity, ha)\n"
+                "3. Are all tags lowercase and hyphen-separated? "
+                "(e.g. rate-limit not rateLimit or rate_limit)\n"
+                "Only flag issues for resources touched in this diff. "
+                "For each issue suggest the corrected tag line or table cell. "
+                "If everything is correct respond with exactly: "
+                "✅ README tags accurately reflect the content."
+            ),
+            "additions_only": False,
+        },
+        "advisor": {
+            "question_fn": lambda content: (
+                "Review the following git diff covering examples/, modules/, and scripts/ in a "
+                "STACKIT professional-service repository. Check whether the tags for any new or "
+                "modified resource accurately reflect what it does.\n\n"
+                "Tag locations differ by resource type:\n"
+                "- examples/ → `<!-- tags: ... -->` on line 1 of the example's README.md\n"
+                "- modules/  → `<!-- tags: ... -->` on line 1 of the module's README.md\n"
+                "- scripts/  → Tags column in the overview table of scripts/README.md\n\n"
+                "For each touched resource check:\n"
+                "1. Do the tags include the correct STACKIT products? "
+                "(e.g. ske, dbaas, cdn, object-storage, secretsmanager, iaas)\n"
+                "2. Are important open-source tools or patterns missing? "
+                "(e.g. velero, nginx, cert-manager, backup, workload-identity, encryption)\n"
+                "3. Are all tags lowercase and hyphen-separated?\n"
+                "Only evaluate resources touched in this diff. "
+                "For each issue suggest the corrected tag line or table cell. "
+                "If everything is correct respond with exactly: "
+                "✅ README tags accurately reflect the content.\n\n"
+                f"Git diff:\n```\n{content}\n```"
+            ),
+        },
+    },
 ]
 
 
