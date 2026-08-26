@@ -1,3 +1,5 @@
+<!-- tags: vpn, networking, ipsec, site-to-site, gcp, cross-cloud, ha, bgp -->
+
 # STACKIT-to-GCP HA VPN Gateway
 
 This example demonstrates how to establish a secure, Highly Available (HA) IPsec VPN connection between a STACKIT Network Area (SNA) and Google Cloud Platform (GCP).

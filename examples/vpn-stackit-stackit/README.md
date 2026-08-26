@@ -1,3 +1,5 @@
+<!-- tags: vpn, networking, ipsec, site-to-site, ha, bgp -->
+
 # STACKIT-to-STACKIT VPN Gateway
 
 This example leverages the STACKIT VPN service to establish a secure, Highly Available (HA) connection between two separate STACKIT Network Areas (SNAs).

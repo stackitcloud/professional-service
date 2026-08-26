@@ -1,3 +1,5 @@
+<!-- tags: vpn, networking, ipsec, site-to-site, azure, cross-cloud, ha, bgp -->
+
 # STACKIT-to-Azure HA VPN Gateway
 
 > ⚠️ azurerm_virtual_network_gateway.azure_gateway takes between 30-90mins

@@ -28,7 +28,6 @@ terraform {
 provider "stackit" {
   default_region           = var.stackit_region
   service_account_key_path = var.stackit_service_account_key_path
-  enable_beta_resources    = true
 }
 
 provider "azurerm" {

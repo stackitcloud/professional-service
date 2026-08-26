@@ -78,6 +78,9 @@ _KNOWN_TAGS = frozenset(
         "layer7",
         "cross-az",
         "site-to-site",
+        "ipsec",
+        "bgp",
+        "sna",
         # Kubernetes / container ecosystem
         "kubernetes",
         "k3s",

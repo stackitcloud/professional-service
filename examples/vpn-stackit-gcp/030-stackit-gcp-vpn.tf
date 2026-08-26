@@ -14,7 +14,7 @@
 
 # STACKIT Side (vpn-sna-01)
 module "vpn_sna_01" {
-  source                    = "../modules/stackit-sna-with-debug-machine"
+  source                    = "../../modules/stackit-sna-with-debug-machine"
   machine_availability_zone = "eu01-1"
   machine_ipv4_prefix       = "10.10.10.0/24"
   machine_network_name      = "vpn-sna-01"
