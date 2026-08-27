@@ -1,0 +1,2 @@
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_service_account_key_path = "/path/to/your/stackit-sa.json"
