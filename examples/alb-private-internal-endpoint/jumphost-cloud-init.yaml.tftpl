@@ -1,0 +1,9 @@
+#cloud-config
+write_files:
+  - path: /usr/local/share/ca-certificates/private-ca.crt
+    permissions: "0644"
+    content: |
+      ${indent(6, chomp(ca_cert))}
+
+runcmd:
+  - update-ca-certificates

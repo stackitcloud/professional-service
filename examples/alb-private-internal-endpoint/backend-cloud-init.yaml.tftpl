@@ -1,0 +1,36 @@
+#cloud-config
+write_files:
+  - path: /opt/backend/server.py
+    permissions: "0755"
+    content: |
+      ${indent(6, chomp(server_py))}
+  - path: /etc/backend/server.crt
+    permissions: "0644"
+    content: |
+      ${indent(6, chomp(server_cert))}
+  - path: /etc/backend/server.key
+    permissions: "0600"
+    content: |
+      ${indent(6, chomp(server_key))}
+  - path: /etc/systemd/system/backend.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=HTTPS backend for load balancer TLS bridging tests
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /opt/backend/server.py ${backend_port}=/etc/backend/server.crt:/etc/backend/server.key ${untrusted_port}=/etc/backend/untrusted.crt:/etc/backend/untrusted.key
+      Restart=always
+      RestartSec=2
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # Self-signed certificate for the untrusted port, created on the VM so that
+  # no CA of this example has signed it.
+  - openssl req -x509 -newkey rsa:2048 -nodes -days 365 -subj "/CN=untrusted" -keyout /etc/backend/untrusted.key -out /etc/backend/untrusted.crt
+  - systemctl daemon-reload
+  - systemctl enable --now backend.service
