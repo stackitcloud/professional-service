@@ -46,17 +46,17 @@ flowchart LR
 
 ## What gets created
 
-| Component        | Resource                                                                   | Purpose                                                                                  |
-| ---------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Network          | `stackit_network`, `stackit_security_group`, `stackit_security_group_rule` | Private network and a security group for the backends                                    |
-| Backends         | `stackit_server`, `stackit_network_interface` (one per AZ)                 | Debian VMs, provisioned by cloud-init with the test application on port 8080             |
-| Certificate      | `tls_private_key`, `tls_self_signed_cert`, `stackit_alb_certificate`       | Self-signed certificate for the HTTPS listener                                           |
-| Load balancer    | `stackit_public_ip`, `stackit_application_load_balancer`                   | HTTPS listener, target pool with active health check, log and metric shipping            |
-| WAF              | `stackit_alb_waf_managed_rule_set`, `_custom_rule_group`, `_configuration` | OWASP Core Rule Set plus one custom deny rule (`X-Waf-Demo: block`)                      |
-| Observability    | `stackit_observability_instance`, `stackit_observability_credential`       | Instance that stores logs and metrics, technical user for pushing and querying           |
-| Push credentials | `stackit_loadbalancer_observability_credential`                            | Copy of the technical user in the load balancer service, referenced by `credentials_ref` |
-| Metric alerts    | `stackit_observability_alertgroup`                                         | Recording rules and PromQL alerts, see [Alert rules](#alert-rules)                       |
-| Log alerts       | `stackit_observability_logalertgroup`                                      | LogQL alerts on the WAF log stream                                                       |
+| Component        | Resource                                                                   | Purpose                                                                                          |
+| ---------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Network          | `stackit_network`, `stackit_security_group`, `stackit_security_group_rule` | Private network and a security group for the backends                                            |
+| Backends         | `stackit_server`, `stackit_network_interface` (one per AZ)                 | Debian VMs, provisioned by cloud-init with the test application (`files/server.py`) on port 8080 |
+| Certificate      | `tls_private_key`, `tls_self_signed_cert`, `stackit_alb_certificate`       | Self-signed certificate for the HTTPS listener                                                   |
+| Load balancer    | `stackit_public_ip`, `stackit_application_load_balancer`                   | HTTPS listener, target pool with active health check, log and metric shipping                    |
+| WAF              | `stackit_alb_waf_managed_rule_set`, `_custom_rule_group`, `_configuration` | OWASP Core Rule Set plus one custom deny rule (`X-Waf-Demo: block`)                              |
+| Observability    | `stackit_observability_instance`, `stackit_observability_credential`       | Instance that stores logs and metrics, technical user for pushing and querying                   |
+| Push credentials | `stackit_loadbalancer_observability_credential`                            | Copy of the technical user in the load balancer service, referenced by `credentials_ref`         |
+| Metric alerts    | `stackit_observability_alertgroup`                                         | Recording rules and PromQL alerts, see [Alert rules](#alert-rules)                               |
+| Log alerts       | `stackit_observability_logalertgroup`                                      | LogQL alerts on the WAF log stream                                                               |
 
 The WAF configuration is intentionally minimal. See [`iaas-cross-az-layer7-loadbalancer-waf`](../iaas-cross-az-layer7-loadbalancer-waf/README.md) for the full WAF example.
 

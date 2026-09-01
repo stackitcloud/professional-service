@@ -53,5 +53,6 @@ resource "stackit_server" "backend" {
 
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
     backend_port = local.backend_port
+    server_py    = file("${path.module}/files/server.py")
   })
 }

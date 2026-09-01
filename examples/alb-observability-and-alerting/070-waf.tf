@@ -57,6 +57,4 @@ resource "stackit_alb_waf_configuration" "this" {
   managed_rule_set_name  = stackit_alb_waf_managed_rule_set.crs.name
   custom_rule_group_name = stackit_alb_waf_custom_rule_group.this.name
   labels                 = local.labels
-
-  depends_on = [stackit_alb_waf_custom_rule_group.this]
 }
