@@ -1,0 +1,25 @@
+#cloud-config
+write_files:
+  - path: /opt/backend/server.py
+    permissions: "0755"
+    content: |
+      ${indent(6, chomp(server_py))}
+  - path: /etc/systemd/system/backend.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=HTTP backend for load balancer routing tests
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /opt/backend/server.py ${backend_arguments}
+      Restart=always
+      RestartSec=2
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - systemctl daemon-reload
+  - systemctl enable --now backend.service
