@@ -88,6 +88,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 ## Examples
 
+- **`alb-observability-and-alerting`** `[iaas, alb, waf, load-balancer, layer7, observability, metrics, alerting, log-alerts, grafana, tls]`  
+  Ships the metrics and logs of a STACKIT Application Load Balancer into a STACKIT Observability instance and adds alert rules and a Grafana dashboard on top of them
 - **`alb-tls-examples`** `[alb, tls, certificate, load-balancer, lets-encrypt, iaas, ske]`  
   A collection of STACKIT Application Load Balancer (ALB) showcases with different TLS strategies — from self-signed to Let's Encrypt, from a single VM to Kubernetes
 - **`cdn-s3-static-website`** `[cdn, s3, object-storage, static-website, waf]`  
