@@ -88,6 +88,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 ## Examples
 
+- **`alb-multi-tenant-routing`** `[iaas, alb, load-balancer, layer7, routing, tls, sni, ha, cross-az, canary, websocket]`  
+  One STACKIT Application Load Balancer in front of several applications: two hostnames on a single HTTPS listener, path, header and query parameter rules, cookie persistence, WebSocket, and a target pool with its own health check per application
 - **`alb-tls-examples`** `[alb, tls, certificate, load-balancer, lets-encrypt, iaas, ske]`  
   A collection of STACKIT Application Load Balancer (ALB) showcases with different TLS strategies — from self-signed to Let's Encrypt, from a single VM to Kubernetes
 - **`cdn-s3-static-website`** `[cdn, s3, object-storage, static-website, waf]`  
