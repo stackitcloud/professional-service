@@ -186,9 +186,12 @@ JuiceFS can be configured in two data hydration modes depending on dataset size 
 - **Mode 1: Local NVMe Caching Mode (Recommended for Iterative Training)**
   <br>JuiceFS utilizes the H100 worker node's 1,536 GB of local NVMe storage as a local read cache. Epoch 0 hydrates the local NVMe cache; subsequent training epochs read data directly from local NVMe storage at 10+ GB/s, bypassing network storage limits.
 - **Mode 2: Object Storage Pass-Through Mode (`cache-size=0`)**
-  <br>JuiceFS presents a standard local POSIX filesystem interface to PyTorch/TensorFlow dataloaders, but forwards I/O read requests directly to STACKIT Object Storage without persisting data to local disk. Throughput is capped by the SKE worker node's network connection to Object Storage (~24 Gbps / ~3.0 GB/s).
+  <br>JuiceFS presents a standard local POSIX filesystem interface to PyTorch/TensorFlow dataloaders, but forwards I/O read requests directly to STACKIT Object Storage without persisting data to local disk. Throughput is capped by the SKE worker node's network connection to Object Storage.
 
-Note that only the machine type `n3.104d.g8` is equipped with NVMe storage.
+**Remarks**
+
+- Note that only the machine type `n3.104d.g8` (NVIDIA H100 HGX) is equipped with NVMe storage. Machine types with NVIDIA H100 NVL (`n3.14d.g1`, `n3.28d.g2`, `n3.56d.g4`) do not have this option.
+- The current default speed for S3 Object Storage is approximately 5 Gbps (~0.64 GB/s). This can be be adjusted to up to 24 Gbps (~3 GB/s) better suit AI training workloads. Contact your Account Manager if important for your use case
 
 ### JuiceFS integration into SKE
 
@@ -241,7 +244,7 @@ flowchart LR
 
 - Local NVMe caching bypasses network storage attachment ceilings, providing the multi-gigabyte bandwidth required to keep 8x H100 GPUs fully saturated without data starvation.
 - For datasets larger than 1.5 TB there are two options
-  - Use Mode 2 to read datasets directly from Object Storage. This implies a throughput cap at ~24 Gbps (~3.0 GB/s), which will lead to GPU starvation.
+  - Use Mode 2 to read datasets directly from Object Storage.
   - Periodically use dataset chunks that fit into the 1.5 TB NVMe storage. This could be done with a sidecar container or a suitable object storage layout with periodic juicefs warmups. This approach is expected to lead to the best GPU-utilization but requires modifications to existing training scripts.
 
 ### Further resources
