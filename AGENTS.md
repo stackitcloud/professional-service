@@ -136,6 +136,8 @@ Fetch only the files relevant to the task. A typical example contains
   This repository demonstrates how to synchronize STACKIT Secrets Manager secrets with Kubernetes secrets using External Secrets
 - **`ske-gpu-operator`** `[ske, gpu, kubernetes, nvidia, operator, h100]`  
   This example demonstrates how to deploy a SKE cluster with an NVIDIA H100 node pool and install the GPU Operator
+- **`ske-gpu-storage`** `[ske, juicefs, csi-driver, s3, object-storage, rwx, read-write-many, redis, kubernetes]`  
+  This note describes several data storage options to support single node foundation model training on STACKIT Kubernetes Engine (SKE) with a focus on NVIDIA H100 nodes for computer vision and automotive applications. This includes **data hydration** (making data available for GPUs to achieve optimal GPU-utilization) and **checkpoint persistence** (writing and loading of training checkpoints for recovery) using STACKIT Object Storage
 - **`ske-kubernetes-ephemeral-kubernetes-provider`** `[ske, kubernetes, terraform, provider, kubeconfig, ephemeral]`  
   Deploy an SKE cluster and use an ephemeral kubeconfig to configure the Kubernetes provider without writing credentials to state
 - **`ske-kubernetes-terraform-provider`** `[ske, kubernetes, terraform, provider, kubeconfig]`  
