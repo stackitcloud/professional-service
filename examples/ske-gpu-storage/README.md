@@ -81,7 +81,7 @@ flowchart LR
   end
   NFS["NFS<br>(training storage)"]
   S3["Object Storage<br>(durable storage)"]
-  
+
   S3 <-- "copy" --> NFS
   NFS o--o PV
   PV o--o PVC
@@ -142,7 +142,7 @@ flowchart LR
   end
   BS["Block Storage<br>(training storage)"]
   S3["Object Storage<br>(durable storage)"]
-  
+
   S3 <-- "copy" --> BS
   BS o--o PV
   PV o--o PVC
@@ -214,7 +214,7 @@ flowchart LR
   end
   Redis["Redis<br>(JuiceFS Metadata)"]
   S3["Object Storage<br>(Dataset Chunks)"]
-  
+
   S3 -- "warmup" --> NVMe
   NVMe -- "write checkpoints" --> S3
   S3 -- "cache miss" --> PV
@@ -252,13 +252,13 @@ flowchart LR
 
 ## Summary
 
-| Metric/Feature | Option 1:<br> File Storage (NFS) | Option 2:<br> Block Storage | Option 3:<br>Juice FS (NVMe Cache) |
-| :- | :- | :- | :- |
-| Max. Throughput | ~2.44 GB/s (capped by 20 TB limit) | ~3.0 GB/s (capped by VM network) | 10+ GB/s (Local NVMe speed) |
-| K8s Access Mode | `ReadWriteMany` (RWX) | `ReadWriteOnce` (RWO) | `ReadWriteMany` (RWX) |
-| ADAS IOPS Performance | Poor (RPC lock overhead) | Moderate (Lower block latency) | High (Redis metadata offload) |
-| H100 GPU Starvation Risk | High | High | Low (with local cache) |
-| Code Changes Required | High (manual staging logic) | High (multi-container sidecars) | Low (without local cache), Medium (with local cache) |
+| Metric/Feature           | Option 1:<br> File Storage (NFS)   | Option 2:<br> Block Storage      | Option 3:<br>Juice FS (NVMe Cache)                   |
+| :----------------------- | :--------------------------------- | :------------------------------- | :--------------------------------------------------- |
+| Max. Throughput          | ~2.44 GB/s (capped by 20 TB limit) | ~3.0 GB/s (capped by VM network) | 10+ GB/s (Local NVMe speed)                          |
+| K8s Access Mode          | `ReadWriteMany` (RWX)              | `ReadWriteOnce` (RWO)            | `ReadWriteMany` (RWX)                                |
+| ADAS IOPS Performance    | Poor (RPC lock overhead)           | Moderate (Lower block latency)   | High (Redis metadata offload)                        |
+| H100 GPU Starvation Risk | High                               | High                             | Low (with local cache)                               |
+| Code Changes Required    | High (manual staging logic)        | High (multi-container sidecars)  | Low (without local cache), Medium (with local cache) |
 
 ## Recommendation
 
