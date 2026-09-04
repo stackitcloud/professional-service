@@ -1,0 +1,14 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# stackit_region defaults to "eu01" and can be omitted.
+
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_service_account_key_path = "/path/to/stackit-sa.json"
+
+# Source address range that may reach the jump host over SSH (curl -s https://ifconfig.me).
+admin_cidr = "203.0.113.10/32"
+
+# SSH public key for the jump host.
+ssh_public_key = "ssh-ed25519 AAAA... user@host"
+
+# Optional: hostname of the API becomes api.<internal_domain>.
+# internal_domain = "internal.example"
