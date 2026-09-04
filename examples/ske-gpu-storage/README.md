@@ -38,10 +38,10 @@ The STACKIT File Storage ("File Storage") service provides a high-performance fi
 A resource pool contains a collection of shares. Resource pools have a capacity limit of 20 TB. They can be configured with the following storage performance classes
 
 | Performance class | IOPS per TiB | Throughput Density<br> (MiB/s per TiB) |
-| -: | -: | -: |
-| Standard | 1000 | 16 |
-| Premium | 4000 | 64 |
-| Ultra | 10000 | 128 |
+| ----------------: | -----------: | -------------------------------------: |
+|          Standard |         1000 |                                     16 |
+|           Premium |         4000 |                                     64 |
+|             Ultra |        10000 |                                    128 |
 
 where TiB refers to Tebibyte and MiB to Mebibyte. Note that throughput density measures the speed that the storage yields relative to a capacity. It is related to bandwidth according to
 
@@ -52,11 +52,11 @@ $$
 The following table provides conversion examples of storage sizes to bandwidth for the Ultra performance class:
 
 | Storage<br> (TB) | Storage<br> (TiB) | Throughput Density<br> (MiB/s per TiB) | Total Density<br> (MiB/s) | Bandwidth<br> (GB/s) |
-| -: | -: | -: | -: | -: |
-| 1 | 0.9095 | 128 | 116.42 | 0.122 |
-| 5 | 4.5475 | 128 | 582.08 | 0.610 |
-| 10 | 9.0949 | 128 | 1,164.15 | 1.221 |
-| 20 | 18.1899 | 128 | 2,328.31 | 2.441 |
+| ---------------: | ----------------: | -------------------------------------: | ------------------------: | -------------------: |
+|                1 |            0.9095 |                                    128 |                    116.42 |                0.122 |
+|                5 |            4.5475 |                                    128 |                    582.08 |                0.610 |
+|               10 |            9.0949 |                                    128 |                  1,164.15 |                1.221 |
+|               20 |           18.1899 |                                    128 |                  2,328.31 |                2.441 |
 
 ### NFS integration into SKE
 
@@ -184,9 +184,9 @@ flowchart LR
 JuiceFS can be configured in two data hydration modes depending on dataset size and access patterns:
 
 - **Mode 1: Local NVMe Caching Mode (Recommended for Iterative Training)**
-<br>JuiceFS utilizes the H100 worker node's 1,536 GB of local NVMe storage as a local read cache. Epoch 0 hydrates the local NVMe cache; subsequent training epochs read data directly from local NVMe storage at 10+ GB/s, bypassing network storage limits.
+  <br>JuiceFS utilizes the H100 worker node's 1,536 GB of local NVMe storage as a local read cache. Epoch 0 hydrates the local NVMe cache; subsequent training epochs read data directly from local NVMe storage at 10+ GB/s, bypassing network storage limits.
 - **Mode 2: Object Storage Pass-Through Mode (`cache-size=0`)**
-<br>JuiceFS presents a standard local POSIX filesystem interface to PyTorch/TensorFlow dataloaders, but forwards I/O read requests directly to STACKIT Object Storage without persisting data to local disk. Throughput is capped by the SKE worker node's network connection to Object Storage (~24 Gbps / ~3.0 GB/s).
+  <br>JuiceFS presents a standard local POSIX filesystem interface to PyTorch/TensorFlow dataloaders, but forwards I/O read requests directly to STACKIT Object Storage without persisting data to local disk. Throughput is capped by the SKE worker node's network connection to Object Storage (~24 Gbps / ~3.0 GB/s).
 
 Note that only the machine type `n3.104d.g8` is equipped with NVMe storage.
 
