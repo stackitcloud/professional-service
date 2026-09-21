@@ -88,6 +88,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 ## Examples
 
+- **`alb-multi-tenant-routing`** `[iaas, alb, load-balancer, layer7, routing, tls, sni, ha, cross-az, canary, websocket]`  
+  One STACKIT Application Load Balancer in front of several applications: two hostnames on a single HTTPS listener, path, header and query parameter rules, cookie persistence, WebSocket, and a target pool with its own health check per application
 - **`alb-observability-and-alerting`** `[iaas, alb, waf, load-balancer, layer7, observability, metrics, alerting, log-alerts, grafana, tls]`  
   Ships the metrics and logs of a STACKIT Application Load Balancer into a STACKIT Observability instance and adds alert rules and a Grafana dashboard on top of them
 - **`alb-private-internal-endpoint`** `[iaas, alb, load-balancer, layer7, tls, pki, cert, encryption, networking, ha, cross-az]`  
