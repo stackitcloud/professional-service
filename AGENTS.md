@@ -88,6 +88,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 ## Examples
 
+- **`alb-observability-and-alerting`** `[iaas, alb, waf, load-balancer, layer7, observability, metrics, alerting, log-alerts, grafana, tls]`  
+  Ships the metrics and logs of a STACKIT Application Load Balancer into a STACKIT Observability instance and adds alert rules and a Grafana dashboard on top of them
 - **`alb-private-internal-endpoint`** `[iaas, alb, load-balancer, layer7, tls, pki, cert, encryption, networking, ha, cross-az]`  
   An internal-only STACKIT Application Load Balancer: no public address, load balancer and backends in separate networks, the target security group of the load balancer assigned by the configuration instead of by the service, and TLS from the client to the load balancer and again from the load balancer to the backends, verified against a private CA
 - **`alb-tls-examples`** `[alb, tls, certificate, load-balancer, lets-encrypt, iaas, ske]`  
@@ -96,6 +98,8 @@ Fetch only the files relevant to the task. A typical example contains
   A reference implementation showing how to deploy a static website using [STACKIT CDN](https://stackit.com/en/products/network/stackit-cdn) with [STACKIT Object Storage](http://stackit.com/en/products/storage/stackit-object-storage) as the origin
 - **`dbaas-otel-collect-metrics`** `[dbaas, postgresql, mongodb, otel, observability, metrics, monitoring]`  
   Collect metrics from STACKIT PostgreSQL Flex and MongoDB instances using OpenTelemetry (OTel) and export them to STACKIT Observability
+- **`dbaas-postgresql-kms-encryption`** `[dbaas, postgresql, kms, encryption, backup, key-management]`  
+  Deploys a STACKIT PostgreSQL Flex instance whose volume **and backup storage** are encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/), together with the keyring, the key and the service account the database service uses to unwrap that key
 - **`iaas-cross-az-layer4-loadbalancer`** `[iaas, load-balancer, layer4, ha, networking, cross-az]`  
   A classic highly-available architecture: provisioning multiple VMs across different Availability Zones (AZs) and putting them behind a STACKIT L4 Load Balancer
 - **`iaas-cross-az-layer7-loadbalancer-waf`** `[iaas, alb, load-balancer, layer7, ha, networking, waf, cross-az]`  
@@ -118,6 +122,10 @@ Fetch only the files relevant to the task. A typical example contains
   This repository provides an automated setup for **Authentik** on STACKIT SKE, pre-configured as an Identity Provider (IdP) for STACKIT with both **OIDC** and **SCIM** support
 - **`object-storage-write-only-access`** `[object-storage, s3, access-control, secrets-manager, object-lock, iam]`  
   Demonstrates how to create a STACKIT Object Storage bucket with Object Lock enabled, configure write-only access credentials, and store all credentials securely in STACKIT Secrets Manager using the HashiCorp Vault provider
+- **`opa-policy-reactive-agent`** `[opa-policy-reactive-agent, iaas, observability, iam, opa, rego, compliance, security]`  
+  This example demonstrates how to deploy an infrastructure-as-code (IaC) **Reactive Policy Agent** on **STACKIT** to enforce organizational governance controls equivalent to **AWS Service Control Policies (SCPs)**
+- **`opa-policy-terraform-plan-validation`** `[opa-policy-terraform-plan-validation, terraform, governance, compliance, ci-cd, shift-left, opa, rego]`  
+  This example demonstrates how to implement **Preventive IaC Governance ("Shift-Left")** by evaluating **Open Policy Agent (OPA)** declarative Rego policies against **STACKIT Terraform plan JSON output** (`tfplan.json`) before infrastructure is applied in CI/CD pipelines
 - **`opnsense-hub-and-spoke`** `[vpn, opnsense, networking, hub-and-spoke, firewall, routing]`  
   A reference implementation of a **hub-and-spoke network topology** on [STACKIT](https://www.stackit.de/), provisioned with Terraform
 - **`s3-aws-terraform-provider`** `[s3, object-storage, terraform, aws-provider]`  
@@ -138,6 +146,8 @@ Fetch only the files relevant to the task. A typical example contains
   This repository demonstrates how to synchronize STACKIT Secrets Manager secrets with Kubernetes secrets using External Secrets
 - **`ske-gpu-operator`** `[ske, gpu, kubernetes, nvidia, operator, h100]`  
   This example demonstrates how to deploy a SKE cluster with an NVIDIA H100 node pool and install the GPU Operator
+- **`ske-gpu-storage`** `[ske, juicefs, csi-driver, s3, object-storage, rwx, read-write-many, redis, kubernetes]`  
+  This note describes several data storage options to support single node foundation model training on STACKIT Kubernetes Engine (SKE) with a focus on NVIDIA H100 nodes for computer vision and automotive applications. This includes **data hydration** (making data available for GPUs to achieve optimal GPU-utilization) and **checkpoint persistence** (writing and loading of training checkpoints for recovery) using STACKIT Object Storage
 - **`ske-kubernetes-ephemeral-kubernetes-provider`** `[ske, kubernetes, terraform, provider, kubeconfig, ephemeral]`  
   Deploy an SKE cluster and use an ephemeral kubeconfig to configure the Kubernetes provider without writing credentials to state
 - **`ske-kubernetes-terraform-provider`** `[ske, kubernetes, terraform, provider, kubeconfig]`  
@@ -150,7 +160,7 @@ Fetch only the files relevant to the task. A typical example contains
   This guide explains how to configure the STACKIT Observability product to send alerts using metrics gathered from kube-state-metrics
 - **`ske-observability-log-alerts`** `[ske, observability, logging, alerting, promtail, kubernetes]`  
   This guide walks you through setting up log-based alerting in STACKIT Observability using Promtail to ship Kubernetes logs
-- **`ske-s3-csi-juicefs`** `[ske, juicefs, csi-driver, s3, object-storage, rwx, read-write-many, redis, kubernetes]`  
+- **`ske-s3-csi-juicefs`** `[ske, juicefs, csi-driver, s3, object-storage, rwx, read-write-many, key-value-store, valkey, kubernetes]`  
   Mounts STACKIT Object Storage as a `ReadWriteMany` Kubernetes volume on SKE using the [JuiceFS CSI driver](https://github.com/juicedata/juicefs-csi-driver)
 - **`ske-stackit-sfs-integration`** `[ske, nfs, sfs, storage, kubernetes, rwx, file-storage]`  
   Terraform Example of deploying a STACKIT File Storage NFS Service
@@ -164,6 +174,8 @@ Fetch only the files relevant to the task. A typical example contains
   This example demonstrates how to use the **STACKIT Telemetry Router** to centralize observability data across multiple projects, folders, and even the entire organization
 - **`terraform-pg-backend-state-locking`** `[terraform, postgresql, state, backend, remote-state, locking]`  
   This repository demonstrates how to configure STACKIT PostgreSQL Flex as a Terraform backend to enable remote state storage and native state locking
+- **`vpn-full-tunnel-central-egress`** `[vpn, networking, ipsec, site-to-site, bgp, routing, egress, hub-and-spoke, iaas, ha, full-tunnel, central-egress]`  
+  This example deploys a workload in one [STACKIT Network Area](https://docs.stackit.cloud/products/network/core-networking/network-area/) (SNA) that sends **all** of its traffic — including internet traffic — through the [STACKIT Managed VPN](https://docs.stackit.cloud/products/network/connectivity-hybrid-multi-cloud/vpn/) into a second SNA, where one central machine is the only way out to the internet. A jump host in the same spoke SNA deliberately keeps its own local breakout
 - **`vpn-stackit-azure`** `[vpn, networking, ipsec, site-to-site, azure, cross-cloud, ha, bgp]`  
   This example demonstrates how to establish a secure, Highly Available (HA) IPsec VPN connection between a STACKIT Network Area (SNA) and Microsoft Azure
 - **`vpn-stackit-gcp`** `[vpn, networking, ipsec, site-to-site, gcp, cross-cloud, ha, bgp]`  
@@ -175,14 +187,14 @@ Fetch only the files relevant to the task. A typical example contains
 
 - **`check-stackit-ip.sh`** `[networking, ip, iaas]`  
   Check whether a given IP address belongs to STACKIT's public IP ranges
-- **`check-terraform-numbered-files.sh`** `[terraform, lint, ci]`  
-  Verify that all Terraform files in an example follow the 3-digit numeric prefix naming convention
 - **`create-kubeconfig-multiple-projects.sh`** `[ske, kubernetes, kubeconfig, multi-project]`  
   Generate kubeconfig entries for every SKE cluster across one or more STACKIT projects
 - **`delete-unused-volumes.sh`** `[iaas, volume, compute]`  
   Delete all STACKIT volumes whose status is AVAILABLE (i.e. not attached)
 - **`list-project-resources.sh`** `[dns, ske, dbaas, object-storage, inventory, multi-project]`  
   Render a Markdown inventory of resources (DNS, SKE, databases, storage, …) for one or more STACKIT projects
+- **`project-resource-graph.sh`** `[inventory, references, delete, iaas, ske, dbaas, multi-project]`  
+  List the resources of a project, show which of them reference each other, and delete selected objects ordered by the references it found
 - **`s3-ssec.sh`** `[object-storage, s3, encryption, ssec]`  
   Upload and Download Files to a STACKIT S3 Bucket (Object Storage) and enable Server Side Encryption with Custom Keys
 - **`ske-show-versions.sh`** `[ske, kubernetes, versions]`  
