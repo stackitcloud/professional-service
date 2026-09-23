@@ -1,0 +1,59 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# On every tag push matching v*, build the image with apps/costguard as the
+# build context and push it as `latest` and as the git tag to the Forgejo
+# registry.
+#
+# Note: the Forgejo runner only executes workflows from the repository
+# root, so this file lives at the repo root even though it is
+# costguard-specific.
+name: costguard-docker
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the Forgejo registry
+        uses: docker/login-action@v3
+        with:
+          registry: professional-service.git.onstackit.cloud
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Extract tag
+        id: tag
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/costguard
+          push: true
+          tags: |
+            professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/costguard:latest
+            professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/costguard:${{ steps.tag.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/tree/main/apps/costguard
+            org.opencontainers.image.description=STACKIT cloud hygiene bot
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha,scope=costguard
+          cache-to: type=gha,mode=max,scope=costguard

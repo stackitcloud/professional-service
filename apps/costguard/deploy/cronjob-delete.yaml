@@ -1,0 +1,167 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# costguard — weekly execution run (stage 2).
+#
+# Behaviour: full re-scan -> delete mark-expired public IPs and detached
+# volumes with fail-closed re-validation -> send a separate
+# confirmation. The 1 h offset after the scan CronJob plus the mark
+# deadline guarantee that nothing first seen by this week's scan is
+# deleted by this week's delete run (no hand-off state).
+#
+# Service account scope: read + delete (IaaS) + label write (mark clearing).
+# Give this service account NOTHING the scan SA does not need, and the scan
+# account no delete rights (least privilege per workload).
+#
+# Image registry: built+pushed to the internal Forgejo registry by
+#.forgejo/workflows/docker.yml on v* tag pushes. For customer delivery push
+# the image to a registry the customer can reach and update the `image:` ref.
+# Must stay the same version as cronjob-scan.yaml (see the image: note below).
+#
+# Enable deletion by setting COSTGUARD_DRY_RUN=false below. Until then the
+# workload behaves exactly like the scan (global kill switch).
+#
+# Prerequisites (create once):
+# kubectl -n costguard create secret generic costguard-delete-credentials \
+# --from-literal=stackit-service-account-key="$(cat sa-key-delete.json)" \
+# --from-literal=webhook-url='https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...' \
+# --from-literal=sm-url='https://secretsmanager.eu01.onstackit.cloud/INSTANCE_ID' \
+# --from-literal=sm-username=costguard-whitelist-writer \
+# --from-literal=sm-password='...'
+#
+# The SM keys are required: this manifest sets COSTGUARD_WHITELIST_SECRET_PATH
+# unconditionally, so the delete run always reads the shared whitelist.
+# The service account key file is the non-SKE fallback.
+# On SKE with workload identity enabled, delete the key file volume and the
+# STACKIT_SERVICE_ACCOUNT_KEY_PATH env var — the SDK picks up pod identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: costguard-delete
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+    app.kubernetes.io/component: delete
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: costguard-delete
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+    app.kubernetes.io/component: delete
+spec:
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  # Weekly, Monday 09:00 — one hour after the scan (08:00).
+  schedule: "0 9 * * 1"
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: costguard
+            app.kubernetes.io/component: delete
+        spec:
+          serviceAccountName: costguard-delete
+          restartPolicy: Never
+          containers:
+             - name: costguard
+               # Pin the immutable release tag. MUST match cronjob-scan.yaml: the scan job
+               # writes the delete marks and this job reads+deletes them, so a version skew
+               # between the two would break the mark contract.
+               image: professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/costguard:v0.0.1
+               imagePullPolicy: IfNotPresent
+               args: ["delete"]
+               env:
+                - name: COSTGUARD_SCOPE
+                  value: organisation
+                - name: COSTGUARD_ORG_ID
+                  value: "00000000-0000-0000-0000-000000000000"
+                - name: COSTGUARD_REGIONS
+                  value: eu01
+                - name: COSTGUARD_MAX_AGE_DAYS
+                  value: "90"
+                - name: COSTGUARD_SNA_MAX_AGE_DAYS
+                  value: "60"
+                - name: COSTGUARD_SAFE_LABEL_KEY
+                  value: do-not-delete
+                - name: COSTGUARD_SAFE_LABEL_VALUE
+                  value: "true"
+                - name: COSTGUARD_OUTPUT
+                  value: googlechat
+                - name: COSTGUARD_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-delete-credentials
+                      key: webhook-url
+                # Flip to "false" to let the delete run actually delete.
+                # Everything else (mark deadline, re-validation, whitelist)
+                # stays in force.
+                - name: COSTGUARD_DRY_RUN
+                  value: "true"
+                - name: COSTGUARD_GRACE_PERIOD
+                  value: 8h
+                # Shared whitelist: the delete run must see the same
+                # protections as the scan and the callback.
+                - name: COSTGUARD_WHITELIST_SECRET_PATH
+                  value: secret/costguard/whitelist
+                - name: COSTGUARD_SM_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-delete-credentials
+                      key: sm-url
+                - name: COSTGUARD_SM_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-delete-credentials
+                      key: sm-username
+                - name: COSTGUARD_SM_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-delete-credentials
+                      key: sm-password
+                - name: LOG_LEVEL
+                  value: info
+                # STACKIT authentication (service account key file).
+                - name: STACKIT_SERVICE_ACCOUNT_KEY_PATH
+                  value: /secrets/stackit-service-account-key.json
+               securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+               resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+               volumeMounts:
+                - name: sa-key
+                  mountPath: /secrets
+                  readOnly: true
+          volumes:
+            - name: sa-key
+              secret:
+                secretName: costguard-delete-credentials
+                items:
+                  - key: stackit-service-account-key
+                    path: stackit-service-account-key.json

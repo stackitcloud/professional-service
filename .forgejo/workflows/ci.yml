@@ -1,0 +1,77 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Runs make test + make lint on every push and pull request that touches
+# apps/costguard. The test target fails when any package drops below 80%
+# statement coverage (the cmd/ entrypoint stub is exempt).
+#
+# Note: the Forgejo runner only executes workflows from the repository
+# root, so this file lives at the repo root with a path filter on
+# apps/costguard/**.
+name: costguard-ci
+
+on:
+  push:
+    paths:
+      - "apps/costguard/**"
+  pull_request:
+    paths:
+      - "apps/costguard/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/costguard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/costguard/go.mod
+      - name: Unit tests + coverage gate
+        run: make test
+
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/costguard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/costguard/go.mod
+      - name: go vet
+        run: make lint
+
+  # Validates the deploy/ Kubernetes manifests against the official JSON
+  # schemas — offline, no cluster required. Catches both YAML syntax errors
+  # and schema violations (wrong/missing/unknown fields) that check-yaml
+  # (pre-commit) cannot. kubeconform is pinned for reproducibility.
+  k8s-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deploy/ manifests (kubeconform)
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64)  karch=amd64 ;;
+            aarch64) karch=arm64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          dir="$(mktemp -d)"
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-${karch}.tar.gz" | tar -xz -C "$dir"
+          "$dir/kubeconform" -strict -summary apps/costguard/deploy/*.yaml

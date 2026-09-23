@@ -1,0 +1,169 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# costguard — weekly warning run (stage 1 ships this workload alone).
+#
+# Behaviour: full scan -> mark new deletion candidates -> send the report.
+# Service account scope: read + label write (Resource Manager, IaaS, Cost).
+#
+# Image registry: built+pushed to the internal Forgejo registry by
+#.forgejo/workflows/docker.yml on v* tag pushes. For customer delivery (who
+# cannot reach that registry) push the image to a registry they can reach and
+# update the `image:` reference in the container spec below.
+#
+# Buttons (optional): set COSTGUARD_CALLBACK_URL + the callback group in the
+# env block below to add interactive "Do not delete" buttons (see
+# deployment-callback.yaml for the server side).
+#
+# Prerequisites (create once):
+# kubectl -n costguard create secret generic costguard-scan-credentials \
+# --from-literal=stackit-service-account-key="$(cat sa-key-scan.json)" \
+# --from-literal=webhook-url='https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...' \
+# [--from-literal=s3-access-key=... --from-literal=s3-secret-key=...]
+#
+# The service account key file is the non-SKE fallback.
+# On SKE with workload identity enabled, delete the key file volume and the
+# STACKIT_SERVICE_ACCOUNT_KEY_PATH env var — the SDK picks up pod identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: costguard-scan
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+    app.kubernetes.io/component: scan
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: costguard-scan
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+    app.kubernetes.io/component: scan
+spec:
+  # Never overlap: a second run would double-mark and double-report.
+  concurrencyPolicy: Forbid
+  # Keep the last three runs for debugging.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  # Weekly, Monday 08:00. The delete CronJob runs one hour later.
+  schedule: "0 8 * * 1"
+  jobTemplate:
+    spec:
+      # Hard outer bound; the binary enforces its own 30 min timeout.
+      activeDeadlineSeconds: 3600
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: costguard
+            app.kubernetes.io/component: scan
+        spec:
+          serviceAccountName: costguard-scan
+          restartPolicy: Never
+          containers:
+             - name: costguard
+               # Pin the immutable release tag (built+pushed by.forgejo/workflows/docker.yml
+               # on v* tag pushes). Bump per release; must match cronjob-delete.yaml.
+               image: professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/costguard:v0.0.1
+               imagePullPolicy: IfNotPresent
+               args: ["scan"]
+               env:
+                - name: COSTGUARD_SCOPE
+                  value: organisation
+                - name: COSTGUARD_ORG_ID
+                  value: "00000000-0000-0000-0000-000000000000"
+                - name: COSTGUARD_REGIONS
+                  value: eu01
+                - name: COSTGUARD_MAX_AGE_DAYS
+                  value: "90"
+                - name: COSTGUARD_SNA_MAX_AGE_DAYS
+                  value: "60"
+                - name: COSTGUARD_SAFE_LABEL_KEY
+                  value: do-not-delete
+                - name: COSTGUARD_SAFE_LABEL_VALUE
+                  value: "true"
+                - name: COSTGUARD_OUTPUT
+                  value: googlechat
+                - name: COSTGUARD_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-scan-credentials
+                      key: webhook-url
+                # Stage 1 is report-only: dry run stays on.
+                - name: COSTGUARD_DRY_RUN
+                  value: "true"
+                - name: COSTGUARD_GRACE_PERIOD
+                  value: 8h
+                - name: LOG_LEVEL
+                  value: info
+                # STACKIT authentication (service account key file).
+                - name: STACKIT_SERVICE_ACCOUNT_KEY_PATH
+                  value: /secrets/stackit-service-account-key.json
+                # Chart upload (optional): the S3 group is all-or-nothing —
+                # enable all five variables together or none of them.
+                # - name: COSTGUARD_S3_ENDPOINT
+                # value: https://object.storage.eu01.onstackit.cloud
+                # - name: COSTGUARD_S3_REGION
+                # value: eu01
+                # - name: COSTGUARD_S3_BUCKET
+                # value: costguard-charts
+                # - name: COSTGUARD_S3_ACCESS_KEY
+                # valueFrom:
+                # secretKeyRef:
+                # name: costguard-scan-credentials
+                # key: s3-access-key
+                 # - name: COSTGUARD_S3_SECRET_KEY
+                 # valueFrom:
+                 # secretKeyRef:
+                 # name: costguard-scan-credentials
+                 # key: s3-secret-key
+                 # Buttons (optional, stage 2): COSTGUARD_CALLBACK_URL is baked
+                 # into the "Do not delete" links in THIS job's report, so it must
+                 # be the public URL that fronts the callback Deployment via
+                 # ALB/ingress. COSTGUARD_CALLBACK_SECRET must hold the SAME HMAC
+                 # value the callback uses to verify (deployment-callback.yaml).
+                 # Setting these also makes the run read the shared whitelist.
+                 # - name: COSTGUARD_CALLBACK_URL
+                 # value: https://costguard-callback.example
+                 # - name: COSTGUARD_CALLBACK_SECRET
+                 # valueFrom:
+                 # secretKeyRef:
+                 # name: costguard-scan-credentials
+                 # key: callback-hmac-secret
+               securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+               resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+               volumeMounts:
+                - name: sa-key
+                  mountPath: /secrets
+                  readOnly: true
+          volumes:
+            - name: sa-key
+              secret:
+                secretName: costguard-scan-credentials
+                items:
+                  - key: stackit-service-account-key
+                    path: stackit-service-account-key.json
