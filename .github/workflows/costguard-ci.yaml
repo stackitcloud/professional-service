@@ -16,10 +16,11 @@
 # apps/costguard. The test target fails when any package drops below 80%
 # statement coverage (the cmd/ entrypoint stub is exempt).
 #
-# Note: the Forgejo runner only executes workflows from the repository
-# root, so this file lives at the repo root with a path filter on
-# apps/costguard/**.
-name: costguard-ci
+# The path filter keeps this workflow from running when nothing in
+# apps/costguard changed. The shared runs-on conditional runs it on the
+# internal Act runner (stackit-ubuntu-22) and on the public GitHub mirror
+# (ubuntu-latest).
+name: "costguard-ci"
 
 on:
   push:
@@ -31,28 +32,38 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: "Unit Tests + Coverage"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
     defaults:
       run:
         working-directory: apps/costguard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: apps/costguard/go.mod
+
       - name: Unit tests + coverage gate
         run: make test
 
   lint:
-    runs-on: ubuntu-latest
+    name: "Lint"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
     defaults:
       run:
         working-directory: apps/costguard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: apps/costguard/go.mod
+
       - name: go vet
         run: make lint
 
@@ -61,9 +72,12 @@ jobs:
   # and schema violations (wrong/missing/unknown fields) that check-yaml
   # (pre-commit) cannot. kubeconform is pinned for reproducibility.
   k8s-manifests:
-    runs-on: ubuntu-latest
+    name: "Kubernetes Manifests"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
       - name: Validate deploy/ manifests (kubeconform)
         run: |
           set -euo pipefail

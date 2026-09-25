@@ -13,13 +13,12 @@
 # limitations under the License.
 
 # On every tag push matching v*, build the image with apps/costguard as the
-# build context and push it as `latest` and as the git tag to the Forgejo
-# registry.
+# build context and push it as `latest` and as the git tag to the registry.
 #
-# Note: the Forgejo runner only executes workflows from the repository
-# root, so this file lives at the repo root even though it is
-# costguard-specific.
-name: costguard-docker
+# Runs only on the internal instance: the mirror sync (github-mirror-ci.yaml)
+# pushes the same tags to the public GitHub repo, but the mirror has no
+# REGISTRY_* secrets and no route to the internal registry.
+name: "costguard-docker"
 
 on:
   push:
@@ -28,11 +27,14 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    name: "Build and Push Image"
+    if: github.server_url == 'https://professional-service.git.onstackit.cloud'
+    runs-on: "stackit-ubuntu-22"
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v7
 
-      - name: Log in to the Forgejo registry
+      - name: Log in to the registry
         uses: docker/login-action@v3
         with:
           registry: professional-service.git.onstackit.cloud
