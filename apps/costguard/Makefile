@@ -16,7 +16,7 @@ BINARY  := costguard
 DIST    := dist
 PACKAGE := ./...
 
-.PHONY: build test lint docker coverage
+.PHONY: build test lint coverage
 
 # Compiles the static single binary to dist/costguard.
 build:
@@ -54,6 +54,6 @@ test:
 lint:
 	go vet $(PACKAGE)
 
-# Builds the Docker image.
-docker:
-	docker build -t costguard:dev .
+# The container image is built with ko directly (no wrapper target):
+#   ko build -B --local -t dev ./cmd/costguard
+# See README §5 / §12 for details.

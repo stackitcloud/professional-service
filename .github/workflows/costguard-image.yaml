@@ -1,0 +1,77 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "costguard-image"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-push:
+    name: "Build and Push Image"
+    if: github.server_url == 'https://professional-service.git.onstackit.cloud'
+    runs-on: "stackit-ubuntu-22"
+    env:
+      KO_DOCKER_REPO: "professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Log in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: professional-service.git.onstackit.cloud
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/costguard/go.mod
+
+      - name: Install ko
+        run: |
+          set -euo pipefail
+          version=0.19.1
+          case "$(uname -m)" in
+            x86_64)    arch=x86_64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          dir="$(mktemp -d)"
+          base="https://github.com/ko-build/ko/releases/download/v${version}"
+          curl -sSfL "${base}/ko_${version}_Linux_${arch}.tar.gz" -o "${dir}/ko_${version}_Linux_${arch}.tar.gz"
+          curl -sSfL "${base}/checksums.txt" -o "${dir}/checksums.txt"
+          (cd "${dir}" && grep "ko_${version}_Linux_${arch}.tar.gz" checksums.txt | sha256sum -c --)
+          tar -xzf "${dir}/ko_${version}_Linux_${arch}.tar.gz" -C "${dir}" ko
+          chmod +x "${dir}/ko"
+          echo "${dir}" >> "$GITHUB_PATH"
+
+      - name: Build and push with ko
+        working-directory: apps/costguard
+        run: |
+          set -euo pipefail
+          ko build ./cmd/costguard \
+            -B \
+            --push \
+            --platform=linux/amd64,linux/arm64 \
+            --tags=latest,${GITHUB_REF_NAME} \
+            --image-user=65532:65532 \
+            --ldflags=-s \
+            --ldflags=-w \
+            --image-label=org.opencontainers.image.source=https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/tree/main/apps/costguard \
+            --image-label="org.opencontainers.image.description=STACKIT cloud hygiene bot" \
+            --image-label=org.opencontainers.image.licenses=Apache-2.0

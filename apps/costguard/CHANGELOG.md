@@ -42,7 +42,8 @@ All notable changes to costguard are documented in this file.
 - Two-stage rollout manifests: stage 1 weekly scan CronJob only; stage 2
   adds the weekly delete CronJob (1 h after scan) and the callback
   Deployment, each with its own least-privilege service account.
-- Build & quality: Makefile (build/test/lint/docker) with a per-package
-  80% coverage gate, go vet,
-  multi-stage distroless Dockerfile with OCI labels, Forgejo CI
-  (test + lint) and tag-triggered image publication.
+- Build & quality: Makefile (build/test/lint) with a per-package
+  80% coverage gate, go vet, ko-built multi-arch image
+  (`cgr.dev/chainguard/static`, non-root, OCI labels, SPDX SBOM), repo CI
+  (test + lint, path-filtered to `apps/costguard/**`) and tag-triggered
+  image publication via ko.

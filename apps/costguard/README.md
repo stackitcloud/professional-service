@@ -175,11 +175,16 @@ gracePeriod: 8h
 
 ## 5. Running with Docker
 
-Build the image (multi-stage `golang` → `distroless/static`, non-root):
+Build the image with [ko](https://ko.build/) (static binary on
+`cgr.dev/chainguard/static`, non-root, multi-arch — requires the
+[ko CLI](https://ko.build/install/)):
 
 ```bash
-make docker        # or: docker build -t costguard:dev .
+ko build -B --local -t dev ./cmd/costguard   # → ko.local/costguard:dev
 ```
+
+`-B` pins the image name to `.../costguard` (without it, ko appends an MD5
+hash of the import path).
 
 **Dry-run (warning only — the safe default):**
 
@@ -196,7 +201,7 @@ docker run --rm \
   -e COSTGUARD_SAFE_LABEL_VALUE=true \
   -e COSTGUARD_OUTPUT=googlechat \
   -e COSTGUARD_WEBHOOK_URL='https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...' \
-  costguard scan
+  ko.local/costguard:dev scan
 ```
 
 **Execution mode (actually deletes due candidates):**
@@ -205,7 +210,7 @@ docker run --rm \
 docker run --rm \
   ... same environment ... \
   -e COSTGUARD_DRY_RUN=false \
-  costguard delete
+  ko.local/costguard:dev delete
 ```
 
 **Callback server (stage 2):**
@@ -219,7 +224,7 @@ docker run --rm -p 8080:8080 \
   -e COSTGUARD_SM_URL=https://secretsmanager.eu01.onstackit.cloud/INSTANCE_ID \
   -e COSTGUARD_SM_USERNAME=costguard-whitelist-writer \
   -e COSTGUARD_SM_PASSWORD='***' \
-  costguard callback
+  ko.local/costguard:dev callback
 ```
 
 Exit codes: `0` success, `1` fatal run error, `2` usage error.
@@ -232,7 +237,7 @@ each manifest), then:
 
 The three manifests pin the image
 `professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/costguard:v0.0.1`,
-built and pushed to the internal Forgejo registry on every `v*` tag push.
+built with ko and pushed to the internal registry on every `v*` tag push.
 If you can't reach that registry (e.g. a customer cluster), push the image to
 a registry you control (GHCR or your own) and update the `image:` field in all
 three manifests — keeping the scan and delete jobs on the same version.
@@ -359,7 +364,7 @@ switch).
 make build      # go build -o dist/costguard ./cmd/costguard
 make test       # go test -race ./... with a >=80% per-package coverage gate (cmd/ exempt)
 make lint       # go vet ./...
-make docker     # build the multi-stage container image
+ko build -B --local -t dev ./cmd/costguard   # local image via ko (requires the ko CLI)
 ```
 
 Coverage per package is printed by `make test` (profile under `coverage/`);

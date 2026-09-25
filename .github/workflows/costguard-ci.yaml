@@ -74,8 +74,8 @@ jobs:
         run: |
           set -euo pipefail
           case "$(uname -m)" in
-            x86_64)  karch=amd64 ;;
-            aarch64) karch=arm64 ;;
+            x86_64)    karch=amd64 ;;
+            aarch64|arm64) karch=arm64 ;;
             *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
           esac
           dir="$(mktemp -d)"
