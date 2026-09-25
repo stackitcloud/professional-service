@@ -12,14 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Runs make test + make lint on every push and pull request that touches
-# apps/costguard. The test target fails when any package drops below 80%
-# statement coverage (the cmd/ entrypoint stub is exempt).
-#
-# The path filter keeps this workflow from running when nothing in
-# apps/costguard changed. The shared runs-on conditional runs it on the
-# internal Act runner (stackit-ubuntu-22) and on the public GitHub mirror
-# (ubuntu-latest).
 name: "costguard-ci"
 
 on:
