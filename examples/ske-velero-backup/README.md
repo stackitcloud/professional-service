@@ -21,7 +21,7 @@ terraform apply
 Verify Velero is healthy after apply:
 
 ```bash
-stackit ske kubeconfig create --cluster-name velero-demo --project-id <project-id>
+stackit ske kubeconfig create velero-demo --project-id <project-id>
 velero backup-location get  # should show status: Available
 ```
 

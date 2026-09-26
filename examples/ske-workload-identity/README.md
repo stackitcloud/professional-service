@@ -22,7 +22,7 @@ Terraform creates the SKE cluster, the STACKIT service account, and configures t
 ## Verify
 
 ```bash
-stackit ske kubeconfig create --cluster-name <cluster-name> --project-id <project-id> -y
+stackit ske kubeconfig create <cluster-name> --project-id <project-id> -y
 
 # Watch the demo job — it calls the STACKIT SKE API using the injected identity
 kubectl logs job/workload-identity-demo -n workload-identity-demo
