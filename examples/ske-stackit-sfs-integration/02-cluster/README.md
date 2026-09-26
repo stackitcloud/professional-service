@@ -25,10 +25,15 @@ Project and mount path come from `../01-storage/terraform.tfstate`. Set
 ```bash
 eval "$(terraform output -raw kubeconfig_command)"
 kubectl config use-context "$(terraform output -raw ske_cluster_name)"
+kubectl apply -f PersistentVolumeClaim.yaml
+kubectl get pvc test-claim
 kubectl apply -f example-rwx-deployment.yaml
 kubectl get pods -l app=rwx-test -o wide
 kubectl exec deploy/rwx-test -c rwx-test -- head -20 /data/index.html
 ```
+
+`test-claim` binds in seconds, which checks the StorageClass before the deployment adds
+four pods and a `LoadBalancer`.
 
 Four pods `Running` on two or more distinct nodes, all appending to the same file. That
 is why the node pool starts at two nodes: on one node the demo would pass on
@@ -37,18 +42,20 @@ is why the node pool starts at two nodes: on one node the demo would pass on
 It does not prove that Kubernetes enforces `ReadWriteMany`. `nfs.csi.k8s.io` sets
 `attachRequired: false`, so `ReadWriteOnce` would run just the same.
 
-`PersistentVolumeClaim.yaml` is a smaller claim for checking that the StorageClass binds.
-
 ## Clean up
 
 ```bash
-kubectl delete -f example-rwx-deployment.yaml
+PVS=$(kubectl get pvc rwx-test test-claim -o jsonpath='{.items[*].spec.volumeName}')
+kubectl delete -f example-rwx-deployment.yaml -f PersistentVolumeClaim.yaml
+kubectl delete pv $PVS
 terraform destroy
 ```
 
+`reclaimPolicy: Retain` keeps both volumes once their claims are gone, so the third line
+deletes them by name. Their subdirectories stay on the share.
+
 The workload comes from `kubectl`, so Terraform does not know about its `LoadBalancer`
-service and will not release its address. `reclaimPolicy: Retain` keeps volumes and data
-after a claim is deleted.
+service and will not release its address.
 
 ## The ephemeral kubeconfig
 
