@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_ske_kubeconfig" "this" {
+# The cluster ID condition defers the kubeconfig request until the cluster exists.
+ephemeral "stackit_ske_kubeconfig" "this" {
   project_id   = var.stackit_project_id
-  cluster_name = stackit_ske_cluster.this.name
-  refresh      = true
-
-  depends_on = [stackit_ske_cluster.this]
+  cluster_name = stackit_ske_cluster.this.id != "" ? stackit_ske_cluster.this.name : ""
 }
 
 data "stackit_ske_kubernetes_versions" "this" {

@@ -62,7 +62,7 @@ flowchart LR
 ## Prerequisites
 
 - STACKIT Project ID and Service Account key.
-- Terraform with STACKIT provider 0.117.0 or later.
+- Terraform 1.10 or later and STACKIT provider 0.117.0 or later.
 - `kubectl` and `helm` installed.
 
 ## Usage

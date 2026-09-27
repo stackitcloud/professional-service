@@ -15,7 +15,7 @@
 # This file defines the required Terraform providers and their configurations.
 # It sets up the STACKIT, Kubernetes, and Helm providers to manage resources in the project and the SKE cluster.
 terraform {
-  required_version = ">= 0.14.0"
+  required_version = ">= 1.10.0"
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
@@ -29,27 +29,35 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = ">=2.14.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 3.1.1"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.13.1"
+    }
   }
 }
 
 provider "stackit" {
   default_region           = var.stackit_region
   service_account_key_path = var.stackit_service_account_key_path
-  experiments              = ["iam"]
+  experiments              = ["iam", "ske"]
 }
 
 provider "kubernetes" {
-  host                   = yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
-  client_certificate     = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
-  client_key             = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
-  cluster_ca_certificate = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
+  host                   = yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
+  client_certificate     = base64decode(yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
+  client_key             = base64decode(yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
+  cluster_ca_certificate = base64decode(yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
 }
 
 provider "helm" {
   kubernetes = {
-    host                   = yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
-    client_certificate     = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
-    client_key             = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
-    cluster_ca_certificate = base64decode(yamldecode(stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
+    host                   = yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.server
+    client_certificate     = base64decode(yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).users.0.user.client-certificate-data)
+    client_key             = base64decode(yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).users.0.user.client-key-data)
+    cluster_ca_certificate = base64decode(yamldecode(ephemeral.stackit_ske_kubeconfig.this.kube_config).clusters.0.cluster.certificate-authority-data)
   }
 }
