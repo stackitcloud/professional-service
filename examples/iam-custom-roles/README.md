@@ -16,6 +16,8 @@ This example creates:
 
 ## Usage
 
+The provider block sets `experiments = ["iam"]` because role assignments are an experimental provider feature.
+
 ```bash
 terraform init
 terraform apply
