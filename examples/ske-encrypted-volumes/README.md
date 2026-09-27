@@ -7,3 +7,7 @@
 ## Overview
 
 This guide demonstrates how to roll out an encrypted storage class for SKE using the STACKIT Key Management Service (KMS). To achieve this, we use a **Service Account Impersonation** (Act-As) pattern. This allows the internal SKE service account to perform encryption and decryption tasks on behalf of a user-managed service account that has been granted access to your KMS keys.
+
+## Prerequisites
+
+- STACKIT provider 0.117.0 or later
