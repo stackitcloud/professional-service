@@ -19,7 +19,7 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">= 0.87.0"
+      version = ">= 0.117.0"
     }
     random = {
       source  = "hashicorp/random"
