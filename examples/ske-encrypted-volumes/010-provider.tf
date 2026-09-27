@@ -28,6 +28,7 @@ terraform {
 provider "stackit" {
   default_region           = "eu01"
   service_account_key_path = ""
+  experiments              = ["iam"]
 }
 
 provider "kubernetes" {
