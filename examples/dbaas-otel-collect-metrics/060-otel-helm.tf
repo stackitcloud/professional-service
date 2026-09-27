@@ -19,7 +19,7 @@ locals {
     stackit_region                 = var.stackit_region
     stackit_postgres_instance_id   = stackit_postgresflex_instance.this.instance_id
     observability_metrics_endpoint = stackit_observability_instance.example.metrics_push_url
-    secret_name                    = kubernetes_secret.otel_secret.metadata[0].name
+    secret_name                    = kubernetes_secret_v1.otel_secret.metadata[0].name
     sa_client_id                   = local.sa_json.credentials.sub
     sa_issuer                      = local.sa_json.credentials.iss
     sa_key_id                      = local.sa_json.credentials.kid
@@ -32,16 +32,16 @@ resource "stackit_observability_credential" "otel" {
   instance_id = stackit_observability_instance.example.instance_id
 }
 
-resource "kubernetes_namespace" "monitoring" {
+resource "kubernetes_namespace_v1" "monitoring" {
   metadata {
     name = "monitoring"
   }
 }
 
-resource "kubernetes_secret" "otel_secret" {
+resource "kubernetes_secret_v1" "otel_secret" {
   metadata {
     name      = "otel-secrets"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
+    namespace = kubernetes_namespace_v1.monitoring.metadata[0].name
   }
 
   data = {
@@ -56,7 +56,7 @@ resource "helm_release" "opentelemetry_collector" {
   repository = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart      = "opentelemetry-collector"
   version    = "0.152.0"
-  namespace  = kubernetes_namespace.monitoring.metadata[0].name
+  namespace  = kubernetes_namespace_v1.monitoring.metadata[0].name
   timeout    = 30
 
   values = [
