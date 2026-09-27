@@ -14,7 +14,7 @@
 
 resource "stackit_service_account" "this" {
   project_id = var.stackit_project_id
-  name       = "iam-custom-roles-demo"
+  name       = "iam-custom-role-demo"
 }
 
 # Rotate the key every 80 days so it expires before the 90-day TTL.
