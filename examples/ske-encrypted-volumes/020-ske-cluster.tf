@@ -31,10 +31,10 @@ resource "stackit_ske_cluster" "default" {
   }]
 }
 
-resource "stackit_ske_kubeconfig" "default" {
+# The cluster ID condition defers the kubeconfig request until the cluster exists.
+ephemeral "stackit_ske_kubeconfig" "default" {
   project_id   = var.stackit_project_id
-  cluster_name = stackit_ske_cluster.default.name
-  refresh      = true
+  cluster_name = stackit_ske_cluster.default.id != "" ? stackit_ske_cluster.default.name : ""
 }
 
 data "stackit_service_accounts" "ske_internal" {

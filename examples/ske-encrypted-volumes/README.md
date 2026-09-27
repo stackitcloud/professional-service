@@ -10,6 +10,7 @@ This guide demonstrates how to roll out an encrypted storage class for SKE using
 
 ## Prerequisites
 
+- Terraform 1.10 or later
 - STACKIT provider 0.117.0 or later
 - An authenticated `stackit` CLI (`stackit auth login` or `stackit auth activate-service-account`) and `kubectl` for the verify step
 
