@@ -13,7 +13,7 @@
 # limitations under the License.
 
 resource "stackit_ske_cluster" "default" {
-  project_id             = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  project_id             = var.stackit_project_id
   name                   = "ske-enc-vol"
   kubernetes_version_min = "1.33"
 
@@ -29,13 +29,13 @@ resource "stackit_ske_cluster" "default" {
 }
 
 resource "stackit_ske_kubeconfig" "default" {
-  project_id   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  project_id   = var.stackit_project_id
   cluster_name = stackit_ske_cluster.default.name
   refresh      = true
 }
 
 data "stackit_service_accounts" "ske_internal" {
-  project_id   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  project_id   = var.stackit_project_id
   email_suffix = "@ske.sa.stackit.cloud"
 
   depends_on = [stackit_ske_cluster.default]

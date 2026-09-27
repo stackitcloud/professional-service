@@ -13,12 +13,12 @@
 # limitations under the License.
 
 resource "stackit_service_account" "kms_manager" {
-  project_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  project_id = var.stackit_project_id
   name       = "volume-encryptor"
 }
 
 resource "stackit_authorization_project_role_assignment" "kms_user" {
-  resource_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  resource_id = var.stackit_project_id
   role        = "kms.admin"
   subject     = stackit_service_account.kms_manager.email
 }

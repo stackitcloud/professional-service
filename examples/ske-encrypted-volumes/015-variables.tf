@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_kms_keyring" "encryption" {
-  project_id   = var.stackit_project_id
-  display_name = "ske-volume-keyring"
-}
-
-resource "stackit_kms_key" "volume_key" {
-  project_id   = var.stackit_project_id
-  keyring_id   = stackit_kms_keyring.encryption.keyring_id
-  display_name = "volume-encryption-key"
-  protection   = "software"
-  algorithm    = "aes_256_gcm"
-  purpose      = "symmetric_encrypt_decrypt"
+variable "stackit_project_id" {
+  type        = string
+  description = "STACKIT project that holds the cluster, the KMS key and the service account"
 }
