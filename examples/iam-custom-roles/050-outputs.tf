@@ -24,6 +24,6 @@ output "custom_role_name" {
 
 output "service_account_key" {
   description = "Service account key credentials. Use this to authenticate as the service account."
-  value       = stackit_service_account_key.this.key_origin
+  value       = stackit_service_account_key.this.json
   sensitive   = true
 }

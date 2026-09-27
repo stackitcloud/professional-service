@@ -23,10 +23,11 @@ terraform init
 terraform apply
 ```
 
-Retrieve the generated key to authenticate as the service account:
+Write the key file used to authenticate as the service account:
 
 ```bash
-terraform output -json service_account_key
+mkdir -p keys
+terraform output -raw service_account_key > keys/iam-custom-role-demo.json
 ```
 
 ## Key rotation
