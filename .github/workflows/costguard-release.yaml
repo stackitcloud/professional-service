@@ -16,32 +16,42 @@ name: "costguard-release"
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
     paths:
       - "apps/costguard/**"
       - "!apps/costguard/**/*.md"
       - "!apps/costguard/**/*_test.go"
       - "!apps/costguard/internal/fake/**"
-
-permissions:
-  contents: write
-  packages: write
+      - ".github/workflows/costguard-release.yaml"
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+    paths:
+      - "apps/costguard/**"
+      - "!apps/costguard/**/*.md"
+      - "!apps/costguard/**/*_test.go"
+      - "!apps/costguard/internal/fake/**"
+      - ".github/workflows/costguard-release.yaml"
+  workflow_dispatch:
 
 concurrency:
-  group: costguard-release
+  group: costguard-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: "Release"
-    if: github.server_url == 'https://github.com'
-    runs-on: ubuntu-latest
+  image:
+    name: "Image and release"
+    if: >-
+      github.server_url == 'https://professional-service.git.onstackit.cloud' &&
+      (github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'build-image') &&
+      github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: stackit-ubuntu-22
     defaults:
       run:
         working-directory: apps/costguard
     env:
-      KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
+      REGISTRY: professional-service.git.onstackit.cloud
+      KO_DOCKER_REPO: professional-service.git.onstackit.cloud/professional-service-best-practices
     steps:
       - name: Checkout Code
         uses: actions/checkout@v7
@@ -53,11 +63,34 @@ jobs:
         with:
           go-version-file: apps/costguard/go.mod
 
+      - name: Decide what this run does
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          case "${EVENT}" in
+            push)
+              echo "mode=release" >> "$GITHUB_OUTPUT"
+              ;;
+            workflow_dispatch)
+              echo "mode=test" >> "$GITHUB_OUTPUT"
+              echo "version=dev-$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "mode=test" >> "$GITHUB_OUTPUT"
+              echo "version=pr-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
       - name: Unit tests + coverage gate
+        if: steps.mode.outputs.mode == 'release'
         run: make test
 
       - name: Compute the next version
         id: version
+        if: steps.mode.outputs.mode == 'release'
         run: |
           set -euo pipefail
           prefix="apps/costguard/v"
@@ -111,24 +144,28 @@ jobs:
           chmod +x "${dir}/ko"
           echo "${dir}" >> "$GITHUB_PATH"
 
-      - name: Build, push and pin the manifests
+      - name: Log in to the registry
         if: steps.version.outputs.skip != 'true'
         env:
-          COSTGUARD_VERSION: ${{ steps.version.outputs.version }}
-          GITHUB_TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${TOKEN}" | ko login "${REGISTRY}" --username "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build the image and resolve the manifests
+        if: steps.version.outputs.skip != 'true'
+        env:
+          COSTGUARD_VERSION: ${{ steps.version.outputs.version || steps.mode.outputs.version }}
         run: |
           set -euo pipefail
-          echo "${GITHUB_TOKEN}" | ko login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
-          out="${RUNNER_TEMP}/release"
-          mkdir -p "${out}"
           flags=(
             -B
             --tags="${COSTGUARD_VERSION}"
-            --image-label=org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}/tree/main/apps/costguard
+            --image-label="org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
             --image-label="org.opencontainers.image.description=STACKIT cleanup bot"
             --image-label=org.opencontainers.image.licenses=Apache-2.0
-            --image-label=org.opencontainers.image.version=${COSTGUARD_VERSION}
+            --image-label="org.opencontainers.image.version=${COSTGUARD_VERSION}"
           )
+          out="${RUNNER_TEMP}/release"
+          mkdir -p "${out}"
           # The image is reproducible, so the second resolve reuses the digest.
           ko resolve "${flags[@]}" -f deploy/stage1.yaml > "${out}/stage1.yaml"
           ko resolve "${flags[@]}" -f deploy/stage2.yaml > "${out}/stage2.yaml"
@@ -136,19 +173,22 @@ jobs:
           grep -h "image:" "${out}"/stage*.yaml | sort -u
 
       - name: Tag and publish the release
-        if: steps.version.outputs.skip != 'true'
+        if: steps.mode.outputs.mode == 'release' && steps.version.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
           NOTES: ${{ steps.version.outputs.notes }}
         run: |
           set -euo pipefail
-          git tag "${TAG}"
-          git push origin "${TAG}"
-          gh release create "${TAG}" \
-            --title "costguard ${VERSION}" \
-            --notes "${NOTES}" \
-            "${RUNNER_TEMP}/release/config.yaml" \
-            "${RUNNER_TEMP}/release/stage1.yaml" \
-            "${RUNNER_TEMP}/release/stage2.yaml"
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          # Creating the release also creates the tag, on the commit that was tested.
+          body="$(python3 -c 'import json, os; print(json.dumps({"tag_name": os.environ["TAG"], "target_commitish": os.environ["GITHUB_SHA"], "name": "costguard " + os.environ["VERSION"], "body": os.environ["NOTES"]}))')"
+          id="$(curl -sS --fail-with-body -X POST "${api}/releases" \
+            -H "Authorization: token ${TOKEN}" -H "Content-Type: application/json" -d "${body}" |
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
+          for f in config.yaml stage1.yaml stage2.yaml; do
+            curl -sS --fail-with-body -X POST "${api}/releases/${id}/assets?name=${f}" \
+              -H "Authorization: token ${TOKEN}" -F "attachment=@${RUNNER_TEMP}/release/${f}" > /dev/null
+          done
+          echo "Released ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"

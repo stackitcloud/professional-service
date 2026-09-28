@@ -161,13 +161,21 @@ It is a small JSON file. Keep it secret: it is a password.
 
 ### Step 4: Download costguard
 
-Open the [releases page](https://github.com/stackitcloud/professional-service/releases?q=costguard),
+Open the [releases page](https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases),
 pick the newest release named **costguard vX.Y.Z**, and download these three
 files into one folder:
 
 - `config.yaml`: your settings
 - `stage1.yaml`: stage 1 (report only)
 - `stage2.yaml`: stage 2 (clean up), for later
+
+The stage files run costguard's container image from our registry,
+`professional-service.git.onstackit.cloud/professional-service-best-practices/costguard`,
+pinned to exactly that release. We publish it on a best-effort basis. If
+your cluster can pull from our registry, you are done with this step.
+If it cannot, or your company only runs images it built itself,
+[build the image yourself](#building-the-image-yourself) and use the stage
+files that this produces instead.
 
 ### Step 5: Fill in your settings
 
@@ -496,11 +504,42 @@ ko build -B --local -t dev ./cmd/costguard               # container image into 
 
 The tests never call STACKIT: `internal/fake` is an in-memory STACKIT. Every
 merge to `main` that changes costguard is released automatically by
-`.github/workflows/costguard-release.yaml` on the GitHub mirror: the version
-comes from the commit messages (`fix:` → patch, `feat:` → minor), the image
-goes to `ghcr.io/stackitcloud/professional-service/costguard`, and the
-release carries `config.yaml`, `stage1.yaml` and `stage2.yaml` with the
-image pinned. See [CHANGELOG.md](CHANGELOG.md) for what changed.
+`.github/workflows/costguard-release.yaml` on our Forgejo instance: the
+version comes from the commit messages (`fix:` → patch, `feat:` → minor),
+the image goes to
+`professional-service.git.onstackit.cloud/professional-service-best-practices/costguard`,
+and the release carries `config.yaml`, `stage1.yaml` and `stage2.yaml` with
+the image pinned. Pull requests build no image; to get one, add the label
+`build-image` to the pull request, and the workflow pushes a test image
+tagged `pr-<number>`. What changed in each version is on the
+[releases page](https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases).
+
+### Building the image yourself
+
+You need Git, Go (the version in [`go.mod`](go.mod)), [ko](https://ko.build)
+and a container registry that your cluster can pull from, for example a
+STACKIT Container Registry project. Run this on your machine or in your own
+pipeline, with the version of the release you downloaded:
+
+```bash
+git clone https://github.com/stackitcloud/professional-service.git
+cd professional-service
+git checkout apps/costguard/vX.Y.Z
+cd apps/costguard
+
+ko login <your registry> --username <user> --password-stdin <<<'<password>'
+export KO_DOCKER_REPO=<your registry>/<path>
+export COSTGUARD_VERSION=vX.Y.Z
+
+# Builds the image, pushes it and writes stage files pinned to it
+ko resolve -B -f deploy/stage1.yaml > stage1.yaml
+ko resolve -B -f deploy/stage2.yaml > stage2.yaml
+```
+
+Use these two stage files instead of the ones from the release, together
+with the release's `config.yaml`. If your cluster needs a login for your
+registry, add an `imagePullSecrets` entry to the two service accounts in
+the stage files.
 
 ---
 
