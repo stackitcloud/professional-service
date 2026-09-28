@@ -16,15 +16,21 @@ This example creates:
 
 ## Usage
 
+The provider block sets `experiments = ["iam"]` because role assignments are an experimental provider feature.
+
 ```bash
 terraform init
 terraform apply
 ```
 
-Retrieve the generated key to authenticate as the service account:
+> [!WARNING]
+> The service account API generates the private key, and Terraform stores it in plain text in the state, even though the output is marked `sensitive`. Anyone who can read the state can read the key. This setup is only an example and should not be used this way in production.
+
+Write the key file used to authenticate as the service account:
 
 ```bash
-terraform output -json service_account_key
+mkdir -p keys
+terraform output -raw service_account_key > keys/iam-custom-role-demo.json
 ```
 
 ## Key rotation

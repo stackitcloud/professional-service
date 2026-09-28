@@ -16,7 +16,7 @@ terraform {
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = ">=0.96.0"
+      version = ">=0.117.0"
     }
     time = {
       source  = "hashicorp/time"
@@ -28,4 +28,5 @@ terraform {
 provider "stackit" {
   default_region           = var.stackit_region
   service_account_key_path = var.stackit_service_account_key_path
+  experiments              = ["iam"]
 }
