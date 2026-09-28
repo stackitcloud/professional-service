@@ -29,6 +29,7 @@ Let's be upfront about how this repository is maintained:
 - [`examples/`](./examples) — Example solutions across a variety of STACKIT products.
 - [`scripts/`](./scripts/README.md) — Helper scripts for working with STACKIT services.
 - [`modules/`](./modules) — Ready-made Terraform modules to simplify your deployments.
+- [`apps/`](./apps) — Ready-to-run applications.
 
 ## How to Use This Repository
 
@@ -51,4 +52,4 @@ Because this repository is maintained on a best-effort basis, discussions and re
 
 ## AI Coding Agent Support
 
-[AGENTS.md](AGENTS.md) contains a tagged index of every example, script, and module in this repository, plus instructions the agent follows to fetch source files, verify provider schemas, and adapt examples for a customer's environment. It is **auto-generated** on every commit, do not edit it by hand.
+[AGENTS.md](AGENTS.md) contains a tagged index of every example, script, app and module in this repository, plus instructions the agent follows to fetch source files, verify provider schemas, and adapt examples for a customer's environment. It is **auto-generated** on every commit, do not edit it by hand.
