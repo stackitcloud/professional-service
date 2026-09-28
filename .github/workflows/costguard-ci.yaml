@@ -16,11 +16,14 @@ name: "costguard-ci"
 
 on:
   push:
+    branches: ["main"]
     paths:
       - "apps/costguard/**"
+      - ".github/workflows/costguard-ci.yaml"
   pull_request:
     paths:
       - "apps/costguard/**"
+      - ".github/workflows/costguard-ci.yaml"
 
 jobs:
   test:
