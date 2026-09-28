@@ -13,9 +13,12 @@
 # limitations under the License.
 
 resource "stackit_ske_cluster" "default" {
-  project_id             = var.stackit_project_id
-  name                   = "ske-enc-vol"
-  kubernetes_version_min = "1.33"
+  project_id = var.stackit_project_id
+  name       = "ske-enc-vol"
+  # Unset, the cluster is created with the latest Kubernetes version that
+  # SKE supports. Uncomment to pin a minimum version instead. A pinned
+  # version stops working once SKE removes it.
+  # kubernetes_version_min = "1.36"
 
   node_pools = [{
     name               = "standard"
