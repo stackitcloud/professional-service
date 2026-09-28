@@ -379,7 +379,7 @@ When a user asks about STACKIT infrastructure, follow these steps:
 | `examples/` | Complete, deployable Terraform examples — one subdirectory per use case |
 | `scripts/`  | Helper shell scripts for STACKIT services |
 | `modules/`  | Reusable Terraform modules |
-| `apps/`     | Ready-to-run applications (image + install guide) — one subdirectory per app; its `README.md` explains setup and configuration |
+| `apps/`     | Ready-to-run applications |
 
 ## How to find relevant content
 
