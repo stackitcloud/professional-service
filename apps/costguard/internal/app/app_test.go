@@ -15,611 +15,493 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/deleter"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/fake"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/scanner"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
-	"github.com/stackitcloud/professional-service/apps/costguard/internal/whitelist"
 )
 
-// ---- fakes -------------------------------------------------------------
+const org = "00000000-0000-0000-0000-00000000000a"
 
-type fakeRM struct {
-	mu       sync.Mutex
-	projects map[string][]stackit.Project
-	folders  map[string][]stackit.Folder
-}
+var monday = time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
 
-func newFakeRM() *fakeRM {
-	return &fakeRM{projects: map[string][]stackit.Project{}, folders: map[string][]stackit.Folder{}}
-}
-
-func (f *fakeRM) ListProjects(_ context.Context, containerID string) ([]stackit.Project, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]stackit.Project{}, f.projects[containerID]...), nil
-}
-
-func (f *fakeRM) ListFolders(_ context.Context, containerID string) ([]stackit.Folder, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]stackit.Folder{}, f.folders[containerID]...), nil
-}
-
-func (f *fakeRM) GetProject(_ context.Context, projectID string) (*stackit.Project, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, list := range f.projects {
-		for _, p := range list {
-			if p.ID == projectID {
-				return &p, nil
-			}
-		}
-	}
-	return nil, errors.New("project not found")
-}
-
-func (f *fakeRM) GetFolder(_ context.Context, folderID string) (*stackit.Folder, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, list := range f.folders {
-		for _, fo := range list {
-			if fo.ID == folderID {
-				return &fo, nil
-			}
-		}
-	}
-	return nil, errors.New("folder not found")
-}
-
-type fakeIaaS struct {
-	mu             sync.Mutex
-	ips            map[string][]stackit.PublicIP
-	volumes        map[string][]stackit.Volume
-	snapshots      map[string][]stackit.Snapshot
-	setMarks       map[string]string
-	clearedMarks   map[string]bool
-	deletedIPs     []string
-	deletedVolumes []string
-	deletedSnaps   []string
-	errListIPs     map[string]error
-}
-
-func newFakeIaaS() *fakeIaaS {
-	return &fakeIaaS{
-		ips:          map[string][]stackit.PublicIP{},
-		volumes:      map[string][]stackit.Volume{},
-		snapshots:    map[string][]stackit.Snapshot{},
-		setMarks:     map[string]string{},
-		clearedMarks: map[string]bool{},
-		errListIPs:   map[string]error{},
-	}
-}
-
-func prk(project, region string) string { return project + "/" + region }
-
-func (f *fakeIaaS) ListNetworkAreas(_ context.Context, _ string) ([]stackit.NetworkArea, error) {
-	return nil, nil
-}
-func (f *fakeIaaS) GetNetworkArea(_ context.Context, _, id string) (*stackit.NetworkArea, error) {
-	return nil, errors.New("area not found")
-}
-func (f *fakeIaaS) ListPublicIPs(_ context.Context, projectID, region string) ([]stackit.PublicIP, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.errListIPs[prk(projectID, region)] != nil {
-		return nil, f.errListIPs[prk(projectID, region)]
-	}
-	return append([]stackit.PublicIP{}, f.ips[prk(projectID, region)]...), nil
-}
-func (f *fakeIaaS) GetPublicIP(_ context.Context, projectID, region, id string) (*stackit.PublicIP, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, ip := range f.ips[prk(projectID, region)] {
-		if ip.ID == id {
-			return &ip, nil
-		}
-	}
-	return nil, errors.New("ip not found")
-}
-func (f *fakeIaaS) SetPublicIPMark(_ context.Context, projectID, region, id, value string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.setMarks["ip/"+prk(projectID, region)+"/"+id] = value
-	return nil
-}
-func (f *fakeIaaS) ClearPublicIPMark(_ context.Context, projectID, region, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.clearedMarks["ip/"+prk(projectID, region)+"/"+id] = true
-	return nil
-}
-func (f *fakeIaaS) DeletePublicIP(_ context.Context, projectID, region, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deletedIPs = append(f.deletedIPs, "ip/"+prk(projectID, region)+"/"+id)
-	return nil
-}
-func (f *fakeIaaS) ListVolumes(_ context.Context, projectID, region string) ([]stackit.Volume, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]stackit.Volume{}, f.volumes[prk(projectID, region)]...), nil
-}
-func (f *fakeIaaS) GetVolume(_ context.Context, projectID, region, id string) (*stackit.Volume, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, v := range f.volumes[prk(projectID, region)] {
-		if v.ID == id {
-			return &v, nil
-		}
-	}
-	return nil, errors.New("volume not found")
-}
-func (f *fakeIaaS) SetVolumeMark(_ context.Context, projectID, region, id, value string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.setMarks["vol/"+prk(projectID, region)+"/"+id] = value
-	return nil
-}
-func (f *fakeIaaS) ClearVolumeMark(_ context.Context, projectID, region, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.clearedMarks["vol/"+prk(projectID, region)+"/"+id] = true
-	return nil
-}
-func (f *fakeIaaS) DeleteVolume(_ context.Context, projectID, region, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deletedVolumes = append(f.deletedVolumes, "vol/"+prk(projectID, region)+"/"+id)
-	return nil
-}
-func (f *fakeIaaS) ListSnapshots(_ context.Context, projectID, region string) ([]stackit.Snapshot, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]stackit.Snapshot{}, f.snapshots[prk(projectID, region)]...), nil
-}
-func (f *fakeIaaS) DeleteSnapshot(_ context.Context, projectID, region, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deletedSnaps = append(f.deletedSnaps, id)
-	return nil
-}
-func (f *fakeIaaS) ListServers(_ context.Context, _ string, _ string) ([]stackit.Server, error) {
-	return nil, nil
-}
-
-type fakeCost struct{}
-
-func (fakeCost) ListCostsForCustomer(_ context.Context, _ string, _, _ time.Time) ([]stackit.CostRecord, error) {
-	return nil, nil
-}
-
-type fakeSKE struct{}
-
-func (fakeSKE) ListClusterNames(_ context.Context, _ string) ([]string, error) { return nil, nil }
-
-type fakeOS struct{}
-
-func (fakeOS) ListBucketNames(_ context.Context, _ string) ([]string, error) { return nil, nil }
-
-// ---- helpers -----------------------------------------------------------
-
-func testConfig(t *testing.T) config.Config {
-	t.Helper()
-	return config.Config{
-		Scope:                   config.ScopeOrganisation,
-		OrgID:                   "org-1",
-		Regions:                 []string{"eu01"},
-		MaxAgeDays:              90,
-		SNAMaxAgeDays:           90,
-		SafeLabelKey:            "keep",
-		SafeLabelValue:          "yes",
-		Output:                  config.OutputGoogleChat,
-		WebhookURL:              "http://webhook.invalid",
-		DryRun:                  false,
-		CostAnomalyThresholdPct: 20,
-		VolumeCostEurPerGB:      0.0619,
-		PublicIPCostEurPerMonth: 4.82,
-		GracePeriod:             8 * time.Hour,
-	}
-}
-
-// webhookServer records every request body and answers with the
-// configured status.
-type webhookServer struct {
-	*httptest.Server
-	status int
+// webhook records the messages it receives.
+type webhook struct {
 	mu     sync.Mutex
 	bodies []string
+	status int
 }
 
-func newWebhookServer(t *testing.T, status int) *webhookServer {
-	t.Helper()
-	ws := &webhookServer{status: status}
-	ws.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		ws.mu.Lock()
-		ws.bodies = append(ws.bodies, string(body))
-		ws.mu.Unlock()
-		w.WriteHeader(status)
-	}))
-	t.Cleanup(ws.Close)
-	return ws
-}
-
-func (w *webhookServer) last(t *testing.T) string {
-	t.Helper()
+func (w *webhook) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	b, _ := io.ReadAll(r.Body)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if len(w.bodies) == 0 {
-		t.Fatal("webhook was never called")
-	}
-	return w.bodies[len(w.bodies)-1]
+	w.bodies = append(w.bodies, string(b))
+	rw.WriteHeader(w.status)
 }
 
-func (w *webhookServer) count() int {
+func (w *webhook) messages() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return len(w.bodies)
+	return append([]string(nil), w.bodies...)
 }
 
-func expiredMark() string { return stackit.FormatMark(time.Now().Add(-1 * time.Hour)) }
-
-// testProject returns a recent, active, non-stale project.
-func testProject() stackit.Project {
-	return stackit.Project{
-		ID:             "p1",
-		Name:           "Project 1",
-		CreationTime:   time.Now().Add(-24 * time.Hour),
-		LifecycleState: "ACTIVE",
-	}
+type env struct {
+	store   *fake.Store
+	hook    *webhook
+	config  string
+	logs    *bytes.Buffer
+	clients error
 }
 
-func buildSet(rm *fakeRM, iaas *fakeIaaS) *stackit.Set {
-	return &stackit.Set{
-		ResourceManager: rm,
-		IaaS:            iaas,
-		Cost:            fakeCost{},
-		SKE:             fakeSKE{},
-		ObjectStorage:   fakeOS{},
-	}
-}
-
-func installFakes(t *testing.T, rm *fakeRM, iaas *fakeIaaS) {
+// setup wires the fake STACKIT, a webhook and a config file into Run.
+func setup(t *testing.T, yaml string) *env {
 	t.Helper()
-	oldClients := newStackitClients
-	t.Cleanup(func() { newStackitClients = oldClients })
-	newStackitClients = func(...stackit.ConfigurationOption) (*stackit.Set, error) {
-		return buildSet(rm, iaas), nil
+	e := &env{store: fake.New(), hook: &webhook{status: http.StatusOK}, logs: &bytes.Buffer{}}
+	e.store.AddProject("p1", "shop", org, monday.AddDate(0, 0, -1), nil)
+
+	ts := httptest.NewServer(e.hook)
+	t.Cleanup(ts.Close)
+	t.Setenv(config.EnvWebhookURL, ts.URL)
+
+	e.config = filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(e.config, []byte("organizationId: "+org+"\noutput: slack\nregions: [eu01]\n"+yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := []func(){}
+	oldClients, oldScanner, oldDeleter, oldNow, oldLog := newClients, newScanner, newDeleter, now, logOutput
+	restore = append(restore, func() {
+		newClients, newScanner, newDeleter, now, logOutput = oldClients, oldScanner, oldDeleter, oldNow, oldLog
+	})
+	t.Cleanup(func() {
+		for _, f := range restore {
+			f()
+		}
+	})
+	newClients = func() (*stackit.Set, error) {
+		if e.clients != nil {
+			return nil, e.clients
+		}
+		return e.store.Set(), nil
+	}
+	newScanner = func(set *stackit.Set, cfg config.Config, logger *slog.Logger) *scanner.Scanner {
+		s := scanner.New(set, cfg, logger)
+		s.Pacer, s.Now = scanner.NopPacer{}, func() time.Time { return monday }
+		return s
+	}
+	newDeleter = func(iaas stackit.IaaS, logger *slog.Logger) *deleter.Deleter {
+		d := deleter.New(iaas, logger)
+		d.BetweenDeletions, d.RetryBackoff, d.ServerWait, d.PollInterval = 0, 0, 10*time.Millisecond, time.Millisecond
+		return d
+	}
+	now = func() time.Time { return monday.AddDate(0, 0, 1) }
+	logOutput = e.logs
+	oldPauses := notifier.RetryPauses
+	notifier.RetryPauses = []time.Duration{time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { notifier.RetryPauses = oldPauses })
+	return e
+}
+
+func (e *env) run(sub string) int {
+	return e.runCtx(context.Background(), sub)
+}
+
+func (e *env) runCtx(ctx context.Context, sub string) int {
+	return Run(ctx, Options{Subcommand: sub, ConfigPath: e.config, LogLevel: "debug", Version: "test"})
+}
+
+func (e *env) addCandidates() {
+	e.store.Add(
+		stackit.Resource{Kind: stackit.KindVolume, ID: "v1", Name: "data", ProjectID: "p1", Region: "eu01", Status: stackit.VolumeStatusAvailable, SizeGB: 10},
+		stackit.Resource{Kind: stackit.KindPublicIP, ID: "ip1", Name: "192.0.2.1", Address: "192.0.2.1", ProjectID: "p1", Region: "eu01"},
+	)
+}
+
+func TestReportChangesNothing(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	if code := e.run("report"); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, e.logs)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard report (stage 1)") || !strings.Contains(msgs[0], "2 resource(s) would be deleted, saving about €5.44 per month") {
+		t.Errorf("messages = %v", msgs)
+	}
+	if calls := append(e.store.CallsWith("label"), e.store.CallsWith("delete")...); len(calls) != 0 {
+		t.Errorf("report must not write: %v", calls)
+	}
+	if !strings.Contains(e.logs.String(), `"category":"detached-volume"`) {
+		t.Errorf("findings must be logged:\n%s", e.logs)
 	}
 }
 
-// ---- tests --------------------------------------------------------------
-
-func TestRunScanSendsReportAndMarksCandidates(t *testing.T) {
-	rm := newFakeRM()
-	rm.projects["org-1"] = []stackit.Project{testProject()}
-	iaas := newFakeIaaS()
-	iaas.ips["p1/eu01"] = []stackit.PublicIP{
-		{ID: "ip-1", Address: "203.0.113.10", ProjectID: "p1", Region: "eu01", AttachedNIC: ""},
+func TestFlagPostsThenLabels(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	if code := e.run("flag"); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
-	installFakes(t, rm, iaas)
-
-	ws := newWebhookServer(t, 204)
-	cfg := testConfig(t)
-	cfg.WebhookURL = ws.URL
-
-	code := runScan(context.Background(), cfg, testLogger(t))
-	if code != ExitOK {
-		t.Fatalf("runScan exit code = %d, want %d", code, ExitOK)
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "2 resource(s) will be deleted Tuesday 08:00") {
+		t.Errorf("messages = %v", msgs)
 	}
-
-	// The idle IP must have been stamped with a mark.
-	iaas.mu.Lock()
-	mark, marked := iaas.setMarks["ip/p1/eu01/ip-1"]
-	iaas.mu.Unlock()
-	if !marked || mark == "" {
-		t.Fatalf("idle IP was not marked, setMarks=%v", iaas.setMarks)
-	}
-	deadline, ok := stackit.MarkDeadline(map[string]string{stackit.MarkLabelKey: mark})
-	if !ok || time.Until(deadline) < 7*time.Hour {
-		t.Fatalf("mark deadline %v should be roughly now + grace period", deadline)
-	}
-
-	body := ws.last(t)
-	if !strings.Contains(body, "cardsV2") {
-		t.Errorf("googlechat payload missing cardsV2: %.200s", body)
-	}
-	if !strings.Contains(body, "ip-1") {
-		t.Errorf("report does not mention the idle IP: %.400s", body)
+	if !stackit.Requested(e.store.Find("v1").Labels) || !stackit.Requested(e.store.Find("ip1").Labels) {
+		t.Error("candidates must be labelled")
 	}
 }
 
-func TestRunScanWebhookFailureIsFatal(t *testing.T) {
-	rm := newFakeRM()
-	iaas := newFakeIaaS()
-	installFakes(t, rm, iaas)
-
-	ws := newWebhookServer(t, 500)
-	cfg := testConfig(t)
-	cfg.WebhookURL = ws.URL
-
-	code := runScan(context.Background(), cfg, testLogger(t))
-	if code != ExitFatal {
-		t.Fatalf("runScan exit code = %d, want %d on webhook failure", code, ExitFatal)
+func TestFlagOnlyFlagsWhatTheMessageLists(t *testing.T) {
+	e := setup(t, "")
+	for i := 0; i < 12; i++ {
+		e.store.Add(stackit.Resource{Kind: stackit.KindVolume, ID: fmt.Sprintf("v%02d", i), ProjectID: "p1", Region: "eu01",
+			Status: stackit.VolumeStatusAvailable, SizeGB: int64(10 + i)})
 	}
-}
-
-func TestRunDeleteDryRunDeletesNothing(t *testing.T) {
-	rm := newFakeRM()
-	rm.projects["org-1"] = []stackit.Project{testProject()}
-	iaas := newFakeIaaS()
-	iaas.ips["p1/eu01"] = []stackit.PublicIP{
-		{ID: "ip-1", Address: "203.0.113.10", ProjectID: "p1", Region: "eu01",
-			Labels: map[string]string{stackit.MarkLabelKey: expiredMark()}},
+	if code := e.run("flag"); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
-	installFakes(t, rm, iaas)
-
-	ws := newWebhookServer(t, 204)
-	cfg := testConfig(t)
-	cfg.WebhookURL = ws.URL
-	cfg.DryRun = true
-
-	code := runDelete(context.Background(), cfg, testLogger(t))
-	if code != ExitOK {
-		t.Fatalf("runDelete exit code = %d, want %d", code, ExitOK)
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "… and 2 more; they will be listed in the next runs.") {
+		t.Errorf("messages = %v", msgs)
 	}
-
-	iaas.mu.Lock()
-	defer iaas.mu.Unlock()
-	if len(iaas.deletedIPs) != 0 || len(iaas.deletedVolumes) != 0 {
-		t.Fatalf("dry run must not delete anything, deleted IPs=%v volumes=%v", iaas.deletedIPs, iaas.deletedVolumes)
-	}
-	if ws.count() != 1 {
-		t.Fatalf("dry run should send exactly one message (the report), got %d", ws.count())
-	}
-	if !strings.Contains(ws.last(t), "ip-1") {
-		t.Error("dry-run report does not mention the due candidate")
-	}
-}
-
-func TestRunDeleteDeletesDueCandidatesAndSendsConfirmation(t *testing.T) {
-	rm := newFakeRM()
-	rm.projects["org-1"] = []stackit.Project{testProject()}
-	iaas := newFakeIaaS()
-	iaas.ips["p1/eu01"] = []stackit.PublicIP{
-		// Due candidate.
-		{ID: "ip-1", Address: "203.0.113.10", ProjectID: "p1", Region: "eu01",
-			Labels: map[string]string{stackit.MarkLabelKey: expiredMark()}},
-		// Still inside the grace period: must survive.
-		{ID: "ip-2", Address: "203.0.113.11", ProjectID: "p1", Region: "eu01",
-			Labels: map[string]string{stackit.MarkLabelKey: stackit.FormatMark(time.Now().Add(1 * time.Hour))}},
-	}
-	iaas.volumes["p1/eu01"] = []stackit.Volume{
-		// Due candidate with a snapshot that must go first.
-		{ID: "vol-1", Name: "data", ProjectID: "p1", Region: "eu01", SizeGB: 100,
-			Status: "AVAILABLE", Labels: map[string]string{stackit.MarkLabelKey: expiredMark()},
-			CreatedAt: time.Now().Add(-48 * time.Hour)},
-		// Attached: never a candidate.
-		{ID: "vol-2", Name: "system", ProjectID: "p1", Region: "eu01", SizeGB: 50,
-			Status: "IN_USE", ServerID: "srv-1", CreatedAt: time.Now().Add(-48 * time.Hour)},
-	}
-	iaas.snapshots["p1/eu01"] = []stackit.Snapshot{
-		{ID: "snap-1", VolumeID: "vol-1"},
-	}
-	installFakes(t, rm, iaas)
-
-	ws := newWebhookServer(t, 204)
-	cfg := testConfig(t)
-	cfg.WebhookURL = ws.URL
-
-	code := runDelete(context.Background(), cfg, testLogger(t))
-	if code != ExitOK {
-		t.Fatalf("runDelete exit code = %d, want %d", code, ExitOK)
-	}
-
-	iaas.mu.Lock()
-	defer iaas.mu.Unlock()
-	if len(iaas.deletedIPs) != 1 || iaas.deletedIPs[0] != "ip/p1/eu01/ip-1" {
-		t.Errorf("deleted IPs = %v, want only the due one", iaas.deletedIPs)
-	}
-	if len(iaas.deletedVolumes) != 1 || iaas.deletedVolumes[0] != "vol/p1/eu01/vol-1" {
-		t.Errorf("deleted volumes = %v, want only the due one", iaas.deletedVolumes)
-	}
-	if len(iaas.deletedSnaps) != 1 || iaas.deletedSnaps[0] != "snap-1" {
-		t.Errorf("deleted snapshots = %v, want the volume's snapshot first", iaas.deletedSnaps)
-	}
-
-	if ws.count() != 1 {
-		t.Fatalf("delete run should send exactly one message (the confirmation), got %d", ws.count())
-	}
-	body := ws.last(t)
-	if !strings.Contains(body, "203.0.113.10") || !strings.Contains(body, "volume data") {
-		t.Errorf("confirmation does not mention the deleted resources: %.400s", body)
-	}
-}
-
-func TestRunInvalidConfigExitsFatal(t *testing.T) {
-	t.Setenv(config.EnvScope, "") // missing required field
-	setValidEnvExcept(t, config.EnvScope)
-	code := Run(context.Background(), SubcommandScan, "", "error")
-	if code != ExitFatal {
-		t.Fatalf("Run exit code = %d, want %d for invalid config", code, ExitFatal)
-	}
-}
-
-func TestRunUnknownSubcommandExitsUsage(t *testing.T) {
-	setValidEnv(t)
-	code := Run(context.Background(), "frobnicate", "", "error")
-	if code != ExitUsage {
-		t.Fatalf("Run exit code = %d, want %d for unknown subcommand", code, ExportUsageCode())
-	}
-}
-
-func TestRunCallbackStoreFailureExitsFatal(t *testing.T) {
-	setValidEnv(t)
-	t.Setenv(config.EnvCallbackURL, "http://callback.invalid")
-	t.Setenv(config.EnvCallbackSecret, "s3cr3t")
-	t.Setenv(config.EnvCallbackPort, "8443")
-	t.Setenv(config.EnvWhitelistSecretPath, "secret/costguard/whitelist")
-	t.Setenv(config.EnvSMURL, "http://127.0.0.1:9")
-	t.Setenv(config.EnvSMUsername, "u")
-	t.Setenv(config.EnvSMPasswrd, "p")
-
-	oldClients, oldStore := newStackitClients, newSMStore
-	t.Cleanup(func() { newStackitClients, newSMStore = oldClients, oldStore })
-	rm, iaas := newFakeRM(), newFakeIaaS()
-	newStackitClients = func(...stackit.ConfigurationOption) (*stackit.Set, error) {
-		return buildSet(rm, iaas), nil
-	}
-	newSMStore = func(baseURL, username, password, path string, logger *slog.Logger) (*whitelist.Store, error) {
-		return nil, errors.New("connection refused")
-	}
-
-	code := Run(context.Background(), SubcommandCallback, "", "error")
-	if code != ExitFatal {
-		t.Fatalf("Run exit code = %d, want %d on store failure", code, ExitFatal)
-	}
-}
-
-func TestRunCallbackServesAndShutsDownGracefully(t *testing.T) {
-	setValidEnv(t)
-	t.Setenv(config.EnvCallbackURL, "http://callback.invalid")
-	t.Setenv(config.EnvCallbackSecret, "s3cr3t")
-	t.Setenv(config.EnvWhitelistSecretPath, "secret/costguard/whitelist")
-
-	// Minimal Vault fake: userpass login + empty whitelist secret.
-	vault := httptest.NewServer(newVaultFake())
-	t.Cleanup(vault.Close)
-	t.Setenv(config.EnvSMURL, vault.URL)
-	t.Setenv(config.EnvSMUsername, "u")
-	t.Setenv(config.EnvSMPasswrd, "p")
-
-	rm, iaas := newFakeRM(), newFakeIaaS()
-	rm.projects["org-1"] = []stackit.Project{testProject()}
-	installFakes(t, rm, iaas)
-
-	// Port 0 is not usable for the real listener; pick a fixed free one.
-	port := freePort(t)
-	t.Setenv(config.EnvCallbackPort, itoa(port))
-
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan int, 1)
-	go func() { done <- Run(ctx, SubcommandCallback, "", "error") }()
-
-	// Wait for the server to come up, then hit /healthz.
-	healthURL := "http://127.0.0.1:" + itoa(port) + "/healthz"
-	deadline := time.Now().Add(5 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		resp, err := http.Get(healthURL)
-		if err == nil {
-			lastErr = nil
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				break
+	flagged := 0
+	for i := 0; i < 12; i++ {
+		id := fmt.Sprintf("v%02d", i)
+		if stackit.Requested(e.store.Find(id).Labels) {
+			flagged++
+			if !strings.Contains(msgs[0], id) {
+				t.Errorf("%s is flagged but not in the message", id)
 			}
 		}
-		lastErr = err
-		time.Sleep(20 * time.Millisecond)
 	}
-	if lastErr != nil {
-		t.Fatalf("healthz never came up: %v", lastErr)
+	if flagged != 10 {
+		t.Errorf("flagged %d, want 10", flagged)
 	}
+}
 
+func TestFlagClearsStaleDeleteLabelOnProtectedDisk(t *testing.T) {
+	e := setup(t, "")
+	e.store.Add(stackit.Resource{Kind: stackit.KindVolume, ID: "v1", Name: "data", ProjectID: "p1", Region: "eu01",
+		Status: stackit.VolumeStatusAvailable, SizeGB: 10, Labels: map[string]string{"delete": "true", "do-not-delete": "true"}})
+
+	if code := e.run("report"); code != ExitOK || len(e.store.CallsWith("label")) != 0 {
+		t.Fatalf("report must not write (exit %d, calls %v)", code, e.store.CallsWith("label"))
+	}
+	if code := e.run("flag"); code != ExitOK {
+		t.Fatalf("exit %d", code)
+	}
+	labels := e.store.Find("v1").Labels
+	if stackit.Requested(labels) || !stackit.Protected(labels) {
+		t.Errorf("labels = %v", labels)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 2 || !strings.Contains(msgs[0], "stage 2 removes the delete label") ||
+		!strings.Contains(msgs[1], "Protected by do-not-delete but still marked delete=true: 1") ||
+		!strings.Contains(msgs[1], "delete label removed") {
+		t.Errorf("messages = %v", msgs)
+	}
+}
+
+func TestFlagWithoutDeliveredMessageSetsNoLabels(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	e.hook.status = http.StatusInternalServerError
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	if calls := e.store.CallsWith("label"); len(calls) != 0 {
+		t.Errorf("no message, no labels: %v", calls)
+	}
+	if n := len(e.hook.messages()); n != 3 {
+		t.Errorf("a 500 is tried 3 times, got %d", n)
+	}
+}
+
+func TestFlagBlockedSetsNoLabels(t *testing.T) {
+	e := setup(t, "skip:\n  projects: [renamed]\n")
+	e.addCandidates()
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "Nothing is flagged or deleted until the skip list is fixed") ||
+		!strings.Contains(msgs[0], "costguard: deletions blocked") {
+		t.Errorf("messages = %v", msgs)
+	}
+	if calls := e.store.CallsWith("label"); len(calls) != 0 {
+		t.Errorf("blocked runs set no labels: %v", calls)
+	}
+}
+
+func TestFlagLabelFailureIsFatal(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	e.store.Errs["label:v1"] = fake.Status(500)
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+func TestDeleteDeletesLabelledAndPosts(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	if code := e.run("flag"); code != ExitOK {
+		t.Fatal("flag failed")
+	}
+	if code := e.run("delete"); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, e.logs)
+	}
+	if e.store.Find("v1") != nil || e.store.Find("ip1") != nil {
+		t.Error("labelled candidates must be deleted")
+	}
+	msgs := e.hook.messages()
+	// 10 GB at the default 0.0619 €/GB plus one IP at 4.82 €.
+	if len(msgs) != 2 || !strings.Contains(msgs[1], "costguard: 2 resource(s) deleted") ||
+		!strings.Contains(msgs[1], "This run deleted 2 resource(s), saving about €5.44 per month (€65.28 per year).") {
+		t.Errorf("messages = %v", msgs)
+	}
+}
+
+func TestInterruptedDeleteRunStillPosts(t *testing.T) {
+	e := setup(t, "")
+	for _, id := range []string{"s1", "s2", "s3"} {
+		e.store.Add(stackit.Resource{Kind: stackit.KindServer, ID: id, ProjectID: "p1", Region: "eu01", Labels: map[string]string{"delete": "true"}})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// SIGTERM arrives right after the first deletion.
+	e.store.AfterDelete = func(stackit.Resource) { cancel() }
+
+	if code := e.runCtx(ctx, "delete"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "This run was interrupted after 1 deletion(s).") {
+		t.Errorf("the summary must still go out: %v", msgs)
+	}
+	if len(e.store.CallsWith("delete server")) != 1 {
+		t.Errorf("deleting must stop when told to: %v", e.store.CallsWith("delete server"))
+	}
+}
+
+func TestCancelledRunStillPostsFailure(t *testing.T) {
+	e := setup(t, "")
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	select {
-	case code := <-done:
-		if code != ExitOK {
-			t.Fatalf("Run exit code = %d, want %d after graceful shutdown", code, ExitOK)
+	if code := e.runCtx(ctx, "flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "costguard flag run failed") ||
+		!strings.Contains(msgs[0], "stopped from outside") || strings.Contains(msgs[0], "context canceled") {
+		t.Errorf("the failure message must go out, in words people understand: %v", msgs)
+	}
+}
+
+func TestTimedOutRunSaysSo(t *testing.T) {
+	e := setup(t, "")
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	if code := e.runCtx(ctx, "report"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "took longer than 60 minutes") {
+		t.Errorf("messages = %v", msgs)
+	}
+}
+
+func TestFlagPostsACorrectionWhenLabelsFail(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	e.store.Errs["label:v1"] = fake.Status(500)
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 2 || !strings.Contains(msgs[1], "correction to today") ||
+		!strings.Contains(msgs[1], "Not marked, so NOT deleted this week: 1") || !strings.Contains(msgs[1], "data") {
+		t.Errorf("messages = %v", msgs)
+	}
+	if !stackit.Requested(e.store.Find("ip1").Labels) {
+		t.Error("the other label must still be written")
+	}
+}
+
+func TestDeleteWithNothingToDoStaysQuiet(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates() // unlabelled: Tuesday never flags
+	if code := e.run("delete"); code != ExitOK {
+		t.Fatalf("exit %d", code)
+	}
+	if msgs := e.hook.messages(); len(msgs) != 0 {
+		t.Errorf("no news, no message: %v", msgs)
+	}
+	if calls := e.store.CallsWith("costs"); len(calls) != 0 {
+		t.Errorf("the delete run skips the cost call: %v", calls)
+	}
+	if len(e.store.CallsWith("label")) != 0 {
+		t.Error("the delete run never flags")
+	}
+}
+
+func TestDeleteBlockedPostsAndFails(t *testing.T) {
+	e := setup(t, "skip:\n  folders: [gone]\n")
+	e.store.Add(stackit.Resource{Kind: stackit.KindServer, ID: "s1", ProjectID: "p1", Region: "eu01", Labels: map[string]string{"delete": "true"}})
+	if code := e.run("delete"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	if e.store.Find("s1") == nil {
+		t.Error("a blocked run deletes nothing")
+	}
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "deletions blocked") {
+		t.Errorf("messages = %v", msgs)
+	}
+}
+
+func TestDeleteSummaryDeliveryFailureIsFatal(t *testing.T) {
+	e := setup(t, "")
+	e.store.Add(stackit.Resource{Kind: stackit.KindServer, ID: "s1", ProjectID: "p1", Region: "eu01", Labels: map[string]string{"delete": "true"}})
+	e.hook.status = http.StatusForbidden
+	if code := e.run("delete"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+func TestScopeErrorPostsFailure(t *testing.T) {
+	e := setup(t, "scope:\n  projects: [no-such-project]\n")
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard flag run failed") || !strings.Contains(msgs[0], "no-such-project") {
+		t.Errorf("messages = %v", msgs)
+	}
+}
+
+func TestClientErrorPostsFailure(t *testing.T) {
+	e := setup(t, "")
+	e.clients = errors.New("no credentials")
+	e.hook.status = http.StatusBadGateway
+	if code := e.run("report"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(e.logs.String(), "sending the failure message failed") {
+		t.Errorf("logs = %s", e.logs)
+	}
+}
+
+func TestLoginProblemsAreReadable(t *testing.T) {
+	e := setup(t, "")
+	e.clients = errors.New("setting up authentication: no valid credentials were found")
+	if code := e.run("report"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard cannot log in to STACKIT") ||
+		!strings.Contains(msgs[0], "no valid credentials were found") {
+		t.Errorf("messages = %v", msgs)
+	}
+}
+
+func TestUnreadableOrganizationIsNotNothingFound(t *testing.T) {
+	e := setup(t, "")
+	e.addCandidates()
+	e.store.Errs["projects:"+org] = fake.Status(401)
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "cannot read the organization") || strings.Contains(msgs[0], "Nothing found") {
+		t.Errorf("messages = %v", msgs)
+	}
+	if len(e.store.CallsWith("label")) != 0 {
+		t.Error("nothing may be flagged")
+	}
+}
+
+func TestReportDeliveryFailureIsFatal(t *testing.T) {
+	e := setup(t, "")
+	e.hook.status = http.StatusNotFound
+	if code := e.run("report"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+func TestUsageAndConfigErrors(t *testing.T) {
+	e := setup(t, "")
+	if code := e.run("scan"); code != ExitUsage {
+		t.Errorf("unknown subcommand: exit %d", code)
+	}
+	if code := Run(context.Background(), Options{Subcommand: "report", ConfigPath: filepath.Join(t.TempDir(), "missing")}); code != ExitFatal {
+		t.Errorf("missing config: exit %d", code)
+	}
+	t.Setenv(config.EnvWebhookURL, "")
+	if code := e.run("report"); code != ExitFatal {
+		t.Errorf("invalid config: exit %d", code)
+	}
+}
+
+func TestBrokenConfigIsPostedToTheChat(t *testing.T) {
+	// A typo in a key: the strict parser refuses the file, the chat
+	// settings are still usable.
+	e := setup(t, "skips:\n  projects: [a]\n")
+	if code := e.run("report"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs := e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard report run failed") || !strings.Contains(msgs[0], "skips") {
+		t.Errorf("messages = %v", msgs)
+	}
+
+	// A value that fails validation: each problem is listed.
+	e = setup(t, "warnEmptyAfterDays: 1\n")
+	if code := e.run("flag"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	msgs = e.hook.messages()
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "warnEmptyAfterDays must be 0 (warnings off) or at least 7") {
+		t.Errorf("messages = %v", msgs)
+	}
+	if len(e.store.CallsWith("list")) != 0 {
+		t.Error("nothing may be scanned with a broken configuration")
+	}
+}
+
+func TestBrokenChatSettingsOnlyLog(t *testing.T) {
+	e := setup(t, "")
+	t.Setenv(config.EnvWebhookURL, "http://hooks.example.com/not-https")
+	if code := e.run("report"); code != ExitFatal {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(e.logs.String(), "the problem cannot be posted") {
+		t.Errorf("logs = %s", e.logs)
+	}
+}
+
+func TestBuildNotifierAndLogger(t *testing.T) {
+	for _, out := range []string{config.OutputSlack, config.OutputTeams, config.OutputGoogleChat} {
+		if buildNotifier(config.Config{Output: out, WebhookURL: "https://x"}) == nil {
+			t.Errorf("%s: nil notifier", out)
 		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("callback did not shut down in time")
 	}
-}
-
-// newVaultFake serves the two endpoints the whitelist Store uses: the
-// userpass login and the KV v2 data read (secret absent → empty map).
-func newVaultFake() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/auth/user/login", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"auth":{"client_token":"root","lease_duration":3600,"policies":["root"]}}`))
-	})
-	mux.HandleFunc("/v1/secret/data/costguard/whitelist", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.Method {
-		case http.MethodGet:
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"errors":["no secret found at path"]}`))
-		case http.MethodPut, http.MethodPost:
-			_, _ = w.Write([]byte(`{"data":{}}`))
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
-	return mux
-}
-
-// ---- config-env helpers --------------------------------------------------
-
-// setValidEnv fills the environment with a minimal valid configuration.
-func setValidEnv(t *testing.T) {
-	t.Helper()
-	setValidEnvExcept(t)
-}
-
-func setValidEnvExcept(t *testing.T, skip ...string) {
-	t.Helper()
-	skipped := map[string]bool{}
-	for _, s := range skip {
-		skipped[s] = true
-	}
-	set := func(k, v string) {
-		if !skipped[k] {
-			t.Setenv(k, v)
+	for _, lvl := range []string{"debug", "warn", "error", ""} {
+		if newLogger(lvl) == nil {
+			t.Errorf("%q: nil logger", lvl)
 		}
 	}
-	set(config.EnvScope, config.ScopeOrganisation)
-	set(config.EnvOrgID, "org-1")
-	set(config.EnvRegions, "eu01")
-	set(config.EnvMaxAgeDays, "90")
-	set(config.EnvSNAMaxAgeDays, "90")
-	set(config.EnvSafeLabelKey, "keep")
-	set(config.EnvSafeLabelValue, "yes")
-	set(config.EnvOutput, config.OutputGoogleChat)
-	set(config.EnvWebhookURL, "http://webhook.invalid")
-	set(config.EnvDryRun, "false")
-}
-
-// freePort asks the kernel for a free TCP port on localhost.
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("finding a free port: %v", err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
-func itoa(v int) string { return strconv.Itoa(v) }
-
-// ExportUsageCode exposes the usage exit code for cross-package tests.
-func ExportUsageCode() int { return ExitUsage }
-
-func testLogger(t *testing.T) *slog.Logger {
-	t.Helper()
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

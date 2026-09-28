@@ -22,41 +22,47 @@ import (
 	resourcemanagerv0 "github.com/stackitcloud/stackit-sdk-go/services/resourcemanager/v0api"
 )
 
-// Project is the bot's view of a resource manager project.
-type Project struct {
-	ID                  string
-	Name                string
-	ParentContainerID   string
-	ParentContainerName string
-	CreationTime        time.Time
-	Labels              map[string]string
-	LifecycleState      string
+// Container is a project or folder as costguard sees it.
+type Container struct {
+	ID        string
+	Name      string
+	ParentID  string
+	Labels    map[string]string
+	CreatedAt time.Time
+	// LifecycleState is set for projects only (e.g. ACTIVE, DELETING).
+	LifecycleState string
+	// Ancestors lists the folders above the container, nearest first. It
+	// is only filled by GetProject and GetFolder.
+	Ancestors []Ancestor
 }
 
-// Folder is the bot's view of a resource manager folder.
-type Folder struct {
-	ID                string
-	Name              string
-	ParentContainerID string
-	Labels            map[string]string
-	CreationTime      time.Time
+// Ancestor is one folder above a container. The organization is not
+// included.
+type Ancestor struct {
+	ID   string
+	Name string
 }
 
-// ResourceManager abstracts the read-only Resource Manager surface the
-// bot needs: the org-tree walk (ListProjects/ListFolders) and the
-// existence checks used by the callback (GetProject/GetFolder). There is
-// deliberately no project or folder deletion in v1.
+// ResourceManager is the read-only Resource Manager surface.
 type ResourceManager interface {
-	// ListProjects lists the ACTIVE projects directly inside the
-	// container (organisation or folder).
-	ListProjects(ctx context.Context, containerID string) ([]Project, error)
-	// ListFolders lists the folders directly inside the container.
-	ListFolders(ctx context.Context, containerID string) ([]Folder, error)
-	// GetProject fetches one project by ID (callback existence check).
-	GetProject(ctx context.Context, projectID string) (*Project, error)
-	// GetFolder fetches one folder by ID (callback existence check).
-	GetFolder(ctx context.Context, folderID string) (*Folder, error)
+	// ListProjects lists all projects directly inside the container,
+	// following pagination.
+	ListProjects(ctx context.Context, parentID string) ([]Container, error)
+	// ListFolders lists all folders directly inside the container,
+	// following pagination.
+	ListFolders(ctx context.Context, parentID string) ([]Container, error)
+	// GetProject fetches one project including its ancestors.
+	GetProject(ctx context.Context, id string) (*Container, error)
+	// GetFolder fetches one folder including its ancestors.
+	GetFolder(ctx context.Context, id string) (*Container, error)
 }
+
+// rmPageSize is the page size we ask for. The API caps it and echoes the
+// limit it applied, so pagination follows the echoed value.
+const rmPageSize = 100
+
+// rmMaxPages bounds pagination against a misbehaving API.
+const rmMaxPages = 1000
 
 type resourceManager struct {
 	client *resourcemanagerv0.APIClient
@@ -66,93 +72,124 @@ func newResourceManager(client *resourcemanagerv0.APIClient) ResourceManager {
 	return &resourceManager{client: client}
 }
 
-func (r *resourceManager) ListProjects(ctx context.Context, containerID string) ([]Project, error) {
-	resp, err := r.client.DefaultAPI.ListProjects(ctx).ContainerParentId(containerID).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("listing projects in container %s: %w", containerID, err)
+// paginate calls page with increasing offsets until a short or empty page.
+// page returns the number of items and the limit the API applied.
+func paginate(what string, page func(offset int) (items int, limit float32, err error)) error {
+	offset := 0
+	for i := 0; i < rmMaxPages; i++ {
+		n, limit, err := page(offset)
+		if err != nil {
+			return err
+		}
+		if n == 0 || (limit > 0 && n < int(limit)) {
+			return nil
+		}
+		offset += n
 	}
-	projects := make([]Project, 0)
-	if resp == nil || resp.Items == nil {
-		return projects, nil
-	}
-	for _, p := range resp.Items {
-		projects = append(projects, Project{
-			ID:                p.GetProjectId(),
-			Name:              p.GetName(),
-			ParentContainerID: p.GetParent().ContainerId,
-			// The API does not return parent names; the org-tree walk fills
-			// ParentContainerName from the container it listed.
-			ParentContainerName: "",
-			CreationTime:        p.GetCreationTime(),
-			Labels:              copyStringLabels(p.GetLabels()),
-			LifecycleState:      string(p.GetLifecycleState()),
-		})
-	}
-	return projects, nil
+	return fmt.Errorf("listing %s: more than %d pages", what, rmMaxPages)
 }
 
-func (r *resourceManager) ListFolders(ctx context.Context, containerID string) ([]Folder, error) {
-	resp, err := r.client.DefaultAPI.ListFolders(ctx).ContainerParentId(containerID).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("listing folders in container %s: %w", containerID, err)
-	}
-	folders := make([]Folder, 0)
-	if resp == nil || resp.Items == nil {
-		return folders, nil
-	}
-	for _, f := range resp.Items {
-		folders = append(folders, Folder{
-			ID:                f.GetFolderId(),
-			Name:              f.GetName(),
-			ParentContainerID: f.GetParent().ContainerId,
-			Labels:            copyStringLabels(f.GetLabels()),
-			CreationTime:      f.GetCreationTime(),
-		})
-	}
-	return folders, nil
+func (r *resourceManager) ListProjects(ctx context.Context, parentID string) ([]Container, error) {
+	var out []Container
+	err := paginate("projects in "+parentID, func(offset int) (int, float32, error) {
+		resp, err := r.client.DefaultAPI.ListProjects(ctx).
+			ContainerParentId(parentID).
+			Limit(rmPageSize).
+			Offset(float32(offset)).
+			Execute()
+		if err != nil {
+			return 0, 0, fmt.Errorf("listing projects in %s: %w", parentID, err)
+		}
+		for _, p := range resp.Items {
+			out = append(out, Container{
+				ID:             p.GetProjectId(),
+				Name:           p.GetName(),
+				ParentID:       p.GetParent().Id,
+				Labels:         copyLabels(p.GetLabels()),
+				CreatedAt:      p.GetCreationTime(),
+				LifecycleState: string(p.GetLifecycleState()),
+			})
+		}
+		return len(resp.Items), resp.Limit, nil
+	})
+	return out, err
 }
 
-func (r *resourceManager) GetProject(ctx context.Context, projectID string) (*Project, error) {
-	resp, err := r.client.DefaultAPI.GetProject(ctx, projectID).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("getting project %s: %w", projectID, err)
-	}
-	p := Project{
-		ID:                resp.GetProjectId(),
-		Name:              resp.GetName(),
-		ParentContainerID: resp.GetParent().ContainerId,
-		// The API does not return parent names; the org-tree walk fills
-		// ParentContainerName from the container it listed.
-		ParentContainerName: "",
-		CreationTime:        resp.GetCreationTime(),
-		Labels:              copyStringLabels(resp.GetLabels()),
-		LifecycleState:      string(resp.GetLifecycleState()),
-	}
-	return &p, nil
+func (r *resourceManager) ListFolders(ctx context.Context, parentID string) ([]Container, error) {
+	var out []Container
+	err := paginate("folders in "+parentID, func(offset int) (int, float32, error) {
+		resp, err := r.client.DefaultAPI.ListFolders(ctx).
+			ContainerParentId(parentID).
+			Limit(rmPageSize).
+			Offset(float32(offset)).
+			Execute()
+		if err != nil {
+			return 0, 0, fmt.Errorf("listing folders in %s: %w", parentID, err)
+		}
+		for _, f := range resp.Items {
+			out = append(out, Container{
+				ID:        f.GetFolderId(),
+				Name:      f.GetName(),
+				ParentID:  f.GetParent().Id,
+				Labels:    copyLabels(f.GetLabels()),
+				CreatedAt: f.GetCreationTime(),
+			})
+		}
+		return len(resp.Items), resp.Limit, nil
+	})
+	return out, err
 }
 
-func (r *resourceManager) GetFolder(ctx context.Context, folderID string) (*Folder, error) {
-	resp, err := r.client.DefaultAPI.GetFolderDetails(ctx, folderID).Execute()
+func (r *resourceManager) GetProject(ctx context.Context, id string) (*Container, error) {
+	p, err := r.client.DefaultAPI.GetProject(ctx, id).IncludeParents(true).Execute()
 	if err != nil {
-		return nil, fmt.Errorf("getting folder %s: %w", folderID, err)
+		return nil, fmt.Errorf("getting project %s: %w", id, err)
 	}
-	f := Folder{
-		ID:                resp.GetFolderId(),
-		Name:              resp.GetName(),
-		ParentContainerID: resp.GetParent().ContainerId,
-		Labels:            copyStringLabels(resp.GetLabels()),
-		CreationTime:      resp.GetCreationTime(),
-	}
-	return &f, nil
+	return &Container{
+		ID:             p.GetProjectId(),
+		Name:           p.GetName(),
+		ParentID:       p.GetParent().Id,
+		Labels:         copyLabels(p.GetLabels()),
+		CreatedAt:      p.GetCreationTime(),
+		LifecycleState: string(p.GetLifecycleState()),
+		Ancestors:      folderAncestors(p.GetParents(), p.GetParent().Id),
+	}, nil
 }
 
-func copyStringLabels(in map[string]string) map[string]string {
-	if in == nil {
-		return nil
+func (r *resourceManager) GetFolder(ctx context.Context, id string) (*Container, error) {
+	f, err := r.client.DefaultAPI.GetFolderDetails(ctx, id).IncludeParents(true).Execute()
+	if err != nil {
+		return nil, fmt.Errorf("getting folder %s: %w", id, err)
 	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
+	return &Container{
+		ID:        f.GetFolderId(),
+		Name:      f.GetName(),
+		ParentID:  f.GetParent().Id,
+		Labels:    copyLabels(f.GetLabels()),
+		CreatedAt: f.GetCreationTime(),
+		Ancestors: folderAncestors(f.GetParents(), f.GetParent().Id),
+	}, nil
+}
+
+// folderAncestors orders the folder entries of the parents list nearest
+// first by following parent links from the direct parent. The API does not
+// document the order of the list, so it is not relied on.
+func folderAncestors(parents []resourcemanagerv0.ParentListInner, directParent string) []Ancestor {
+	byID := make(map[string]resourcemanagerv0.ParentListInner, len(parents))
+	for _, p := range parents {
+		byID[p.Id] = p
+	}
+	var out []Ancestor
+	for id := directParent; len(out) <= len(parents); {
+		p, ok := byID[id]
+		if !ok || p.Type != resourcemanagerv0.PARENTLISTINNERTYPE_FOLDER {
+			break
+		}
+		out = append(out, Ancestor{ID: p.Id, Name: p.Name})
+		if p.ParentId == nil {
+			break
+		}
+		id = *p.ParentId
 	}
 	return out
 }

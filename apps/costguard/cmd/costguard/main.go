@@ -12,10 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// costguard is the STACKIT cost-hygiene bot: one image, three
-// subcommands (scan, delete, callback). All configuration is supplied
-// at runtime via environment variables or the --config YAML file; the
-// binary contains no secrets and no STACKIT-specific values.
+// costguard cleans up idle and labelled resources in a STACKIT
+// organization. See the README for the stages and labels.
 package main
 
 import (
@@ -24,33 +22,56 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/app"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
 )
 
+// version is set at build time (-ldflags "-X main.version=...").
+var version = ""
+
 func main() {
-	configPath := flag.String("config", "", "path to the YAML config file (default: $COSTGUARD_CONFIG)")
+	configPath := flag.String("config", "", "path to the YAML config (default: $COSTGUARD_CONFIG, then "+config.DefaultConfigPath+")")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: costguard [--config path] <scan|delete|callback>\n\nsubcommands:\n  scan     weekly warning run: scan, mark candidates, send report\n  delete weekly execution run: delete due candidates, send confirmation\n  callback protect endpoint for the interactive \"do not delete\" buttons\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: %s\n\n"+
+			"  report  stage 1: scan and post a report; changes nothing\n"+
+			"  flag    stage 2, Monday: post, then label new cleanup candidates delete=true\n"+
+			"  delete  stage 2, Tuesday: delete everything labelled delete=true that may go\n\n", app.Usage)
+		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	subcommand := ""
-	if flag.NArg() > 0 {
-		subcommand = flag.Arg(0)
+	if *showVersion {
+		fmt.Println(buildVersion())
+		return
 	}
-	if subcommand == "" {
+	if flag.NArg() != 1 {
 		flag.Usage()
 		os.Exit(app.ExitUsage)
 	}
 
-	// Signal-aware root context: SIGTERM/SIGINT cancel the run (CronJob
-	// termination, kubectl delete) and stop the callback server.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	code := app.Run(ctx, subcommand, *configPath, os.Getenv(config.EnvLogLevel))
+	code := app.Run(ctx, app.Options{
+		Subcommand: flag.Arg(0),
+		ConfigPath: *configPath,
+		LogLevel:   os.Getenv(config.EnvLogLevel),
+		Version:    buildVersion(),
+	})
+	stop()
 	os.Exit(code)
+}
+
+// buildVersion prefers the linker-set version (release images), then the
+// module version (set by "go install ...@vX.Y.Z").
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
 }

@@ -23,9 +23,9 @@ build:
 	CGO_ENABLED=0 go build -o $(DIST)/$(BINARY) ./cmd/costguard
 
 # Runs all unit tests with -race and generates coverage.out,
-# then enforces the per-package 80% coverage gate. The cmd/ entrypoint
-# package is exempt: it is a ~20-line dispatch stub with no business logic
-# all testable logic lives in internal/app.
+# then enforces the per-package 80% coverage gate. Exempt: cmd/ (a thin
+# flag-parsing stub; the logic lives in internal/app) and internal/fake
+# (the in-memory STACKIT used by the tests).
 test:
 	go test -race -coverprofile=coverage.out $(PACKAGE)
 	@awk ' \
@@ -35,7 +35,7 @@ test:
 			n = split(file, parts, "/"); \
 			dir = parts[1]; \
 			for (i = 2; i < n; i++) dir = dir "/" parts[i]; \
-			if (dir ~ /\/cmd\//) next; \
+			if (dir ~ /\/cmd\// || dir ~ /\/internal\/fake$$/) next; \
 			total[dir] += $$2; \
 			if ($$3 + 0 > 0) covered[dir] += $$2; \
 		} \
@@ -54,6 +54,7 @@ test:
 lint:
 	go vet $(PACKAGE)
 
-# The container image is built with ko directly (no wrapper target):
+# The container image is built with ko directly (no wrapper target); the
+# settings live in .ko.yaml:
 #   ko build -B --local -t dev ./cmd/costguard
-# See README §5 / §12 for details.
+# Releases are built by .github/workflows/costguard-release.yaml.

@@ -1,379 +1,508 @@
-<!-- tags: cost, monitoring, automation, iaas, cleanup -->
+<!-- tags: cost, cleanup, automation, iaas, kubernetes -->
 
-# costguard — STACKIT cost-hygiene bot
+# costguard
 
-## 1. What it does
+**costguard keeps your STACKIT cloud tidy.** It looks for things that cost
+money but are not used by anything, tells your team about them in a chat
+channel every Monday and, once you are ready, deletes them for you.
 
-costguard scans a STACKIT organisation (or a set of folders) and reports the
-resources that quietly burn money: **stale projects** (older than
-`COSTGUARD_MAX_AGE_DAYS`), **empty network areas** (older than
-`COSTGUARD_SNA_MAX_AGE_DAYS`), **detached block-storage volumes**, and **idle
-public IPs** (allocated but not attached to any NIC). On top of the resource
-scan it pulls 30 days of billing data from the STACKIT Cost API, renders a
-cost trend chart (uploaded to S3-compatible object storage when configured),
-flags cost anomalies (a jump in the 7-day average spend), and shows the
-top-spending projects.
+You do not need to be a cloud expert to use it. This guide walks you through
+everything, step by step.
 
-The lifecycle is a **two-phase warning/deletion cycle** driven entirely by a
-mark label the bot writes on its deletion candidates (detached volumes and
-idle public IPs — the deletion surface equals the cost surface):
+- [What costguard does](#what-costguard-does)
+- [The two labels your team needs to know](#the-two-labels-your-team-needs-to-know)
+- [What you need before you start](#what-you-need-before-you-start)
+- [Setup, step by step](#setup-step-by-step)
+- [Turning on automatic cleanup](#turning-on-automatic-cleanup)
+- [How costguard keeps you safe](#how-costguard-keeps-you-safe)
+- [Settings](#settings)
+- [Questions and problems](#questions-and-problems)
 
-1. **Warning phase** (`costguard scan`, weekly): the full scan runs, every new
-   candidate is stamped with the label `costguard-delete-after=<deadline>`
-   (deadline = now + `COSTGUARD_GRACE_PERIOD`, default 8 h), and a report with
-   interactive *"Do not delete"* buttons is sent to Google Chat, Slack, or
-   Microsoft Teams.
-2. **Execution phase** (`costguard delete`, weekly, 1 h after the scan): the
-   bot re-scans, re-validates every candidate (still detached/idle, not
-   protected, mark present and **expired**), deletes in the order public IPs →
-   volumes (a volume's snapshots go first), and sends a separate confirmation
-   with the per-resource result.
+## What costguard does
 
-Stale projects and empty network areas are **report-only**: an empty
-container costs ~€0, so auto-deleting it is not justified by savings.
-Deletion is **fail-closed** — a candidate without a valid, expired mark is
-never touched, and `COSTGUARD_DRY_RUN=true` (the default) is a global kill
-switch: no `DELETE` call is ever issued while it is on.
+Cloud resources are easy to create and easy to forget. A disk that is no
+longer attached to any server, or a public IP address that nobody uses,
+keeps costing money every month. costguard finds them.
 
-## 2. Prerequisites
+It works in two stages. You start with stage 1 and switch to stage 2 when
+you trust what it reports.
 
-- A **STACKIT service account** per workload (least privilege, one image /
-  three subcommands / three accounts):
-  - **scan** — Resource Manager *reader*, IaaS *reader + label writer*,
-    Cost *reader* (SKE / Object Storage reader for the content probes)
-  - **delete** — Resource Manager *reader*, IaaS *reader + deleter +
-    label writer* (deletes public IPs, volumes, snapshots), Cost *reader*
-  - **callback** — Resource Manager *reader*, IaaS *reader* (existence
-    checks) + **write access to the dedicated whitelist Secrets Manager
-    instance only** — no deletion rights at all
-- STACKIT authentication is handled by the official SDK: a service account
-  key file (`STACKIT_SERVICE_ACCOUNT_KEY_PATH`) or a token
-  (`STACKIT_SERVICE_ACCOUNT_TOKEN`); on SKE, workload identity is the
-  preferred baseline (no long-lived key material).
-- A chat **webhook**: a Google Chat space message bot, a Slack incoming
-  webhook, or a Teams incoming webhook, depending on
-  `COSTGUARD_OUTPUT`.
-- For the interactive buttons (stage 2): a **dedicated STACKIT Secrets
-  Manager instance** hosting the shared whitelist (KV v2) with a dedicated
-  user, and a **publicly reachable URL** for the callback server (e.g. via
-  STACKIT ALB).
-- Optional, for the cost chart: an S3-compatible **object storage bucket**
-  (STACKIT Object Storage works) with an access key/secret pair.
+|                          | Every Monday at 08:00                                                              | Every Tuesday at 08:00                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Stage 1: report only** | Posts a list of what could be cleaned up. **Nothing is changed.**                  | –                                                                                                       |
+| **Stage 2: clean up**    | Marks new things to clean up and posts the list, so everybody has a day to object. | Deletes what was marked, unless someone said "keep it", and posts what was deleted and what that saves. |
 
-## 3. Configuration reference
+### What it looks for
 
-All configuration is runtime-only; the binary contains no STACKIT-specific
-values. Environment variables take precedence over the YAML config file
-(`--config` / `COSTGUARD_CONFIG`).
+| What                                             | Why it costs money                                         | What costguard does                                   |
+| ------------------------------------------------ | ---------------------------------------------------------- | ----------------------------------------------------- |
+| **Unused public IP addresses**                   | A reserved IP address is billed even when nothing uses it. | Cleans it up (stage 2), up to 10 new ones per run.    |
+| **Disks (volumes) not attached to any server**   | Storage is billed per GB, used or not.                     | Cleans it up (stage 2), up to 10 new ones per run.    |
+| **Anything your team marked with `delete=true`** | –                                                          | Deletes it (stage 2).                                 |
+| **Disks that have snapshots**                    | Snapshots are often a deliberate backup.                   | Only lists them. Never marks them itself.             |
+| **Empty projects older than 30 days**            | Clutter, and a sign that something was forgotten.          | Only warns. Never deletes projects.                   |
+| **Empty network areas older than 30 days**       | Clutter.                                                   | Only warns (when it looks at the whole organization). |
 
-### STACKIT authentication (read by the SDK, not by costguard)
+An **empty project** has had no costs in the last 30 days and holds no
+servers, disks, IP addresses, Kubernetes clusters or buckets. Projects that
+deliberately hold only service accounts, DNS zones or network settings show
+up too; mark them `do-not-delete=true` to silence the warning (costguard then
+ignores the project completely).
 
-| Variable | Required | Description |
-|---|---|---|
-| `STACKIT_SERVICE_ACCOUNT_KEY_PATH` | one of the two | Path to the service account key file (JSON). |
-| `STACKIT_SERVICE_ACCOUNT_TOKEN` | one of the two | Short-lived service account token. |
-| `STACKIT_REGION` | optional | Region for SDK endpoints when not derivable. |
+Every message says **how many resources that run deletes and how much money
+that saves**:
 
-### Scope (all required)
+- **Monday:** what will be deleted on Tuesday, for example _"Deleting these
+  5 resource(s) saves about €19.28 per month (€231.36 per year)"_.
+- **Tuesday:** what this run actually deleted, for example _"This run
+  deleted 5 resource(s), saving about €19.28 per month (€231.36 per year)"_.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `COSTGUARD_SCOPE` | yes | — | `organisation` or `folder`. |
-| `COSTGUARD_ORG_ID` | yes | — | STACKIT organisation UUID. |
-| `COSTGUARD_FOLDER_IDS` | if `scope=folder` | — | Comma-separated folder UUIDs. |
-| `COSTGUARD_REGIONS` | yes | — | Comma-separated regions to scan (e.g. `eu01`). |
-| `COSTGUARD_MAX_AGE_DAYS` | yes | — | Projects older than this (days) are hygiene candidates (≥ 7). |
-| `COSTGUARD_SNA_MAX_AGE_DAYS` | yes | — | Network areas older than this (days) are candidates (≥ 7). |
-| `COSTGUARD_SAFE_LABEL_KEY` | yes | — | Label key that protects a resource. |
-| `COSTGUARD_SAFE_LABEL_VALUE` | yes | — | Label value that protects a resource. |
+Deleting a resource ends its monthly bill, so the saving is shown per month
+and per year. The amount is an estimate for IP addresses and disks, using the
+prices in [Settings](#settings). Other resources, such as servers, are
+counted in the number of deleted resources but not in the amount.
 
-### Output (required)
+## The two labels your team needs to know
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `COSTGUARD_OUTPUT` | yes | — | `googlechat`, `slack` or `teams` (`prometheus` is rejected at startup). |
-| `COSTGUARD_WEBHOOK_URL` | yes (webhook outputs) | — | Webhook URL of the target space/channel. |
+A **label** is a small name tag you can attach to a resource in STACKIT,
+written as `name=value`. costguard understands exactly two:
 
-### Behavior
+| Label                | Meaning                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `do-not-delete=true` | **Keep this.** costguard never deletes it. Put it on a folder or project and costguard ignores everything inside. It always wins.                                                                             |
+| `delete=true`        | **Delete this on Tuesday.** costguard sets it on the things it found. You can also set it yourself on a server, disk, IP address, snapshot, image, network interface or security group to have it cleaned up. |
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `COSTGUARD_DRY_RUN` | no | `true` | Global kill switch: no `DELETE` calls when true. |
-| `COSTGUARD_GRACE_PERIOD` | no | `8h` | Warning window before a marked candidate becomes deletable (≥ 2h; must exceed the 1 h scan→delete offset). |
-| `COSTGUARD_COST_ANOMALY_THRESHOLD_PCT` | no | `20` | Percent increase of the last 7-day spend average over the preceding 7-day average that flags an anomaly. |
-| `COSTGUARD_VOLUME_COST_EUR_PER_GB` | no | `0.0619` | Monthly price per GB for the estimated volume savings. |
-| `COSTGUARD_PUBLIC_IP_COST_EUR_PER_MONTH` | no | `4.82` | Monthly reservation price per idle public IP for the estimated savings. |
+That is all your colleagues need to remember: **if costguard lists something
+you still need, add `do-not-delete=true` to it** (or remove `delete=true`).
+Labels can be set in the STACKIT portal, with the STACKIT command line tool,
+or in Terraform, wherever your team manages its resources.
 
-### Interactive buttons + callback (optional group)
+## What you need before you start
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `COSTGUARD_CALLBACK_URL` | group | — | Public URL of the callback server. When set, notifications carry buttons. |
-| `COSTGUARD_CALLBACK_PORT` | if URL set | `8080` | Port the `callback` subcommand listens on. |
-| `COSTGUARD_CALLBACK_SECRET` | if URL set | — | HMAC secret for button URL signing (secret store, never literal). |
-| `COSTGUARD_WHITELIST_SECRET_PATH` | if URL set | — | KV v2 path of the shared whitelist, `<mount>/<path>` (e.g. `secret/costguard/whitelist`). |
-| `COSTGUARD_SM_URL` | if URL set | — | Base URL of the dedicated Secrets Manager instance. |
-| `COSTGUARD_SM_USERNAME` | if URL set | — | Dedicated SM user (userpass baseline). |
-| `COSTGUARD_SM_PASSWORD` | if URL set | — | Its password. |
+Go through this list first. If you cannot tick a box, ask your STACKIT
+administrator.
 
-When `COSTGUARD_WHITELIST_SECRET_PATH` is set (even without buttons), the
-scan and delete runs also **read** the shared whitelist, so protections
-granted via a button apply to the next run.
+- [ ] **A STACKIT organization** and its **organization ID** (a long ID
+      that looks like `a1b2c3d4-...`).
+- [ ] **Someone who may create service accounts and give them permissions**
+      in that organization. A service account is a login for a program
+      instead of a person; costguard needs one.
+- [ ] **A Kubernetes cluster** where costguard can run once a week. The
+      easiest choice is a STACKIT Kubernetes Engine (SKE) cluster. costguard
+      needs very little: a fraction of one CPU for a few minutes a week.
+- [ ] **`kubectl`**, the Kubernetes command line tool, installed on your
+      computer and connected to that cluster.
+      ([How to install kubectl](https://kubernetes.io/docs/tasks/tools/))
+- [ ] **A chat channel** in Microsoft Teams, Slack or Google Chat, and the
+      permission to add a webhook to it (a webhook is a web address that
+      lets a program post into the channel).
+- [ ] **About an hour** for the first setup.
 
-### Cost chart upload (optional group: all five or none)
+## Setup, step by step
 
-| Variable | Required | Description |
-|---|---|---|
-| `COSTGUARD_S3_ENDPOINT` | group | S3-compatible endpoint (e.g. `https://object.storage.eu01.onstackit.cloud`). |
-| `COSTGUARD_S3_REGION` | group | Region. |
-| `COSTGUARD_S3_ACCESS_KEY` | group | Access key. |
-| `COSTGUARD_S3_SECRET_KEY` | group | Secret key. |
-| `COSTGUARD_S3_BUCKET` | group | Bucket for the chart objects (7-day presigned links). |
+This sets up **stage 1**. Stage 1 only reports; it never changes anything in
+your cloud, so it is safe to try.
 
-### Whitelist (optional; merged from every source)
+### Step 1: Create the chat webhook
 
-A resource listed in **any** source is protected: the env CSVs below, the
-`whitelist:` YAML section, and the Secrets Manager entry.
+Create a webhook in the channel where the reports should appear, and copy
+its web address. You will need it in step 6.
 
-| Variable | Description |
-|---|---|
-| `COSTGUARD_WHITELIST_PROJECTS` | Project IDs excluded from all candidates and invisible in reports. |
-| `COSTGUARD_WHITELIST_FOLDERS` | Folder IDs whose whole subtree is excluded. |
-| `COSTGUARD_WHITELIST_VOLUMES` | Volume IDs that are never deleted. |
-| `COSTGUARD_WHITELIST_PUBLIC_IPS` | Public IP IDs that are never deleted. |
-| `COSTGUARD_WHITELIST_SKIP_VOLUME_SCAN_PROJECTS` | Skip volume scanning for these projects entirely. |
-| `COSTGUARD_WHITELIST_SKIP_PUBLIC_IP_SCAN_PROJECTS` | Skip public-IP scanning for these projects entirely. |
+- **Microsoft Teams:** in the channel, open _Workflows_ and use the template
+  _"Post to a channel when a webhook request is received"_. Copy the URL it
+  shows at the end.
+- **Slack:** create an _incoming webhook_ for the channel
+  ([Slack guide](https://api.slack.com/messaging/webhooks)).
+- **Google Chat:** in the space, open _Apps & integrations_, then
+  _Webhooks_, and add one.
 
-### Runtime
+Treat this web address like a password: anyone who has it can post into
+your channel.
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `COSTGUARD_CONFIG` | no | — | Path to the YAML config file (env vars still win). |
-| `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error`. |
+### Step 2: Create a service account for costguard
 
-The configuration is validated **before any API call**; a single error lists
-every missing or invalid field, and the process exits non-zero.
+Create a STACKIT service account, for example named `costguard-report`, and
+give it permission to **read** your organization: its folders, projects,
+resources and cost data. It needs no permission to change anything in stage
 
-## 4. Config file example
+1.
 
-`config.example.yaml` is a complete, annotated example covering every option.
-A minimal organisation-wide dry run:
+If you only want costguard to look at part of your organization, give it
+read access to just those folders or projects, and list them in step 5 **by
+their ID**. Names only work when costguard may read the whole organization,
+because it has to search for them. Two things to know when costguard may
+only read part of the organization:
 
-```yaml
-scope: organisation
-orgId: 00000000-0000-0000-0000-000000000000
-regions: [eu01]
-maxAgeDays: 90
-snaMaxAgeDays: 60
-safeLabelKey: do-not-delete
-safeLabelValue: "true"
-output: googlechat
-webhookUrl: https://chat.googleapis.com/v1/spaces/SPACE_ID/messages?key=KEY&token=TOKEN
-dryRun: true
-gracePeriod: 8h
-```
+- **`skip` entries must point to folders or projects inside that part.** An
+  entry for something elsewhere counts as "matches nothing", and that blocks
+  all marking and deleting.
+- **A `do-not-delete` on a folder above that part is only honoured if
+  costguard may read that folder.**
+- **Cost data can usually only be read for the whole organization.**
+  Without it, every report says that something could not be read. Set
+  `warnEmptyAfterDays: 0` in `config.yaml` to switch the empty-project
+  warnings off.
 
-## 5. Running with Docker
+### Step 3: Choose how costguard logs in
 
-Build the image with [ko](https://ko.build/) (static binary on
-`cgr.dev/chainguard/static`, non-root, multi-arch — requires the
-[ko CLI](https://ko.build/install/)):
+Pick **one** of the two options.
 
-```bash
-ko build -B --local -t dev ./cmd/costguard   # → ko.local/costguard:dev
-```
+**Option A: workload identity (recommended on SKE, no keys to look after).**
+Your SKE cluster proves to STACKIT who costguard is, so there is no password
+or key to store. It needs a one-time trust setup between the service account
+and the cluster, which your STACKIT administrator can do with Terraform. The
+example in [`examples/ske-workload-identity`](../../examples/ske-workload-identity)
+shows how. For costguard, the trust must be for the subject
+`system:serviceaccount:costguard:costguard-stage1`.
 
-`-B` pins the image name to `.../costguard` (without it, ko appends an MD5
-hash of the import path).
+**Option B: a key file (works on any cluster, simplest to start with).**
+Create a key for the service account in the STACKIT portal and download it.
+It is a small JSON file. Keep it secret: it is a password.
 
-**Dry-run (warning only — the safe default):**
+### Step 4: Download costguard
 
-```bash
-docker run --rm \
-  -e STACKIT_SERVICE_ACCOUNT_KEY_PATH=/run/secrets/sa-key.json \
-  -v "$PWD/sa-key.json:/run/secrets/sa-key.json:ro" \
-  -e COSTGUARD_SCOPE=organisation \
-  -e COSTGUARD_ORG_ID=00000000-0000-0000-0000-000000000000 \
-  -e COSTGUARD_REGIONS=eu01 \
-  -e COSTGUARD_MAX_AGE_DAYS=90 \
-  -e COSTGUARD_SNA_MAX_AGE_DAYS=60 \
-  -e COSTGUARD_SAFE_LABEL_KEY=do-not-delete \
-  -e COSTGUARD_SAFE_LABEL_VALUE=true \
-  -e COSTGUARD_OUTPUT=googlechat \
-  -e COSTGUARD_WEBHOOK_URL='https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...' \
-  ko.local/costguard:dev scan
-```
+Open the [releases page](https://github.com/stackitcloud/professional-service/releases?q=costguard),
+pick the newest release named **costguard vX.Y.Z**, and download these three
+files into one folder:
 
-**Execution mode (actually deletes due candidates):**
+- `config.yaml`: your settings
+- `stage1.yaml`: stage 1 (report only)
+- `stage2.yaml`: stage 2 (clean up), for later
+
+### Step 5: Fill in your settings
+
+Open `config.yaml` in a text editor. You must change two lines:
+
+- `organizationId`: your organization ID.
+- `output`: `teams`, `slack` or `googlechat`, depending on your chat.
+
+Everything else is optional and explained in the file:
+
+- **`scope`**: which folders or projects to look at. Leave it empty for the
+  whole organization.
+- **`skip`**: folders or projects costguard should never look at, by name or
+  ID. Put your production projects here if you want to be extra careful.
+- **`regions`**: costguard only looks at the region `eu01` unless you say
+  otherwise. **If your company also uses other STACKIT regions (for example
+  `eu02`), list all of them**, for example `regions: [eu01, eu02]`. Resources
+  in regions that are not listed are never looked at, never reported and
+  never cleaned up.
+
+Then open `stage1.yaml`:
+
+- **Option A (workload identity):** replace
+  `REPLACE-WITH-STAGE1-SA@sa.stackit.cloud` with the email address of the
+  service account from step 2.
+- **Option B (key file):** delete the whole line that starts with
+  `workload-identity.stackit.cloud/service-account-email`.
+
+### Step 6: Install
+
+Open a terminal in the folder with the three files and run these commands.
+Replace the parts in `<...>`.
 
 ```bash
-docker run --rm \
-  ... same environment ... \
-  -e COSTGUARD_DRY_RUN=false \
-  ko.local/costguard:dev delete
+# Create the costguard area in your cluster and store your settings
+kubectl apply -f config.yaml
+
+# Store the chat webhook address from step 1
+kubectl -n costguard create secret generic costguard-webhook --from-literal=url='<webhook address>'
+
+# Only for option B: store the key file from step 3
+kubectl -n costguard create secret generic costguard-sa-key --from-file=key.json=<path to the key file>
+
+# Start stage 1
+kubectl apply -f stage1.yaml
 ```
 
-**Callback server (stage 2):**
+### Step 7: Try it right away
+
+You do not have to wait until Monday:
 
 ```bash
-docker run --rm -p 8080:8080 \
-  ... same environment ... \
-  -e COSTGUARD_CALLBACK_URL=https://costguard.example \
-  -e COSTGUARD_CALLBACK_SECRET="$(openssl rand -hex 32)" \
-  -e COSTGUARD_WHITELIST_SECRET_PATH=secret/costguard/whitelist \
-  -e COSTGUARD_SM_URL=https://secretsmanager.eu01.onstackit.cloud/INSTANCE_ID \
-  -e COSTGUARD_SM_USERNAME=costguard-whitelist-writer \
-  -e COSTGUARD_SM_PASSWORD='***' \
-  ko.local/costguard:dev callback
+kubectl -n costguard create job --from=cronjob/costguard-report costguard-first-run
 ```
 
-Exit codes: `0` success, `1` fatal run error, `2` usage error.
+A report should appear in your chat within a few minutes. If it does not,
+see [Questions and problems](#questions-and-problems).
 
-## 6. Running with Kubernetes (recommended, two-stage)
+### Reading the report
 
-The manifests in `deploy/` implement the two-stage rollout. Create the
-namespace and the three credential Secrets first (see the header comments in
-each manifest), then:
+Each report tells you:
 
-The three manifests pin the image
-`professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/costguard:v0.0.1`,
-built with ko and pushed to the internal registry on every `v*` tag push.
-If you can't reach that registry (e.g. a customer cluster), push the image to
-a registry you control (GHCR or your own) and update the `image:` field in all
-three manifests — keeping the scan and delete jobs on the same version.
+- **how many things could be cleaned up** and how much deleting them would
+  save per month and per year,
+- the lists per category, each entry with its project and a link to that
+  project in the STACKIT portal,
+- warnings about empty projects and network areas,
+- at the bottom, how many folders and projects were skipped.
 
-**Stage 1 — report-only (observe before you can delete):**
+**What is listed:**
 
-```bash
-kubectl apply -n costguard -f deploy/cronjob-scan.yaml
-```
+- **Everything that will be deleted is always listed in full**, including
+  everything someone marked with `delete=true`.
+- **New finds are limited to 10 per category per run**, the biggest savings
+  first, and costguard only marks the ones it lists. If it found more, the
+  message says how many are waiting (_"… and 14 more; they will be listed in
+  the next runs."_). They come up in the following runs. With a big backlog,
+  [run costguard more often](#big-backlog-run-it-more-often).
+- Lists that are only for your information (disks with snapshots, empty
+  projects and network areas) also show 10 entries and how many more there
+  are.
 
-A single **weekly** CronJob (`scan`, dry run): scans, writes mark labels to
-new candidates (which also live-tests the label APIs), sends the report.
-Nothing can be deleted in this stage.
+Let stage 1 run for a few weeks. Each Monday, look at the list and **add
+`do-not-delete=true` to everything that must stay**. When the list only
+contains things you really want gone, you are ready for stage 2.
 
-**Stage 2 — delete mode:**
+## Turning on automatic cleanup
 
-```bash
-kubectl apply -n costguard -f deploy/cronjob-delete.yaml
-kubectl apply -n costguard -f deploy/deployment-callback.yaml
-# then set COSTGUARD_DRY_RUN=false in cronjob-delete.yaml and re-apply
-```
+In stage 2, costguard marks what it found on Monday and deletes it on
+Tuesday. Before you switch:
 
-- `cronjob-delete.yaml`: **weekly**, one hour after the scan. The offset plus
-  the mark deadline guarantee that nothing first *seen* by this week's scan
-  is deleted by this week's delete run — there is no hand-off state between
-  the two jobs; the mark label in STACKIT is the only shared state.
-- `deployment-callback.yaml`: stateless 2-replica Deployment + ClusterIP
-  Service serving `/protect` and `/healthz`; front it with the customer's
-  ALB/ingress so the button URLs are publicly reachable.
-- Both CronJobs set `concurrencyPolicy: Forbid`, `activeDeadlineSeconds:
-  3600`, and `successfulJobsHistoryLimit: 3`; every secret is referenced from
-  a Secret, never a literal.
+- [ ] You have read at least a few Monday reports, and everything that must
+      stay has `do-not-delete=true` or is in the `skip` list.
+- [ ] Your colleagues know the two labels, and they know that the Monday
+      message is their chance to object.
+- [ ] You created a second service account (for example
+      `costguard-cleanup`) that may **read** the organization, **change
+      labels** and **delete** servers, disks, IP addresses, snapshots,
+      images, network interfaces and security groups. For option A, its
+      trust is for the subject
+      `system:serviceaccount:costguard:costguard-stage2`.
 
-## 7. Prometheus output
+Then, **on any day from Tuesday to Sunday** (so that a Monday comes before
+the first Tuesday):
 
-Prometheus output is not supported in this version. Setting
-`COSTGUARD_OUTPUT=prometheus` is rejected at startup with an actionable error.
-
-## 8. Interactive buttons setup
-
-Buttons are **signed links — no bot/app registration is needed** in any
-platform:
-
-- **Google Chat & Slack**: the report renders a *"Do not delete: …"* link
-  (Slack uses `mrkdwn` link text). Clicking performs a `GET` to
-  `COSTGUARD_CALLBACK_URL/protect?id=<resource>&type=<kind>&project=<p>&region=<r>&exp=<unix>&sig=<hmac>`.
-- **Teams**: the same request is issued by a native Adaptive-Card
-  `Action.Http` POST button.
-
-The signature is HMAC-SHA256 (secret = `COSTGUARD_CALLBACK_SECRET`) over
-`id|type|exp|project|region`. The callback verifies the signature, rejects
-expired or forged requests, checks the resource still exists, and appends it
-to the shared whitelist in the dedicated Secrets Manager instance using a
-KV v2 **compare-and-swap** (concurrent clicks never lose entries; re-clicking
-is idempotent). Button URLs expire at the candidate's deletion deadline;
-clicks afterwards (or on already-deleted resources) get `410 Gone`.
-
-Configure: set `COSTGUARD_CALLBACK_URL` + `COSTGUARD_CALLBACK_SECRET` on the
-scan/delete workloads, and run the callback Deployment (section 6). Note the
-HMAC stops *forged or stale* requests; room membership is the authorization
-model — only put the report in rooms whose members may protect resources.
-
-## 9. Protecting resources
-
-Two mechanisms, checked on every scan and re-check before every deletion:
-
-1. **Safe label** (per-resource, on the STACKIT resource itself):
+1. Open `stage2.yaml` and do the same as in step 5, now with the second
+   service account. For option B, replace the key secret with the new key:
+   ```bash
+   kubectl -n costguard delete secret costguard-sa-key
+   kubectl -n costguard create secret generic costguard-sa-key --from-file=key.json=<path to the new key file>
    ```
-   costguard-safe-label-key=do-not-delete, costguard-safe-label-value=true
-   ```
-   i.e. set the label `do-not-delete=true` (or your configured
-   key/value) on the project, folder, network area, volume, or public IP.
-2. **Whitelist** (three merged sources): the `whitelist:` YAML section, the
-   `COSTGUARD_WHITELIST_*` env CSVs, and the shared Secrets Manager entry
-   (populated by the buttons). Example YAML:
-
-   ```yaml
-   whitelist:
-     projects: [11111111-1111-1111-1111-111111111111]
-     folders: [22222222-2222-2222-2222-222222222222]
-     volumes: [33333333-3333-3333-3333-333333333333]
-     publicIps: [44444444-4444-4444-4444-444444444444]
+2. Switch:
+   ```bash
+   kubectl delete -f stage1.yaml
+   kubectl apply -f stage2.yaml
    ```
 
-   Protected projects/folders are *invisible* in the report; protected
-   volumes/IPs simply never become candidates.
+The first Monday in stage 2 lists everything that is already marked with
+`delete=true`, plus up to 10 new finds per category.
 
-## 10. Cost anomaly detection
+### Big backlog: run it more often
 
-The bot pulls the last 30 days of per-day billing data (Cost API, day
-granularity) and compares the **last 7-day average** spend against the
-**preceding 7-day average**:
+costguard marks at most 10 new finds per category per run. With the weekly
+rhythm, a backlog of 100 unused disks takes ten weeks. To clear it faster,
+run costguard every working day:
 
-```
-anomaly if last7_avg > prev7_avg * (1 + COSTGUARD_COST_ANOMALY_THRESHOLD_PCT / 100)
-```
+1. In `stage2.yaml`, change the two `schedule` lines:
+   - `costguard-delete`: `"30 7 * * 1-5"` (Monday to Friday at 07:30)
+   - `costguard-flag`: `"0 8 * * 1-5"` (Monday to Friday at 08:00)
+2. In `config.yaml`, set
+   `deleteRunAt: "the next working day at 07:30 (Europe/Berlin)"`.
+3. Apply both files again: `kubectl apply -f config.yaml -f stage2.yaml`.
 
-With the default threshold of `20`, a week that spends 20 % more than the
-week before flags an anomaly line in the report (the percentage is shown).
-Tune `COSTGUARD_COST_ANOMALY_THRESHOLD_PCT` to your workload's seasonality:
-higher for spiky environments (e.g. 50), lower for flat production estates
-(e.g. 10). The 30-day window is fixed — anomaly detection never uses data
-older than that.
+**On each day, the delete job must run before the flag job** (07:30 before
+08:00). Every morning it then deletes what was announced the working day
+before, about 23½ hours earlier; what is marked on Friday is deleted on
+Monday. If the delete job ran after the flag job on the same day (for
+example flag at 08:00, delete at 09:00), things marked at 08:00 would be
+deleted an hour later, without a day's notice. Whatever rhythm you choose,
+always leave about a day between marking and deleting.
 
-## 11. Dry-run vs execute
+In stage 1 you can report daily the same way: set the `schedule` of
+`costguard-report` in `stage1.yaml` to `"0 8 * * 1-5"`.
 
-| | `COSTGUARD_DRY_RUN=true` (default) | `COSTGUARD_DRY_RUN=false` |
-|---|---|---|
-| Scan + mark labels | yes | yes |
-| Report | yes, framed as *dry run — nothing will be deleted* | yes |
-| `DELETE` calls | **never** | yes — mark-expired public IPs and detached volumes only |
-| Confirmation message | no | yes, per-resource result (deleted / failed / skipped) |
-| Re-validation before delete | n/a | yes, fail-closed (still idle/detached? mark expired? still unprotected?) |
+When the backlog is gone, you can switch back to the weekly schedules
+(`"0 8 * * 1"` for the flag job, `"0 8 * * 2"` for the delete job, and
+`deleteRunAt: "Tuesday 08:00 (Europe/Berlin)"`).
 
-Dry run is the safe default because the first weeks are for *observation*:
-you want to see exactly what the bot would delete, and grant protections via
-buttons/labels, before deletion becomes possible. The `delete` subcommand
-honours the flag too — with dry run on it behaves like `scan` (global kill
-switch).
+### Stop it immediately
 
-## 12. Development
+To stop all deleting right away (for example if a message looks wrong):
 
 ```bash
-make build      # go build -o dist/costguard ./cmd/costguard
-make test       # go test -race ./... with a >=80% per-package coverage gate (cmd/ exempt)
-make lint       # go vet ./...
-ko build -B --local -t dev ./cmd/costguard   # local image via ko (requires the ko CLI)
+kubectl -n costguard patch cronjob costguard-delete -p '{"spec":{"suspend":true}}'
 ```
 
-Coverage per package is printed by `make test` (profile under `coverage/`);
-the gate fails the build if any package under `internal/` drops below 80 %.
-Unit tests never touch real APIs: the STACKIT SDK surface is wrapped behind
-interfaces in `internal/stackit`, and webhook/Secrets-Manager/S3 clients are
-exercised against `httptest` servers.
+To allow deleting again, run the same command with `false` instead of
+`true`.
+
+### Go back to report only
+
+```bash
+kubectl delete -f stage2.yaml
+kubectl apply -f stage1.yaml
+```
+
+The `delete=true` labels stay on the resources. If you switch to stage 2
+again later, do it between Tuesday and Sunday again.
+
+### Remove costguard completely
+
+```bash
+kubectl delete namespace costguard
+```
+
+## How costguard keeps you safe
+
+- **Stage 1 never changes anything.** Its service account cannot even do
+  so.
+- **Everybody gets a day's notice.** Things costguard finds itself are
+  announced on Monday and deleted on Tuesday at the earliest.
+- **`do-not-delete=true` always wins,** also on whole folders and projects.
+- **A forgotten `delete=true` on a protected resource is cleaned up.** If a
+  disk or IP address carries both labels, the Monday run removes the old
+  `delete=true`, so lifting the protection later cannot delete it by
+  surprise. Other resources with both labels are listed, and the message
+  asks you to remove the `delete` label by hand.
+- **Nothing is deleted that was not in a message.** Everything already
+  marked with `delete=true` is always listed in full, and costguard only
+  marks the new finds it lists. The one exception: a `delete=true` someone
+  adds after the Monday message (see below).
+- **Everything is checked again right before it is deleted.** If someone
+  added `do-not-delete=true`, removed `delete=true` or started using the
+  resource again in the meantime, it stays.
+- **Disks and IP addresses in use are never deleted,** even when marked. If
+  one is used again, costguard removes its mark.
+- **It only deletes the marked item itself.** Deleting a server does not
+  delete its disks; they go through the normal Monday/Tuesday cycle
+  afterwards.
+- **It never deletes projects, folders or network areas**, and never deletes
+  an IP address that a load balancer uses.
+- **It never marks disks that have snapshots, or disks in projects that run
+  Kubernetes (SKE)** by itself. They are only deleted if someone marks them
+  with `delete=true` on purpose.
+- **When in doubt, it does nothing.** If costguard cannot read something, it
+  leaves it alone and says so in the message.
+- **No message, no marks.** If the Monday message cannot be delivered
+  (costguard tries three times when the chat service has a hiccup), nothing
+  new is marked.
+- **Corrections go to the chat too.** If costguard cannot write a label
+  after the Monday message went out, it posts a correction the same morning
+  that lists what will _not_ be deleted this week.
+- **A broken skip list stops everything.** If an entry in `skip` matches
+  nothing (for example because a project was renamed), costguard marks and
+  deletes nothing until you fix it, and tells you in the message.
+
+### Please be aware
+
+- **`delete=true` means "delete", no matter who set it or when.** If someone
+  adds it after the Monday message, the item is deleted on Tuesday without
+  having been listed. Only add it when you mean it.
+- **If another tool in your company already uses a label called `delete`,**
+  costguard treats it the same way. Check before you switch to stage 2.
+- **Anyone who can change labels on a resource can have costguard delete
+  it.** Keep permissions tidy.
+- **There is no limit on how much one Tuesday deletes.** Read the Monday
+  message, especially the first one.
+- **Before you lift a skip** (remove a folder or project from `skip`, or
+  its `do-not-delete`), check it for old `delete=true` labels. costguard
+  does not look inside skipped folders and projects, so it cannot clean
+  those labels up; after the skip is lifted, such resources are listed on
+  the next Monday and deleted on the Tuesday after.
+- **If a great many resources are marked at once** (for example someone
+  marks 300 servers), the Monday message can get too big for the chat and
+  not arrive. They are still deleted on Tuesday. Mark large amounts in
+  batches.
+- **Keep about a day between the two schedules.** The time between marking
+  and deleting comes from the schedules in `stage2.yaml`. If you change them,
+  follow [Big backlog: run it more often](#big-backlog-run-it-more-often)
+  and update `deleteRunAt` in `config.yaml`.
+
+## Settings
+
+All settings live in `config.yaml`. A typo in a setting name is reported as
+an error instead of being silently ignored.
+
+| Setting                                                  | Default                         | What it does                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `organizationId`                                         | – (required)                    | Your STACKIT organization.                                                                                                                                                                                                                                     |
+| `output`                                                 | – (required)                    | `teams`, `slack` or `googlechat`.                                                                                                                                                                                                                              |
+| `scope.folders`, `scope.projects`                        | empty: the whole organization   | Only look at these folders and projects. Names or IDs. Each entry must match exactly one folder or project, otherwise costguard stops and tells you why.                                                                                                       |
+| `skip.folders`, `skip.projects`                          | empty                           | Never look at these. Names (upper or lower case does not matter) or IDs. A name used by several folders or projects skips all of them. Entries must point to something inside the `scope`; an entry that matches nothing there stops all marking and deleting. |
+| `regions`                                                | `eu01`                          | Which STACKIT regions to look at. **List every region your company uses**, for example `[eu01, eu02]`; other regions are ignored.                                                                                                                              |
+| `deleteRunAt`                                            | `Tuesday 08:00 (Europe/Berlin)` | The deletion time shown in the Monday message. Keep it in line with the schedule in `stage2.yaml`.                                                                                                                                                             |
+| `warnEmptyAfterDays`                                     | `30`                            | How old an empty project or network area must be before costguard warns about it. **`0` switches these warnings off**; do that if costguard may not read your organization's cost data, otherwise every report says something could not be read.               |
+| `prices.publicIpMonthlyEur`, `prices.volumeGbMonthlyEur` | `4.82`, `0.0619`                | Prices used for the savings estimate.                                                                                                                                                                                                                          |
+| `portalUrl`                                              | `https://portal.stackit.cloud`  | Where the links in the messages point to.                                                                                                                                                                                                                      |
+
+After changing `config.yaml`, apply it again with
+`kubectl apply -f config.yaml`. The next run uses the new settings.
+
+## Questions and problems
+
+**No message arrived.** Look at the log of the last run:
+
+```bash
+kubectl -n costguard get jobs
+kubectl -n costguard logs job/<name of the job>
+```
+
+When something is wrong, costguard posts a message titled _"costguard …
+run failed"_ that says what, including mistakes in `config.yaml` (it lists
+every problem it found). If **no message at all** arrives, the problem is
+in the chat settings themselves (a wrong or non-https webhook address from
+step 1, or a wrong `output`), or the run did not start. The log shows
+which.
+
+**The message says "costguard cannot log in to STACKIT".** The login from
+step 3 is not set up: for option A, the service account annotation is
+missing in `stage1.yaml` / `stage2.yaml`; for option B, the
+`costguard-sa-key` secret is missing or not a valid key file. The details
+under the message say which.
+
+**The message says "costguard cannot read the organization".** costguard
+logged in, but may not read your organization. Usually the service account
+lacks the read permission from step 2, the annotation names the wrong
+service account, or the workload identity trust from step 3 is missing.
+
+**The message says something "could not be read".** The service account is
+missing a permission for part of your organization. costguard leaves those
+parts alone until it can read them. Check the permissions from step 2.
+
+**The message says deletions are blocked.** An entry in the `skip` list
+matches nothing inside the scope. Usually a folder or project was renamed or
+deleted, the entry points to something outside your `scope`, or costguard
+may not read the folder it is in. Fix or remove the entry in `config.yaml`
+and apply it again.
+
+**The run failed because a scope entry matches nothing or several things.**
+Use the exact name, or better the ID, of the folder or project in `scope`.
+
+**Something was listed that we still need.** Add `do-not-delete=true` to it
+before Tuesday 08:00. If it is marked with `delete=true`, you can also just
+remove that label.
+
+**Something was deleted that we still needed.** Deleted resources cannot be
+restored by costguard. Check the Tuesday message and the log to see why it
+was deleted (it was marked with `delete=true` and had no
+`do-not-delete=true`), and protect similar resources with
+`do-not-delete=true`.
+
+**Does costguard delete projects or whole folders?** No. It only warns about
+empty projects and network areas.
+
+**What does costguard itself cost?** Almost nothing: one small program that
+runs for a few minutes once or twice a week.
+
+## For developers
+
+```bash
+make test    # unit tests with a per-package 80% coverage gate
+make lint    # go vet
+go run ./cmd/costguard --config my-config.yaml report   # report only, changes nothing
+ko build -B --local -t dev ./cmd/costguard               # container image into the local Docker daemon
+```
+
+The tests never call STACKIT: `internal/fake` is an in-memory STACKIT. Every
+merge to `main` that changes costguard is released automatically by
+`.github/workflows/costguard-release.yaml` on the GitHub mirror: the version
+comes from the commit messages (`fix:` → patch, `feat:` → minor), the image
+goes to `ghcr.io/stackitcloud/professional-service/costguard`, and the
+release carries `config.yaml`, `stage1.yaml` and `stage2.yaml` with the
+image pinned. See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ---
 
-*costguard is maintained as part of the [STACKIT professional-service
-best-practice library](https://github.com/stackitcloud/professional-service).*
+_costguard is maintained as part of the [STACKIT professional-service
+best-practice library](https://github.com/stackitcloud/professional-service)._

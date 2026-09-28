@@ -16,546 +16,452 @@ package deleter
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
-	"sync"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
-	oapierror "github.com/stackitcloud/stackit-sdk-go/core/oapierror"
-
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/fake"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/scanner"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
-	"github.com/stackitcloud/professional-service/apps/costguard/internal/whitelist"
 )
 
-const (
-	tOrg   = "22222222-2222-2222-2222-222222222222"
-	tProj  = "55555555-5555-5555-5555-555555555555"
-	tIP    = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	tIP2   = "cccccccc-cccc-cccc-cccc-cccccccccccc"
-	tVol   = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	tVol2  = "ffffffff-ffff-ffff-ffff-ffffffffffff"
-	tSnap  = "11111111-1111-1111-1111-111111111111"
-	tSnap2 = "22222222-2222-2222-2222-222222222222"
+const org = "00000000-0000-0000-0000-00000000000a"
+
+var (
+	ctx = context.Background()
+	now = time.Date(2026, 9, 29, 8, 0, 0, 0, time.UTC)
 )
 
-var tNow = time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+func logger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
-func dueMark() map[string]string {
-	return map[string]string{stackit.MarkLabelKey: stackit.FormatMark(tNow.Add(-time.Hour))}
-}
-
-func futureMark() map[string]string {
-	return map[string]string{stackit.MarkLabelKey: stackit.FormatMark(tNow.Add(7 * time.Hour))}
+func testDeleter(st *fake.Store) *Deleter {
+	return &Deleter{IaaS: st, Logger: logger(), MaxAttempts: 3, ServerWait: time.Second}
 }
 
-// fakeIaaS serves current resource state and records deletions. Delete
-// error scripts allow testing the retry wrapper.
-type fakeIaaS struct {
-	mu        sync.Mutex
-	ips       map[string]stackit.PublicIP
-	volumes   map[string]stackit.Volume
-	snapshots []stackit.Snapshot
-
-	getIPErr    map[string]error
-	getVolErr   map[string]error
-	deleteIP    []error // popped per call; empty tail = last error sticks
-	deleteVol   []error
-	deleteSnap  []error
-	listSnapErr error
-
-	deletedIPs     []string
-	deletedVols    []string
-	deletedSnaps   []string
-	deleteIPCalls  int
-	deleteVolCalls int
+func store() *fake.Store {
+	st := fake.New()
+	st.AddProject("p1", "proj", org, now.AddDate(0, 0, -1), nil)
+	return st
 }
 
-func newFakeIaaS() *fakeIaaS {
-	return &fakeIaaS{
-		ips:       map[string]stackit.PublicIP{},
-		volumes:   map[string]stackit.Volume{},
-		getIPErr:  map[string]error{},
-		getVolErr: map[string]error{},
-	}
-}
-
-func (f *fakeIaaS) nextErr(scr *[]error) error {
-	if len(*scr) == 0 {
-		return nil
-	}
-	err := (*scr)[0]
-	*scr = (*scr)[1:]
-	return err
-}
-
-func (f *fakeIaaS) ListNetworkAreas(context.Context, string) ([]stackit.NetworkArea, error) {
-	return nil, nil
-}
-func (f *fakeIaaS) GetNetworkArea(context.Context, string, string) (*stackit.NetworkArea, error) {
-	return nil, nil
-}
-func (f *fakeIaaS) ListPublicIPs(context.Context, string, string) ([]stackit.PublicIP, error) {
-	return nil, nil
-}
-
-func (f *fakeIaaS) GetPublicIP(_ context.Context, _, _, id string) (*stackit.PublicIP, error) {
-	if f.getIPErr[id] != nil {
-		return nil, f.getIPErr[id]
-	}
-	ip, ok := f.ips[id]
-	if !ok {
-		return nil, &oapierror.GenericOpenAPIError{StatusCode: 404, ErrorMessage: "not found"}
-	}
-	return &ip, nil
-}
-
-func (f *fakeIaaS) SetPublicIPMark(context.Context, string, string, string, string) error {
-	return nil
-}
-func (f *fakeIaaS) ClearPublicIPMark(context.Context, string, string, string) error {
-	return nil
-}
-
-func (f *fakeIaaS) DeletePublicIP(_ context.Context, _, _, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deleteIPCalls++
-	if err := f.nextErr(&f.deleteIP); err != nil {
-		return err
-	}
-	f.deletedIPs = append(f.deletedIPs, id)
-	return nil
-}
-
-func (f *fakeIaaS) ListVolumes(context.Context, string, string) ([]stackit.Volume, error) {
-	return nil, nil
-}
-
-func (f *fakeIaaS) GetVolume(_ context.Context, _, _, id string) (*stackit.Volume, error) {
-	if f.getVolErr[id] != nil {
-		return nil, f.getVolErr[id]
-	}
-	v, ok := f.volumes[id]
-	if !ok {
-		return nil, &oapierror.GenericOpenAPIError{StatusCode: 404, ErrorMessage: "not found"}
-	}
-	return &v, nil
-}
-
-func (f *fakeIaaS) SetVolumeMark(context.Context, string, string, string, string) error {
-	return nil
-}
-func (f *fakeIaaS) ClearVolumeMark(context.Context, string, string, string) error {
-	return nil
-}
-
-func (f *fakeIaaS) DeleteVolume(_ context.Context, _, _, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deleteVolCalls++
-	if err := f.nextErr(&f.deleteVol); err != nil {
-		return err
-	}
-	f.deletedVols = append(f.deletedVols, id)
-	return nil
-}
-
-func (f *fakeIaaS) ListSnapshots(context.Context, string, string) ([]stackit.Snapshot, error) {
-	if f.listSnapErr != nil {
-		return nil, f.listSnapErr
-	}
-	return f.snapshots, nil
-}
-
-func (f *fakeIaaS) DeleteSnapshot(_ context.Context, _, _, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.nextErr(&f.deleteSnap); err != nil {
-		return err
-	}
-	f.deletedSnaps = append(f.deletedSnaps, id)
-	return nil
-}
-func (f *fakeIaaS) ListServers(context.Context, string, string) ([]stackit.Server, error) {
-	return nil, nil
-}
-
-func testDeleter(t *testing.T, iaas *fakeIaaS, wl *whitelist.Whitelist) *Deleter {
+func scanStore(t *testing.T, st *fake.Store, mod func(*config.Config)) *scanner.Result {
 	t.Helper()
-	cfg := config.Config{
-		SafeLabelKey:   "costguard-safe",
-		SafeLabelValue: "true",
-		GracePeriod:    8 * time.Hour,
+	cfg := config.Config{OrganizationID: org, Regions: []string{"eu01"}, WarnEmptyAfterDays: 30}
+	if mod != nil {
+		mod(&cfg)
 	}
-	return &Deleter{
-		IaaS:             iaas,
-		Whitelist:        wl,
-		Config:           cfg,
-		Logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
-		BetweenDeletions: 0,
-		RetryBackoff:     time.Millisecond,
-		MaxAttempts:      3,
-		Now:              func() time.Time { return tNow },
+	s := &scanner.Scanner{Clients: st.Set(), Config: cfg, Logger: logger(), Pacer: scanner.NopPacer{}, Now: func() time.Time { return now }, Workers: 2}
+	res, err := s.Scan(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return res
 }
 
-func emptyWL() *whitelist.Whitelist {
-	return whitelist.New(config.Whitelist{}, nil, nil)
+func res(kind stackit.Kind, id string, mods ...func(*stackit.Resource)) stackit.Resource {
+	r := stackit.Resource{Kind: kind, ID: id, Name: id, ProjectID: "p1", Region: "eu01"}
+	for _, m := range mods {
+		m(&r)
+	}
+	return r
 }
 
-func dueIP(id, addr string) report.IdlePublicIP {
-	return report.IdlePublicIP{ID: id, Address: addr, ProjectID: tProj, ProjectName: "proj", Region: "eu01", MarkDeadline: ptr(tNow.Add(-time.Hour))}
-}
-
-func dueVol(id, name string) report.DetachedVolume {
-	return report.DetachedVolume{ID: id, Name: name, ProjectID: tProj, ProjectName: "proj", Region: "eu01", SizeGB: 10, MarkDeadline: ptr(tNow.Add(-time.Hour))}
-}
-
-func ptr[T any](v T) *T { return &v }
-
-func TestDeleteAllHappyPathWithSnapshots(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", SizeGB: 10, Status: "AVAILABLE", Labels: dueMark()}
-	// One snapshot of the target volume and one of another volume: only
-	// the target's snapshot may be deleted.
-	iaas.snapshots = []stackit.Snapshot{
-		{ID: tSnap, VolumeID: tVol},
-		{ID: tSnap2, VolumeID: "other-vol"},
-	}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{
-		IdlePublicIPs:   []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")},
-		DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")},
-	}
-
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, skipped := summary.Counts()
-	if deleted != 2 || failed != 0 || skipped != 0 {
-		t.Fatalf("counts = (%d,%d,%d), want (2,0,0); results: %+v", deleted, failed, skipped, summary.Results)
-	}
-	// Order: public IP first, then volume.
-	if summary.Results[0].Item.Kind != "publicip" || summary.Results[1].Item.Kind != "volume" {
-		t.Errorf("order = %v, %v; want publicip then volume", summary.Results[0].Item.Kind, summary.Results[1].Item.Kind)
-	}
-	if len(iaas.deletedIPs) != 1 || iaas.deletedIPs[0] != tIP {
-		t.Errorf("deletedIPs = %v", iaas.deletedIPs)
-	}
-	if len(iaas.deletedVols) != 1 || iaas.deletedVols[0] != tVol {
-		t.Errorf("deletedVols = %v", iaas.deletedVols)
-	}
-	if len(iaas.deletedSnaps) != 1 || iaas.deletedSnaps[0] != tSnap {
-		t.Errorf("deletedSnaps = %v, want only the volume's own snapshot", iaas.deletedSnaps)
-	}
-}
-
-func TestDeleteSkipsNotDue(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: futureMark()}
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: futureMark()}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{
-		IdlePublicIPs:   []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")},
-		DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")},
-	}
-
-	summary := d.DeleteAll(context.Background(), rep)
-	_, failed, skipped := summary.Counts()
-	if skipped != 2 || failed != 0 {
-		t.Errorf("counts: failed=%d skipped=%d, want 0/2; results %+v", failed, skipped, summary.Results)
-	}
-	if len(iaas.deletedIPs) != 0 || len(iaas.deletedVols) != 0 {
-		t.Error("nothing may be deleted when the deadline has not passed")
-	}
-	if summary.Results[0].Status != report.StatusSkipped {
-		t.Errorf("status = %s, want skipped", summary.Results[0].Status)
-	}
-}
-
-func TestDeleteSkipsWhitelistedAfterWarning(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: dueMark()}
-	wl := whitelist.New(config.Whitelist{PublicIPs: []string{tIP}, Volumes: []string{tVol}}, nil, nil)
-	d := testDeleter(t, iaas, wl)
-	rep := &report.Report{
-		IdlePublicIPs:   []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")},
-		DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")},
-	}
-
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, skipped := summary.Counts()
-	if deleted != 0 || failed != 0 || skipped != 2 {
-		t.Errorf("counts = (%d,%d,%d), want (0,0,2)", deleted, failed, skipped)
-	}
-	for _, r := range summary.Results {
-		if r.Reason != "whitelisted" {
-			t.Errorf("reason = %q, want whitelisted", r.Reason)
+func labelled(kv ...string) func(*stackit.Resource) {
+	return func(r *stackit.Resource) {
+		r.Labels = map[string]string{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			r.Labels[kv[i]] = kv[i+1]
 		}
 	}
 }
 
-func TestDeleteSkipsWhenNoLongerCandidate(t *testing.T) {
-	iaas := newFakeIaaS()
-	// IP got attached since the scan.
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", AttachedNIC: "nic-1", Labels: dueMark()}
-	// Volume gained the safe label since the scan.
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: map[string]string{
-		stackit.MarkLabelKey: stackit.FormatMark(tNow.Add(-time.Hour)),
-		"costguard-safe":     "true",
-	}}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{
-		IdlePublicIPs:   []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")},
-		DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")},
-	}
+var del = labelled("delete", "true")
 
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, skipped := summary.Counts()
-	if deleted != 0 || failed != 0 || skipped != 2 {
-		t.Errorf("counts = (%d,%d,%d), want (0,0,2)", deleted, failed, skipped)
+func detached(r *stackit.Resource) { r.Status = stackit.VolumeStatusAvailable }
+
+func on(server string) func(*stackit.Resource) {
+	return func(r *stackit.Resource) { r.Status, r.ServerID = "IN-USE", server }
+}
+
+func outcomes(sum *report.DeletionSummary) map[string]report.Status {
+	out := map[string]report.Status{}
+	for _, r := range sum.Results {
+		out[r.Item.ID] = r.Status
 	}
-	if summary.Results[0].Reason != "attached to a network interface" {
-		t.Errorf("IP reason = %q", summary.Results[0].Reason)
+	return out
+}
+
+func TestDeleteWaitsForServersSoTheirVolumesAndIPsGoToo(t *testing.T) {
+	st := store()
+	st.DeletingReads = 2
+	st.Add(
+		res(stackit.KindServer, "s1", del),
+		res(stackit.KindVolume, "v1", del, on("s1")),
+		res(stackit.KindNIC, "n1", on("s1")),
+		res(stackit.KindPublicIP, "ip1", del, func(r *stackit.Resource) { r.NICID, r.Address = "n1", "192.0.2.1" }),
+		res(stackit.KindPublicIP, "ip2", del, func(r *stackit.Resource) { r.Address = "192.0.2.2" }),
+		res(stackit.KindSnapshot, "sn1", del),
+		res(stackit.KindImage, "i1", del),
+		res(stackit.KindSecurityGroup, "sg1", del),
+	)
+	result := scanStore(t, st, nil)
+	sum := testDeleter(st).Delete(ctx, result, now)
+
+	want := map[string]report.Status{
+		"s1": report.StatusDeleted, "v1": report.StatusDeleted, "ip1": report.StatusDeleted, "ip2": report.StatusDeleted,
+		"sn1": report.StatusDeleted, "i1": report.StatusDeleted, "sg1": report.StatusDeleted,
 	}
-	if summary.Results[1].Reason != "safe label present" {
-		t.Errorf("volume reason = %q", summary.Results[1].Reason)
+	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
+		t.Errorf("outcomes = %v", got)
+	}
+	if len(st.Resources) != 0 {
+		t.Errorf("left over: %+v", st.Resources)
+	}
+	deletes := st.CallsWith("delete ")
+	if deletes[0] != "delete server s1" || deletes[len(deletes)-1] != "delete securitygroup sg1" {
+		t.Errorf("order = %v", deletes)
+	}
+	if sum.Scope != "whole organization" || !sum.GeneratedAt.Equal(now) {
+		t.Errorf("summary header = %+v", sum)
+	}
+	for _, r := range sum.Results {
+		if r.Item.ProjectName != "proj" {
+			t.Errorf("item lacks context: %+v", r.Item)
+		}
 	}
 }
 
-func TestDeleteFailClosedWithoutMark(t *testing.T) {
-	iaas := newFakeIaaS()
-	// Detached and idle but the mark is gone — fail-closed: skip.
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE"}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")}}
-
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, skipped := summary.Counts()
-	if deleted != 0 || failed != 0 || skipped != 1 {
-		t.Errorf("counts = (%d,%d,%d), want (0,0,1)", deleted, failed, skipped)
+func TestDeleteDefersWhenServerIsSlow(t *testing.T) {
+	st := store()
+	st.DeletingReads = 1000
+	st.Add(res(stackit.KindServer, "s1", del), res(stackit.KindVolume, "v1", del, on("s1")))
+	result := scanStore(t, st, nil)
+	d := testDeleter(st)
+	d.ServerWait, d.PollInterval = 5*time.Millisecond, time.Millisecond
+	sum := d.Delete(ctx, result, now)
+	if got := outcomes(sum); got["s1"] != report.StatusDeleted || got["v1"] != report.StatusDeferred {
+		t.Errorf("outcomes = %v", got)
 	}
-	if summary.Results[0].Reason != "mark label missing or malformed" {
-		t.Errorf("reason = %q", summary.Results[0].Reason)
-	}
-}
-
-func TestDeleteAlreadyGoneIsSuccess(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.getIPErr[tIP] = &oapierror.GenericOpenAPIError{StatusCode: 404, ErrorMessage: "not found"}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{IdlePublicIPs: []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")}}
-
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, _ := summary.Counts()
-	if deleted != 1 || failed != 0 {
-		t.Errorf("counts = (%d,%d), want (1,0)", deleted, failed)
-	}
-	if summary.Results[0].Status != report.StatusDeleted {
-		t.Errorf("status = %s, want deleted (already gone)", summary.Results[0].Status)
+	if v := st.Find("v1"); v == nil || !stackit.Requested(v.Labels) {
+		t.Error("a deferred volume keeps its label")
 	}
 }
 
-func TestDeleteRetriesTransientThenSucceeds(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	// 429, then 500, then success.
-	iaas.deleteIP = []error{
-		&oapierror.GenericOpenAPIError{StatusCode: 429, ErrorMessage: "rate limited"},
-		&oapierror.GenericOpenAPIError{StatusCode: 500, ErrorMessage: "boom"},
-	}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{IdlePublicIPs: []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")}}
+func TestDeleteKeepsLabelsWhenTheServerDeleteFails(t *testing.T) {
+	st := store()
+	st.Add(
+		res(stackit.KindServer, "s1", del),
+		res(stackit.KindVolume, "v1", del, on("s1")),
+		res(stackit.KindNIC, "n1", on("s1")),
+		res(stackit.KindPublicIP, "ip1", del, func(r *stackit.Resource) { r.NICID, r.Address = "n1", "192.0.2.1" }),
+	)
+	result := scanStore(t, st, nil)
+	st.Errs["delete:s1"] = fake.Status(500)
 
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, _ := summary.Counts()
-	if deleted != 1 || failed != 0 {
-		t.Fatalf("counts = (%d,%d), want (1,0): %+v", deleted, failed, summary.Results)
+	sum := testDeleter(st).Delete(ctx, result, now)
+	want := map[string]report.Status{"s1": report.StatusFailed, "v1": report.StatusDeferred, "ip1": report.StatusDeferred}
+	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
+		t.Errorf("outcomes = %v", got)
 	}
-	if iaas.deleteIPCalls != 3 {
-		t.Errorf("deleteIPCalls = %d, want 3 (2 retries)", iaas.deleteIPCalls)
+	if !stackit.Requested(st.Find("v1").Labels) || !stackit.Requested(st.Find("ip1").Labels) {
+		t.Error("the disk and IP must keep their labels and go together with the server next run")
+	}
+
+	// Next run: the server goes, and so do the disk and IP.
+	delete(st.Errs, "delete:s1")
+	sum = testDeleter(st).Delete(ctx, scanStore(t, st, nil), now)
+	want = map[string]report.Status{"s1": report.StatusDeleted, "v1": report.StatusDeleted, "ip1": report.StatusDeleted}
+	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
+		t.Errorf("next run outcomes = %v", got)
 	}
 }
 
-func TestDeleteRetriesExhausted(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	iaas.deleteIP = []error{
-		&oapierror.GenericOpenAPIError{StatusCode: 503, ErrorMessage: "unavailable"},
-		&oapierror.GenericOpenAPIError{StatusCode: 503, ErrorMessage: "unavailable"},
-		&oapierror.GenericOpenAPIError{StatusCode: 503, ErrorMessage: "unavailable"},
-		&oapierror.GenericOpenAPIError{StatusCode: 503, ErrorMessage: "unavailable"}, // never reached
-	}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{IdlePublicIPs: []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")}}
+func TestDeleteSurvivesReadHiccups(t *testing.T) {
+	st := store()
+	st.Add(
+		res(stackit.KindServer, "s1", del),
+		res(stackit.KindServer, "s2"),
+		res(stackit.KindVolume, "v-hiccup", del, detached),
+		res(stackit.KindServer, "s3"),
+		res(stackit.KindVolume, "v-server-unreadable", del, detached),
+	)
+	result := scanStore(t, st, nil)
+	// Both volumes were unused at the scan and are attached before the
+	// delete run reaches them, so it has to check their servers.
+	on("s2")(st.Find("v-hiccup"))
+	on("s3")(st.Find("v-server-unreadable"))
+	st.ErrsOnce["get:s1"] = fake.Status(503) // the re-read before deleting
+	st.ErrsOnce["get:s2"] = fake.Status(429) // the check of an attached volume's server
+	st.Errs["get:s3"] = fake.Status(500)     // a server that stays unreadable
 
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, _ := summary.Counts()
-	if deleted != 0 || failed != 1 {
-		t.Fatalf("counts = (%d,%d), want (0,1)", deleted, failed)
+	sum := testDeleter(st).Delete(ctx, result, now)
+	got := outcomes(sum)
+	if got["s1"] != report.StatusDeleted {
+		t.Errorf("one 503 on the re-read must not cost a week: %v", got)
 	}
-	if iaas.deleteIPCalls != 3 {
-		t.Errorf("deleteIPCalls = %d, want exactly 3 attempts", iaas.deleteIPCalls)
+	// v-hiccup: its server stays (read on the second try), so the label goes.
+	if got["v-hiccup"] != report.StatusUnflagged {
+		t.Errorf("v-hiccup = %v", got["v-hiccup"])
+	}
+	// v-server-unreadable: nothing is known about the server, so the label stays.
+	if got["v-server-unreadable"] != report.StatusDeferred || !stackit.Requested(st.Find("v-server-unreadable").Labels) {
+		t.Errorf("an unreadable server must keep the volume's label: %v", got)
+	}
+	for _, r := range sum.Results {
+		if r.Item.ID == "v-server-unreadable" && !strings.Contains(r.Reason, "could not be checked (HTTP 500)") {
+			t.Errorf("reason = %q", r.Reason)
+		}
 	}
 }
 
-func TestDeleteNonTransientFailsFast(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	iaas.deleteIP = []error{
-		&oapierror.GenericOpenAPIError{StatusCode: 400, ErrorMessage: "bad request"},
-	}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{IdlePublicIPs: []report.IdlePublicIP{dueIP(tIP, "1.2.3.4")}}
+func TestDeleteRechecksBeforeDeleting(t *testing.T) {
+	st := store()
+	st.Add(
+		res(stackit.KindServer, "unlabelled", del),
+		res(stackit.KindServer, "protected", del),
+		res(stackit.KindServer, "gone", del),
+		res(stackit.KindServer, "unreadable", del),
+		res(stackit.KindVolume, "reattached", del, detached),
+		res(stackit.KindServer, "s9"),
+		res(stackit.KindPublicIP, "ip-attached", del, func(r *stackit.Resource) { r.Address = "192.0.2.9" }),
+	)
+	result := scanStore(t, st, nil)
 
-	summary := d.DeleteAll(context.Background(), rep)
-	_, failed, _ := summary.Counts()
-	if failed != 1 {
-		t.Fatalf("failed = %d, want 1", failed)
+	// Things change between the scan and the delete run.
+	delete(st.Find("unlabelled").Labels, "delete")
+	st.Find("protected").Labels["do-not-delete"] = "true"
+	st.Resources = removeID(st.Resources, "gone")
+	st.Errs["get:unreadable"] = fake.Status(500)
+	on("s9")(st.Find("reattached"))
+	st.Find("ip-attached").NICID = "n9"
+
+	sum := testDeleter(st).Delete(ctx, result, now)
+	want := map[string]report.Status{
+		"unlabelled":  report.StatusSkipped,
+		"protected":   report.StatusSkipped,
+		"gone":        report.StatusDeleted,
+		"unreadable":  report.StatusFailed,
+		"reattached":  report.StatusUnflagged,
+		"ip-attached": report.StatusUnflagged,
 	}
-	if iaas.deleteIPCalls != 1 {
-		t.Errorf("deleteIPCalls = %d, want 1 (no retry on 400)", iaas.deleteIPCalls)
+	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
+		t.Errorf("outcomes = %v", got)
+	}
+	if got := st.CallsWith("delete "); len(got) != 0 {
+		t.Errorf("nothing may be deleted: %v", got)
+	}
+	for _, r := range sum.Results {
+		if r.AlreadyGone != (r.Item.ID == "gone") {
+			t.Errorf("%s: AlreadyGone = %v", r.Item.ID, r.AlreadyGone)
+		}
+	}
+	if stackit.Requested(st.Find("reattached").Labels) || stackit.Requested(st.Find("ip-attached").Labels) {
+		t.Error("labels of re-used resources must be removed")
 	}
 }
 
-func TestDelete404OnDeleteIsSuccess(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: dueMark()}
-	iaas.deleteVol = []error{&oapierror.GenericOpenAPIError{StatusCode: 404, ErrorMessage: "gone"}}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")}}
+func removeID(rs []*stackit.Resource, id string) []*stackit.Resource {
+	var out []*stackit.Resource
+	for _, r := range rs {
+		if r.ID != id {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, _ := summary.Counts()
-	if deleted != 1 || failed != 0 {
-		t.Errorf("counts = (%d,%d), want (1,0): 404-on-delete is success", deleted, failed)
+func TestDeleteUnflagsIPsUsedByLoadBalancers(t *testing.T) {
+	st := store()
+	st.Add(res(stackit.KindPublicIP, "ip1", del, func(r *stackit.Resource) { r.Address = "192.0.2.1" }))
+	result := scanStore(t, st, nil)
+	// A load balancer took the address after the scan listed them.
+	result.Context.LoadBalancerAddresses["p1/eu01"] = map[string]string{"192.0.2.1": "network load balancer web"}
+	sum := testDeleter(st).Delete(ctx, result, now)
+	if len(sum.Results) != 1 || sum.Results[0].Status != report.StatusUnflagged || sum.Results[0].Reason != "used by network load balancer web" {
+		t.Errorf("results = %+v", sum.Results)
 	}
 }
 
-func TestSnapshotFailureKeepsVolume(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: dueMark()}
-	iaas.snapshots = []stackit.Snapshot{{ID: tSnap, VolumeID: tVol}}
-	iaas.deleteSnap = []error{
-		&oapierror.GenericOpenAPIError{StatusCode: 400, ErrorMessage: "snapshot locked"},
-	}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")}}
+func TestDeleteUnflagsBackInUse(t *testing.T) {
+	st := store()
+	st.Add(
+		res(stackit.KindServer, "s1"),
+		res(stackit.KindVolume, "v-used", del, on("s1")),
+		res(stackit.KindVolume, "v-free-again", del, on("s1")),
+		res(stackit.KindVolume, "v-gone", del, on("s1")),
+		res(stackit.KindVolume, "v-cleared", del, on("s1")),
+		res(stackit.KindVolume, "v-broken", del, on("s1")),
+		res(stackit.KindVolume, "v-nolabel", del, on("s1")),
+	)
+	result := scanStore(t, st, nil)
+	detached(st.Find("v-free-again"))
+	st.Find("v-free-again").ServerID = ""
+	st.Resources = removeID(st.Resources, "v-gone")
+	delete(st.Find("v-cleared").Labels, "delete")
+	st.Errs["get:v-broken"] = fake.Status(500)
+	st.Errs["label:v-nolabel"] = fake.Status(500)
 
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, _ := summary.Counts()
-	if deleted != 0 || failed != 1 {
-		t.Fatalf("counts = (%d,%d), want (0,1)", deleted, failed)
+	sum := testDeleter(st).Delete(ctx, result, now)
+	want := map[string]report.Status{
+		"v-used":       report.StatusUnflagged,
+		"v-free-again": report.StatusDeferred,
+		"v-gone":       report.StatusSkipped,
+		"v-cleared":    report.StatusSkipped,
+		"v-broken":     report.StatusFailed,
+		"v-nolabel":    report.StatusFailed,
 	}
-	if iaas.deleteVolCalls != 0 {
-		t.Errorf("DeleteVolume called %d times, must not run when snapshot deletion fails", iaas.deleteVolCalls)
+	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
+		t.Errorf("outcomes = %v", got)
+	}
+	for _, r := range sum.Results {
+		if r.Item.ID == "v-used" && r.Reason != "attached to a server" {
+			t.Errorf("reason = %q", r.Reason)
+		}
 	}
 }
 
-func TestListSnapshotFailureFailsVolume(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: dueMark()}
-	iaas.listSnapErr = &oapierror.GenericOpenAPIError{StatusCode: 500, ErrorMessage: "boom"}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")}}
+func TestDeleteErrors(t *testing.T) {
+	st := store()
+	st.Add(
+		res(stackit.KindSecurityGroup, "sg-in-use", del),
+		res(stackit.KindImage, "i-flaky", del),
+		res(stackit.KindSnapshot, "sn-forbidden", del),
+		res(stackit.KindServer, "s-vanished", del),
+	)
+	result := scanStore(t, st, nil)
+	st.Errs["delete:sg-in-use"] = fake.Status(409)
+	st.Errs["delete:i-flaky"] = fake.Status(503)
+	st.Errs["delete:sn-forbidden"] = fake.Status(403)
+	st.Errs["delete:s-vanished"] = fake.Status(404)
 
-	summary := d.DeleteAll(context.Background(), rep)
-	_, failed, _ := summary.Counts()
-	if failed != 1 {
-		t.Errorf("failed = %d, want 1", failed)
+	d := testDeleter(st)
+	d.ServerWait = 10 * time.Millisecond // s-vanished never really goes away in the fake
+	sum := d.Delete(ctx, result, now)
+	want := map[string]report.Status{
+		"sg-in-use":    report.StatusFailed,
+		"i-flaky":      report.StatusFailed,
+		"sn-forbidden": report.StatusFailed,
+		"s-vanished":   report.StatusDeleted,
 	}
-	if iaas.deleteVolCalls != 0 {
-		t.Error("DeleteVolume must not run when snapshot listing fails")
+	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
+		t.Errorf("outcomes = %v", got)
+	}
+	if n := len(st.CallsWith("delete image i-flaky")); n != 3 {
+		t.Errorf("transient errors are retried: %d attempts", n)
+	}
+	if n := len(st.CallsWith("delete securitygroup")); n != 1 {
+		t.Errorf("conflicts are not retried: %d attempts", n)
+	}
+	for _, r := range sum.Results {
+		if r.Item.ID == "sg-in-use" && !strings.Contains(r.Reason, "still in use") {
+			t.Errorf("reason = %q", r.Reason)
+		}
 	}
 }
 
-func TestPerItemIsolation(t *testing.T) {
-	iaas := newFakeIaaS()
-	iaas.ips[tIP] = stackit.PublicIP{ID: tIP, Address: "1.2.3.4", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	iaas.ips[tIP2] = stackit.PublicIP{ID: tIP2, Address: "1.2.3.5", ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	iaas.deleteIP = []error{
-		&oapierror.GenericOpenAPIError{StatusCode: 400, ErrorMessage: "first fails"},
-	} // only the first call fails; the second succeeds
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{
-		IdlePublicIPs: []report.IdlePublicIP{dueIP(tIP, "1.2.3.4"), dueIP(tIP2, "1.2.3.5")},
+func TestDeleteDoesNothingWhenBlocked(t *testing.T) {
+	st := store()
+	st.Add(res(stackit.KindServer, "s1", del))
+	result := scanStore(t, st, func(c *config.Config) { c.Skip.Projects = []string{"missing"} })
+	sum := testDeleter(st).Delete(ctx, result, now)
+	if len(sum.Results) != 0 || len(sum.Blocked) != 1 || !sum.HasNews() {
+		t.Errorf("summary = %+v", sum)
 	}
-
-	summary := d.DeleteAll(context.Background(), rep)
-	deleted, failed, _ := summary.Counts()
-	if deleted != 1 || failed != 1 {
-		t.Fatalf("counts = (%d,%d), want (1,1): one failure must not abort the rest", deleted, failed)
-	}
-	if len(iaas.deletedIPs) != 1 || iaas.deletedIPs[0] != tIP2 {
-		t.Errorf("deletedIPs = %v, want the surviving IP", iaas.deletedIPs)
+	if len(st.CallsWith("delete ")) != 0 || len(st.CallsWith("get ")) != 0 {
+		t.Error("a blocked run must not touch anything")
 	}
 }
 
-func TestContextCancellationStopsRun(t *testing.T) {
-	iaas := newFakeIaaS()
-	for i, id := range []string{tIP, tIP2} {
-		iaas.ips[id] = stackit.PublicIP{ID: id, Address: "1.2.3." + string(rune('4'+i)), ProjectID: tProj, Region: "eu01", Labels: dueMark()}
-	}
-	d := testDeleter(t, iaas, emptyWL())
-	rep := &report.Report{
-		IdlePublicIPs:   []report.IdlePublicIP{dueIP(tIP, "1.2.3.4"), dueIP(tIP2, "1.2.3.5")},
-		DetachedVolumes: []report.DetachedVolume{dueVol(tVol, "data")},
-	}
-	iaas.volumes[tVol] = stackit.Volume{ID: tVol, Name: "data", ProjectID: tProj, Region: "eu01", Status: "AVAILABLE", Labels: dueMark()}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel immediately: nothing should be deleted.
+func TestDeleteStopsOnCancelledContext(t *testing.T) {
+	st := store()
+	st.Add(res(stackit.KindServer, "s1"), res(stackit.KindVolume, "v1", del, on("s1")), res(stackit.KindServer, "s2", del))
+	result := scanStore(t, st, nil)
+	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	summary := d.DeleteAll(ctx, rep)
-	if len(summary.Results) != 0 {
-		t.Errorf("results = %+v, want none after immediate cancel", summary.Results)
+	sum := testDeleter(st).Delete(cctx, result, now)
+	if len(sum.Results) != 0 || len(st.CallsWith("delete ")) != 0 {
+		t.Errorf("results = %+v", sum.Results)
 	}
-	if len(iaas.deletedIPs) != 0 || len(iaas.deletedVols) != 0 {
-		t.Error("nothing may be deleted after context cancellation")
-	}
-}
-
-func TestDelayHonorsContext(t *testing.T) {
-	d := &Deleter{
-		BetweenDeletions: time.Hour,
-		Now:              func() time.Time { return tNow },
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	start := time.Now()
-	d.delay(ctx)
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Errorf("delay blocked %v despite cancelled context", elapsed)
+	if !sum.Interrupted || !sum.HasNews() {
+		t.Error("an interrupted run must say so")
 	}
 }
 
-func TestIsTransientAndNotFound(t *testing.T) {
-	cases := []struct {
-		code  int
-		trans bool
-		nf    bool
-	}{
-		{404, false, true},
-		{400, false, false},
-		{409, true, false},
-		{429, true, false},
-		{500, true, false},
-		{503, true, false},
-		{200, false, false},
+func TestFlag(t *testing.T) {
+	st := store()
+	st.Add(
+		res(stackit.KindServer, "s1"),
+		res(stackit.KindVolume, "v-new", detached),
+		res(stackit.KindVolume, "v-broken", detached),
+		res(stackit.KindPublicIP, "ip-new", func(r *stackit.Resource) { r.Address = "192.0.2.1" }),
+		res(stackit.KindVolume, "v-used", del, on("s1")),
+		res(stackit.KindVolume, "v-used-broken", del, on("s1")),
+		res(stackit.KindVolume, "v-kept", labelled("delete", "true", "do-not-delete", "true"), detached),
+		res(stackit.KindPublicIP, "ip-kept-broken", labelled("delete", "true", "do-not-delete", "true")),
+	)
+	result := scanStore(t, st, nil)
+	st.Errs["label:v-broken"] = fake.Status(500)
+	st.Errs["label:v-used-broken"] = fake.Status(500)
+	st.Errs["label:ip-kept-broken"] = fake.Status(500)
+
+	got := testDeleter(st).Flag(ctx, result)
+	if got.Flagged != 2 || got.Unflagged != 1 || got.Cleared != 1 || !got.Failed() {
+		t.Errorf("flag result = %+v", got)
 	}
-	for _, c := range cases {
-		err := &oapierror.GenericOpenAPIError{StatusCode: c.code, ErrorMessage: "x"}
-		if got := isTransient(err); got != c.trans {
-			t.Errorf("isTransient(%d) = %v, want %v", c.code, got, c.trans)
+	if len(got.NotFlagged) != 1 || got.NotFlagged[0].ID != "v-broken" || got.NotFlagged[0].ProjectName != "proj" ||
+		!strings.Contains(got.NotFlagged[0].Detail, "HTTP 500") {
+		t.Errorf("not flagged = %+v", got.NotFlagged)
+	}
+	if len(got.NotCleared) != 2 || got.NotCleared[0].ID != "v-used-broken" || got.NotCleared[1].ID != "ip-kept-broken" {
+		t.Errorf("not cleared = %+v", got.NotCleared)
+	}
+	if got.NotCleared[0].Detail != "HTTP 500" {
+		t.Errorf("the message detail must be replaced by the reason: %q", got.NotCleared[0].Detail)
+	}
+	kept := st.Find("v-kept").Labels
+	if stackit.Requested(kept) || !stackit.Protected(kept) {
+		t.Errorf("the stale delete label must go, do-not-delete must stay: %v", kept)
+	}
+	if !stackit.Requested(st.Find("v-new").Labels) || !stackit.Requested(st.Find("ip-new").Labels) {
+		t.Error("new candidates must be labelled")
+	}
+	if stackit.Requested(st.Find("v-used").Labels) {
+		t.Error("the label of a volume in use must be removed")
+	}
+}
+
+func TestWriteErrorNamesStops(t *testing.T) {
+	for _, err := range []error{context.Canceled, fmt.Errorf("x: %w", context.DeadlineExceeded)} {
+		if got := writeError(err); got != "the run was stopped before this label was written" {
+			t.Errorf("%v: %q", err, got)
 		}
-		if got := isNotFound(err); got != c.nf {
-			t.Errorf("isNotFound(%d) = %v, want %v", c.code, got, c.nf)
-		}
 	}
-	if isTransient(context.DeadlineExceeded) || isNotFound(context.Canceled) {
-		t.Error("non-API errors must not be transient/not-found")
+	if got := writeError(fake.Status(403)); got != "HTTP 403" {
+		t.Errorf("got %q", got)
 	}
+	if (FlagResult{}).Failed() {
+		t.Error("an empty result has no failures")
+	}
+}
+
+func TestRetryAndSleepHelpers(t *testing.T) {
+	d := New(nil, logger())
+	if d.MaxAttempts != DefaultMaxAttempts || d.ServerWait != DefaultServerWait {
+		t.Errorf("defaults = %+v", d)
+	}
+	d.RetryBackoff = time.Hour
+	cctx, cancel := context.WithCancel(ctx)
+	calls := 0
+	go func() { time.Sleep(10 * time.Millisecond); cancel() }()
+	err := d.withRetry(cctx, func(context.Context) error { calls++; return fake.Status(500) })
+	if err == nil || calls != 1 {
+		t.Errorf("err=%v calls=%d", err, calls)
+	}
+	d.sleep(ctx, 0)
 }

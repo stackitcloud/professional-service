@@ -22,30 +22,70 @@ import (
 	iaasv2 "github.com/stackitcloud/stackit-sdk-go/services/iaas/v2api"
 )
 
-// PublicIP is the bot's view of an IaaS public IP.
-type PublicIP struct {
-	ID          string
-	Address     string
-	ProjectID   string
-	Region      string
-	Labels      map[string]string
-	AttachedNIC string
+// Kind is one of the "IaaS basics" resource types costguard handles.
+type Kind string
+
+// The IaaS kinds.
+const (
+	KindServer        Kind = "server"
+	KindPublicIP      Kind = "publicip"
+	KindNIC           Kind = "nic"
+	KindSnapshot      Kind = "snapshot"
+	KindVolume        Kind = "volume"
+	KindImage         Kind = "image"
+	KindSecurityGroup Kind = "securitygroup"
+)
+
+var kindNames = map[Kind]string{
+	KindServer: "server", KindPublicIP: "public IP", KindNIC: "network interface", KindSnapshot: "snapshot",
+	KindVolume: "volume", KindImage: "image", KindSecurityGroup: "security group",
 }
 
-// Volume is the bot's view of an IaaS block storage volume.
-type Volume struct {
+// Name is the kind's name for people, e.g. "public IP".
+func (k Kind) Name() string {
+	if n, ok := kindNames[k]; ok {
+		return n
+	}
+	return string(k)
+}
+
+// Kinds lists every kind in deletion order: servers first (their NICs and
+// volumes are released with them), security groups last (NICs use them).
+var Kinds = []Kind{KindServer, KindPublicIP, KindNIC, KindSnapshot, KindVolume, KindImage, KindSecurityGroup}
+
+// Server and volume states costguard looks at.
+const (
+	VolumeStatusAvailable = "AVAILABLE"
+	ServerStatusDeleting  = "DELETING"
+)
+
+// Resource is one IaaS resource. Fields that do not apply to a kind are
+// empty.
+type Resource struct {
+	Kind      Kind
 	ID        string
 	Name      string
 	ProjectID string
 	Region    string
-	SizeGB    int64
-	Status    string
-	ServerID  string
 	Labels    map[string]string
+	Status    string
 	CreatedAt time.Time
+
+	// ServerID is the server a volume is attached to, or a NIC's device.
+	ServerID string
+	// NetworkID is a NIC's network (needed to get or delete it).
+	NetworkID string
+	// NICID is the NIC a public IP is attached to.
+	NICID string
+	// Address is a public IP's address.
+	Address string
+	// VolumeID is a snapshot's source volume.
+	VolumeID string
+	// SizeGB is a volume's size.
+	SizeGB int64
 }
 
-// NetworkArea is the bot's view of an IaaS network area (SNA).
+// NetworkArea is an organization-level network area (SNA).
 type NetworkArea struct {
 	ID           string
 	Name         string
@@ -54,326 +94,275 @@ type NetworkArea struct {
 	CreatedAt    time.Time
 }
 
-// Snapshot is the bot's view of an IaaS volume snapshot.
-type Snapshot struct {
-	ID       string
-	Name     string
-	VolumeID string
-}
-
-// Server is the bot's view of an IaaS server (content probe only).
-type Server struct {
-	ID     string
-	Name   string
-	Status string
-}
-
-// IaaS abstracts the IaaS surface the bot needs. Deletion is limited to
-// public IPs and volumes in v1: there is no network-area or project
-// deletion method on this interface on purpose.
+// IaaS is the IaaS surface costguard needs.
 type IaaS interface {
-	// ListNetworkAreas lists all SNAs of the organisation (hygiene scan).
+	// List returns all resources of a kind in one project and region.
+	List(ctx context.Context, kind Kind, projectID, region string) ([]Resource, error)
+	// Get re-reads a resource (Kind, ID, ProjectID, Region and, for NICs,
+	// NetworkID must be set).
+	Get(ctx context.Context, ref Resource) (*Resource, error)
+	// Delete deletes a resource.
+	Delete(ctx context.Context, ref Resource) error
+	// SetLabel sets (value non-nil) or removes (value nil) one label. Only
+	// volumes and public IPs are supported: they are the only kinds
+	// costguard labels.
+	SetLabel(ctx context.Context, ref Resource, key string, value *string) error
+	// ListNetworkAreas lists the organization's network areas.
 	ListNetworkAreas(ctx context.Context, organizationID string) ([]NetworkArea, error)
-	// GetNetworkArea fetches one SNA (callback existence check).
-	GetNetworkArea(ctx context.Context, organizationID, areaID string) (*NetworkArea, error)
-
-	// ListPublicIPs lists the public IPs of one project in one region.
-	ListPublicIPs(ctx context.Context, projectID, region string) ([]PublicIP, error)
-	// GetPublicIP fetches one public IP (re-validation / callback).
-	GetPublicIP(ctx context.Context, projectID, region, ipID string) (*PublicIP, error)
-	// SetPublicIPMark sets the mark label value on the IP.
-	SetPublicIPMark(ctx context.Context, projectID, region, ipID, value string) error
-	// ClearPublicIPMark removes the mark label from the IP.
-	ClearPublicIPMark(ctx context.Context, projectID, region, ipID string) error
-	// DeletePublicIP deletes one public IP.
-	DeletePublicIP(ctx context.Context, projectID, region, ipID string) error
-
-	// ListVolumes lists the volumes of one project in one region.
-	ListVolumes(ctx context.Context, projectID, region string) ([]Volume, error)
-	// GetVolume fetches one volume (re-validation / callback).
-	GetVolume(ctx context.Context, projectID, region, volumeID string) (*Volume, error)
-	// SetVolumeMark sets the mark label value on the volume.
-	SetVolumeMark(ctx context.Context, projectID, region, volumeID, value string) error
-	// ClearVolumeMark removes the mark label from the volume.
-	ClearVolumeMark(ctx context.Context, projectID, region, volumeID string) error
-	// DeleteVolume deletes one volume.
-	DeleteVolume(ctx context.Context, projectID, region, volumeID string) error
-
-	// ListSnapshots lists all snapshots of one project in one region; the
-	// caller filters by VolumeID (snapshots must be deleted
-	// before their volume).
-	ListSnapshots(ctx context.Context, projectID, region string) ([]Snapshot, error)
-	// DeleteSnapshot deletes one snapshot.
-	DeleteSnapshot(ctx context.Context, projectID, region, snapshotID string) error
-
-	// ListServers lists the servers of one project in one region
-	// (hygiene content probe).
-	ListServers(ctx context.Context, projectID, region string) ([]Server, error)
 }
 
 type iaas struct {
-	client *iaasv2.APIClient
+	api iaasv2.DefaultAPI
 }
 
 func newIaaS(client *iaasv2.APIClient) IaaS {
-	return &iaas{client: client}
+	return &iaas{api: client.DefaultAPI}
+}
+
+func (a *iaas) List(ctx context.Context, kind Kind, projectID, region string) ([]Resource, error) {
+	out, err := a.list(ctx, kind, projectID, region)
+	if err != nil {
+		return nil, fmt.Errorf("listing %ss in %s/%s: %w", kind, projectID, region, err)
+	}
+	return out, nil
+}
+
+func (a *iaas) list(ctx context.Context, kind Kind, p, r string) ([]Resource, error) {
+	var out []Resource
+	switch kind {
+	case KindServer:
+		resp, err := a.api.ListServers(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			out = append(out, fromServer(&resp.Items[i], p, r))
+		}
+	case KindVolume:
+		resp, err := a.api.ListVolumes(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			out = append(out, fromVolume(&resp.Items[i], p, r))
+		}
+	case KindPublicIP:
+		resp, err := a.api.ListPublicIPs(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			out = append(out, fromPublicIP(&resp.Items[i], p, r))
+		}
+	case KindSnapshot:
+		resp, err := a.api.ListSnapshotsInProject(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			out = append(out, fromSnapshot(&resp.Items[i], p, r))
+		}
+	case KindImage:
+		resp, err := a.api.ListImages(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			img := &resp.Items[i]
+			// Only the project's own images; public or shared images are
+			// never costguard's business.
+			if owner := img.GetOwner(); owner != "" && owner != p {
+				continue
+			}
+			out = append(out, fromImage(img, p, r))
+		}
+	case KindNIC:
+		resp, err := a.api.ListProjectNICs(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			out = append(out, fromNIC(&resp.Items[i], p, r))
+		}
+	case KindSecurityGroup:
+		resp, err := a.api.ListSecurityGroups(ctx, p, r).Execute()
+		if err != nil {
+			return nil, err
+		}
+		for i := range resp.Items {
+			out = append(out, fromSecurityGroup(&resp.Items[i], p, r))
+		}
+	default:
+		return nil, fmt.Errorf("unsupported kind %q", kind)
+	}
+	return out, nil
+}
+
+func (a *iaas) Get(ctx context.Context, ref Resource) (*Resource, error) {
+	p, r := ref.ProjectID, ref.Region
+	var res Resource
+	switch ref.Kind {
+	case KindServer:
+		v, err := a.api.GetServer(ctx, p, r, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromServer(v, p, r)
+	case KindVolume:
+		v, err := a.api.GetVolume(ctx, p, r, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromVolume(v, p, r)
+	case KindPublicIP:
+		v, err := a.api.GetPublicIP(ctx, p, r, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromPublicIP(v, p, r)
+	case KindSnapshot:
+		v, err := a.api.GetSnapshot(ctx, p, r, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromSnapshot(v, p, r)
+	case KindImage:
+		v, err := a.api.GetImage(ctx, p, r, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromImage(v, p, r)
+	case KindNIC:
+		v, err := a.api.GetNic(ctx, p, r, ref.NetworkID, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromNIC(v, p, r)
+	case KindSecurityGroup:
+		v, err := a.api.GetSecurityGroup(ctx, p, r, ref.ID).Execute()
+		if err != nil {
+			return nil, getErr(ref, err)
+		}
+		res = fromSecurityGroup(v, p, r)
+	default:
+		return nil, fmt.Errorf("unsupported kind %q", ref.Kind)
+	}
+	return &res, nil
+}
+
+func getErr(ref Resource, err error) error {
+	return fmt.Errorf("getting %s %s: %w", ref.Kind, ref.ID, err)
+}
+
+func (a *iaas) Delete(ctx context.Context, ref Resource) error {
+	p, r := ref.ProjectID, ref.Region
+	var err error
+	switch ref.Kind {
+	case KindServer:
+		err = a.api.DeleteServer(ctx, p, r, ref.ID).Execute()
+	case KindVolume:
+		err = a.api.DeleteVolume(ctx, p, r, ref.ID).Execute()
+	case KindPublicIP:
+		err = a.api.DeletePublicIP(ctx, p, r, ref.ID).Execute()
+	case KindSnapshot:
+		err = a.api.DeleteSnapshot(ctx, p, r, ref.ID).Execute()
+	case KindImage:
+		err = a.api.DeleteImage(ctx, p, r, ref.ID).Execute()
+	case KindNIC:
+		err = a.api.DeleteNic(ctx, p, r, ref.NetworkID, ref.ID).Execute()
+	case KindSecurityGroup:
+		err = a.api.DeleteSecurityGroup(ctx, p, r, ref.ID).Execute()
+	default:
+		return fmt.Errorf("unsupported kind %q", ref.Kind)
+	}
+	if err != nil {
+		return fmt.Errorf("deleting %s %s: %w", ref.Kind, ref.ID, err)
+	}
+	return nil
+}
+
+func (a *iaas) SetLabel(ctx context.Context, ref Resource, key string, value *string) error {
+	// A null value removes the key; other labels are left alone (the API
+	// merges the patch).
+	patch := map[string]interface{}{key: nil}
+	if value != nil {
+		patch[key] = *value
+	}
+	var err error
+	switch ref.Kind {
+	case KindVolume:
+		_, err = a.api.UpdateVolume(ctx, ref.ProjectID, ref.Region, ref.ID).
+			UpdateVolumePayload(iaasv2.UpdateVolumePayload{Labels: patch}).Execute()
+	case KindPublicIP:
+		_, err = a.api.UpdatePublicIP(ctx, ref.ProjectID, ref.Region, ref.ID).
+			UpdatePublicIPPayload(iaasv2.UpdatePublicIPPayload{Labels: patch}).Execute()
+	default:
+		return fmt.Errorf("setting labels on %s is not supported", ref.Kind)
+	}
+	if err != nil {
+		return fmt.Errorf("updating labels of %s %s: %w", ref.Kind, ref.ID, err)
+	}
+	return nil
 }
 
 func (a *iaas) ListNetworkAreas(ctx context.Context, organizationID string) ([]NetworkArea, error) {
-	resp, err := a.client.DefaultAPI.ListNetworkAreas(ctx, organizationID).Execute()
+	resp, err := a.api.ListNetworkAreas(ctx, organizationID).Execute()
 	if err != nil {
-		return nil, fmt.Errorf("listing network areas of organisation %s: %w", organizationID, err)
+		return nil, fmt.Errorf("listing network areas of organization %s: %w", organizationID, err)
 	}
-	areas := make([]NetworkArea, 0)
-	if resp == nil || resp.Items == nil {
-		return areas, nil
-	}
+	out := make([]NetworkArea, 0, len(resp.Items))
 	for _, area := range resp.Items {
-		count := int64(0)
-		if area.ProjectCount != nil {
-			count = *area.ProjectCount
-		}
-		areas = append(areas, NetworkArea{
+		out = append(out, NetworkArea{
 			ID:           area.GetId(),
 			Name:         area.GetName(),
-			ProjectCount: count,
+			ProjectCount: area.GetProjectCount(),
 			Labels:       stringLabels(area.GetLabels()),
 			CreatedAt:    area.GetCreatedAt(),
 		})
 	}
-	return areas, nil
+	return out, nil
 }
 
-func (a *iaas) GetNetworkArea(ctx context.Context, organizationID, areaID string) (*NetworkArea, error) {
-	area, err := a.client.DefaultAPI.GetNetworkArea(ctx, organizationID, areaID).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("getting network area %s: %w", areaID, err)
-	}
-	count := int64(0)
-	if area.ProjectCount != nil {
-		count = *area.ProjectCount
-	}
-	na := NetworkArea{
-		ID:           area.GetId(),
-		Name:         area.GetName(),
-		ProjectCount: count,
-		Labels:       stringLabels(area.GetLabels()),
-		CreatedAt:    area.GetCreatedAt(),
-	}
-	return &na, nil
+// ---- SDK model mapping ----
+
+func fromServer(v *iaasv2.Server, p, r string) Resource {
+	return Resource{Kind: KindServer, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt()}
 }
 
-func (a *iaas) ListPublicIPs(ctx context.Context, projectID, region string) ([]PublicIP, error) {
-	resp, err := a.client.DefaultAPI.ListPublicIPs(ctx, projectID, region).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("listing public IPs in %s/%s: %w", projectID, region, err)
-	}
-	ips := make([]PublicIP, 0)
-	if resp == nil || resp.Items == nil {
-		return ips, nil
-	}
-	for _, ip := range resp.Items {
-		nic := ""
-		if !iaasv2.IsNil(ip.NetworkInterface) && ip.GetNetworkInterface() != "" {
-			nic = ip.GetNetworkInterface()
-		}
-		ips = append(ips, PublicIP{
-			ID:          ip.GetId(),
-			Address:     ip.GetIp(),
-			ProjectID:   projectID,
-			Region:      region,
-			Labels:      stringLabels(ip.GetLabels()),
-			AttachedNIC: nic,
-		})
-	}
-	return ips, nil
+func fromVolume(v *iaasv2.Volume, p, r string) Resource {
+	return Resource{Kind: KindVolume, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt(),
+		ServerID: v.GetServerId(), SizeGB: v.GetSize()}
 }
 
-func (a *iaas) GetPublicIP(ctx context.Context, projectID, region, ipID string) (*PublicIP, error) {
-	ip, err := a.client.DefaultAPI.GetPublicIP(ctx, projectID, region, ipID).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("getting public IP %s: %w", ipID, err)
-	}
+func fromPublicIP(v *iaasv2.PublicIp, p, r string) Resource {
 	nic := ""
-	if !iaasv2.IsNil(ip.NetworkInterface) && ip.GetNetworkInterface() != "" {
-		nic = ip.GetNetworkInterface()
+	if !iaasv2.IsNil(v.NetworkInterface) {
+		nic = v.GetNetworkInterface()
 	}
-	out := PublicIP{
-		ID:          ip.GetId(),
-		Address:     ip.GetIp(),
-		ProjectID:   projectID,
-		Region:      region,
-		Labels:      stringLabels(ip.GetLabels()),
-		AttachedNIC: nic,
-	}
-	return &out, nil
+	return Resource{Kind: KindPublicIP, ID: v.GetId(), Name: v.GetIp(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), NICID: nic, Address: v.GetIp()}
 }
 
-// updateIPLabels sends a label patch for the mark key: a non-nil value
-// sets it, nil removes it (SDK semantics: null value deletes the key).
-func (a *iaas) updateIPLabels(ctx context.Context, projectID, region, ipID string, mark map[string]interface{}) error {
-	_, err := a.client.DefaultAPI.UpdatePublicIP(ctx, projectID, region, ipID).
-		UpdatePublicIPPayload(iaasv2.UpdatePublicIPPayload{Labels: mark}).
-		Execute()
-	if err != nil {
-		return fmt.Errorf("updating labels of public IP %s: %w", ipID, err)
-	}
-	return nil
+func fromSnapshot(v *iaasv2.Snapshot, p, r string) Resource {
+	return Resource{Kind: KindSnapshot, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt(),
+		VolumeID: v.GetVolumeId(), SizeGB: v.GetSize()}
 }
 
-func (a *iaas) SetPublicIPMark(ctx context.Context, projectID, region, ipID, value string) error {
-	return a.updateIPLabels(ctx, projectID, region, ipID, map[string]interface{}{markLabelKey: value})
+func fromImage(v *iaasv2.Image, p, r string) Resource {
+	return Resource{Kind: KindImage, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt()}
 }
 
-func (a *iaas) ClearPublicIPMark(ctx context.Context, projectID, region, ipID string) error {
-	return a.updateIPLabels(ctx, projectID, region, ipID, map[string]interface{}{markLabelKey: nil})
+func fromNIC(v *iaasv2.NIC, p, r string) Resource {
+	return Resource{Kind: KindNIC, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(),
+		ServerID: v.GetDevice(), NetworkID: v.GetNetworkId()}
 }
 
-func (a *iaas) DeletePublicIP(ctx context.Context, projectID, region, ipID string) error {
-	if err := a.client.DefaultAPI.DeletePublicIP(ctx, projectID, region, ipID).Execute(); err != nil {
-		return fmt.Errorf("deleting public IP %s: %w", ipID, err)
-	}
-	return nil
-}
-
-func (a *iaas) ListVolumes(ctx context.Context, projectID, region string) ([]Volume, error) {
-	resp, err := a.client.DefaultAPI.ListVolumes(ctx, projectID, region).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("listing volumes in %s/%s: %w", projectID, region, err)
-	}
-	volumes := make([]Volume, 0)
-	if resp == nil || resp.Items == nil {
-		return volumes, nil
-	}
-	for _, v := range resp.Items {
-		size := int64(0)
-		if v.Size != nil {
-			size = *v.Size
-		}
-		volumes = append(volumes, Volume{
-			ID:        v.GetId(),
-			Name:      v.GetName(),
-			ProjectID: projectID,
-			Region:    region,
-			SizeGB:    size,
-			Status:    v.GetStatus(),
-			ServerID:  v.GetServerId(),
-			Labels:    stringLabels(v.GetLabels()),
-			CreatedAt: v.GetCreatedAt(),
-		})
-	}
-	return volumes, nil
-}
-
-func (a *iaas) GetVolume(ctx context.Context, projectID, region, volumeID string) (*Volume, error) {
-	v, err := a.client.DefaultAPI.GetVolume(ctx, projectID, region, volumeID).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("getting volume %s: %w", volumeID, err)
-	}
-	size := int64(0)
-	if v.Size != nil {
-		size = *v.Size
-	}
-	out := Volume{
-		ID:        v.GetId(),
-		Name:      v.GetName(),
-		ProjectID: projectID,
-		Region:    region,
-		SizeGB:    size,
-		Status:    v.GetStatus(),
-		ServerID:  v.GetServerId(),
-		Labels:    stringLabels(v.GetLabels()),
-		CreatedAt: v.GetCreatedAt(),
-	}
-	return &out, nil
-}
-
-func (a *iaas) updateVolumeLabels(ctx context.Context, projectID, region, volumeID string, mark map[string]interface{}) error {
-	_, err := a.client.DefaultAPI.UpdateVolume(ctx, projectID, region, volumeID).
-		UpdateVolumePayload(iaasv2.UpdateVolumePayload{Labels: mark}).
-		Execute()
-	if err != nil {
-		return fmt.Errorf("updating labels of volume %s: %w", volumeID, err)
-	}
-	return nil
-}
-
-func (a *iaas) SetVolumeMark(ctx context.Context, projectID, region, volumeID, value string) error {
-	return a.updateVolumeLabels(ctx, projectID, region, volumeID, map[string]interface{}{markLabelKey: value})
-}
-
-func (a *iaas) ClearVolumeMark(ctx context.Context, projectID, region, volumeID string) error {
-	return a.updateVolumeLabels(ctx, projectID, region, volumeID, map[string]interface{}{markLabelKey: nil})
-}
-
-func (a *iaas) DeleteVolume(ctx context.Context, projectID, region, volumeID string) error {
-	if err := a.client.DefaultAPI.DeleteVolume(ctx, projectID, region, volumeID).Execute(); err != nil {
-		return fmt.Errorf("deleting volume %s: %w", volumeID, err)
-	}
-	return nil
-}
-
-func (a *iaas) ListSnapshots(ctx context.Context, projectID, region string) ([]Snapshot, error) {
-	resp, err := a.client.DefaultAPI.ListSnapshotsInProject(ctx, projectID, region).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("listing snapshots in %s/%s: %w", projectID, region, err)
-	}
-	snaps := make([]Snapshot, 0)
-	if resp == nil || resp.Items == nil {
-		return snaps, nil
-	}
-	for _, s := range resp.Items {
-		snaps = append(snaps, Snapshot{
-			ID:       s.GetId(),
-			Name:     s.GetName(),
-			VolumeID: s.GetVolumeId(),
-		})
-	}
-	return snaps, nil
-}
-
-func (a *iaas) DeleteSnapshot(ctx context.Context, projectID, region, snapshotID string) error {
-	if err := a.client.DefaultAPI.DeleteSnapshot(ctx, projectID, region, snapshotID).Execute(); err != nil {
-		return fmt.Errorf("deleting snapshot %s: %w", snapshotID, err)
-	}
-	return nil
-}
-
-func (a *iaas) ListServers(ctx context.Context, projectID, region string) ([]Server, error) {
-	resp, err := a.client.DefaultAPI.ListServers(ctx, projectID, region).Execute()
-	if err != nil {
-		return nil, fmt.Errorf("listing servers in %s/%s: %w", projectID, region, err)
-	}
-	servers := make([]Server, 0)
-	if resp == nil || resp.Items == nil {
-		return servers, nil
-	}
-	for _, s := range resp.Items {
-		status := ""
-		if s.Status != nil {
-			status = *s.Status
-		}
-		servers = append(servers, Server{
-			ID:     s.GetId(),
-			Name:   s.GetName(),
-			Status: status,
-		})
-	}
-	return servers, nil
-}
-
-// stringLabels converts the SDK's map[string]interface{} label type to
-// map[string]string, dropping non-string values (which cannot occur for
-// well-formed labels).
-func stringLabels(in map[string]interface{}) map[string]string {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		if s, ok := v.(string); ok {
-			out[k] = s
-		}
-	}
-	return out
+func fromSecurityGroup(v *iaasv2.SecurityGroup, p, r string) Resource {
+	return Resource{Kind: KindSecurityGroup, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
+		Labels: stringLabels(v.GetLabels()), CreatedAt: v.GetCreatedAt()}
 }

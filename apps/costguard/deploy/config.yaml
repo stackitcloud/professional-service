@@ -1,0 +1,74 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# costguard: namespace and configuration. Edit the config below, then:
+#
+#   kubectl apply -f config.yaml
+#   kubectl -n costguard create secret generic costguard-webhook --from-literal=url='https://...'
+#
+# Unknown keys are rejected, so a typo cannot silently switch off a skip.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: costguard
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: costguard-config
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+data:
+  config.yaml: |
+    # Your STACKIT organization ID (required).
+    organizationId: 00000000-0000-0000-0000-000000000000
+
+    # What to scan. Leave both lists empty to scan the whole organization.
+    # Entries are IDs or exact names; each must match exactly one folder or
+    # project, otherwise the run stops before changing anything.
+    scope:
+      folders: []
+      projects: []
+
+    # Folders and projects that are never scanned (IDs or names, case does
+    # not matter). A name that matches several containers skips all of them.
+    # Entries must point to folders or projects inside the scope: an entry
+    # that matches nothing there blocks all flagging and deleting until it is
+    # fixed. The label do-not-delete=true on a folder or project skips it too.
+    skip:
+      folders: []
+      projects: []
+
+    # Regions to scan. Default: eu01 only. If you use other STACKIT regions,
+    # list ALL of them; resources in regions not listed are ignored.
+    # regions: [eu01, eu02]
+
+    # Where messages go: googlechat, slack or teams. The webhook URL is read
+    # from the costguard-webhook secret.
+    output: teams
+
+    # Must match the schedule of the costguard-delete CronJob (stage2.yaml).
+    deleteRunAt: "Tuesday 08:00 (Europe/Berlin)"
+
+    # Warn about empty projects and network areas older than this many days.
+    # 0 switches these warnings off. Do that if costguard may not read the
+    # organization's cost data (e.g. it only has rights on some folders);
+    # otherwise every report says that something could not be read.
+    warnEmptyAfterDays: 30
+
+    # Prices for the savings estimate (EUR per month).
+    prices:
+      publicIpMonthlyEur: 4.82
+      volumeGbMonthlyEur: 0.0619

@@ -12,89 +12,278 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package app wires configuration, STACKIT clients, the merged whitelist
-// and the selected notifier, then dispatches the subcommand. Fatal setup
-// errors exit non-zero; non-fatal scan errors are carried in the report and
-// never abort the run.
+// Package app runs one costguard subcommand:
+//
+//	report  stage 1, Monday: scan and post; never writes.
+//	flag    stage 2, Monday: scan, post, then label new candidates. No
+//	        message, no labels.
+//	delete  stage 2, Tuesday: scan, delete what is labelled, post when
+//	        something happened.
+//
+// A blocked run (a skip entry matches nothing) neither flags nor deletes.
 package app
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
 
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/deleter"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier/googlechat"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier/slack"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier/teams"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/scanner"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
-	"github.com/stackitcloud/professional-service/apps/costguard/internal/whitelist"
 )
 
-// Exit codes: 0 success, 1 fatal run error, 2 usage error.
+// Exit codes.
 const (
 	ExitOK    = 0
 	ExitFatal = 1
 	ExitUsage = 2
 )
 
-// runTimeout bounds a scan/delete run. The CronJob's activeDeadlineSeconds is the outer bound.
-const runTimeout = 30 * time.Minute
+// runTimeout bounds a run; the CronJob's activeDeadlineSeconds is the
+// outer bound.
+const runTimeout = 60 * time.Minute
 
-// Subcommand names.
-const (
-	SubcommandScan     = "scan"
-	SubcommandDelete   = "delete"
-	SubcommandCallback = "callback"
-)
+// sendTimeout is the budget for posting one message, retries included. It
+// does not depend on the run: when a run times out or the pod gets SIGTERM,
+// the message about what already happened must still go out. The CronJobs
+// give the pod 60 s after SIGTERM (terminationGracePeriodSeconds), which
+// covers it.
+const sendTimeout = 45 * time.Second
 
-// deps is the shared dependency bundle built once per run.
-type deps struct {
-	Clients   *stackit.Set
-	Whitelist *whitelist.Whitelist
+// Usage is the command line synopsis.
+const Usage = "costguard [--config path] <report|flag|delete>"
+
+var modes = map[string]notifier.Mode{
+	"report": notifier.ModeReport,
+	"flag":   notifier.ModeFlag,
+	"delete": notifier.ModeDelete,
 }
 
-// Constructors are variables so tests can inject fakes; production uses
-// the real SDK/Vault clients.
+// Replaced in tests.
 var (
-	newStackitClients = stackit.New
-	newSMStore        = whitelist.NewStore
+	newClients           = func() (*stackit.Set, error) { return stackit.New() }
+	newDeleter           = deleter.New
+	newScanner           = scanner.New
+	now                  = time.Now
+	logOutput  io.Writer = os.Stdout
 )
 
-// Run loads and validates the configuration, wires dependencies and
-// dispatches the subcommand. It returns the process exit code.
-func Run(ctx context.Context, subcommand, configPath, logLevel string) int {
-	logger := newLogger(logLevel)
-	loaded, err := config.LoadFromOS(configPath)
-	if err != nil {
-		logger.Error("loading configuration failed", "error", err)
-		return ExitFatal
-	}
-	cfg := *loaded
-	if err := cfg.Validate(); err != nil {
-		logger.Error("invalid configuration", "error", err.Error())
-		return ExitFatal
-	}
-	switch subcommand {
-	case SubcommandScan:
-		return runScan(ctx, cfg, logger)
-	case SubcommandDelete:
-		return runDelete(ctx, cfg, logger)
-	case SubcommandCallback:
-		return runCallback(ctx, cfg, logger)
-	default:
-		logger.Error("unknown subcommand", "subcommand", subcommand,
-			"usage", "costguard [--config path] <scan|delete|callback>")
+// Options are the command line inputs.
+type Options struct {
+	Subcommand string
+	ConfigPath string
+	LogLevel   string
+	Version    string
+}
+
+// Run executes the subcommand and returns the exit code.
+func Run(ctx context.Context, opts Options) int {
+	logger := newLogger(opts.LogLevel)
+	mode, ok := modes[opts.Subcommand]
+	if !ok {
+		logger.Error("unknown subcommand", "subcommand", opts.Subcommand, "usage", Usage)
 		return ExitUsage
 	}
+	cfg, err := config.LoadFromOS(opts.ConfigPath)
+	if err == nil {
+		err = cfg.Validate()
+	}
+	if err != nil {
+		logger.Error("the configuration cannot be used", "error", err.Error())
+		reportConfigProblem(ctx, logger, mode, opts, err)
+		return ExitFatal
+	}
+
+	r := &run{
+		mode:   mode,
+		cfg:    *cfg,
+		logger: logger,
+		notify: buildNotifier(*cfg),
+		compose: notifier.Composer{
+			PortalURL:          cfg.PortalURL,
+			DeleteRunAt:        cfg.DeleteRunAt,
+			Prices:             cfg.Prices.Report(),
+			WarnEmptyAfterDays: cfg.WarnEmptyAfterDays,
+			Version:            opts.Version,
+		},
+	}
+	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	defer cancel()
+	return r.execute(ctx)
 }
 
-// newLogger builds the structured logger from LOG_LEVEL
-// (debug|info|warn|error; default info).
+type run struct {
+	mode    notifier.Mode
+	cfg     config.Config
+	logger  *slog.Logger
+	notify  notifier.Notifier
+	compose notifier.Composer
+}
+
+func (r *run) execute(ctx context.Context) int {
+	clients, err := newClients()
+	if err != nil {
+		return r.fail(ctx, fmt.Errorf("costguard cannot log in to STACKIT. Check the login setup (README step 3): the workload identity annotation, or the costguard-sa-key secret.\n  - %w", err))
+	}
+	sc := newScanner(clients, r.cfg, r.logger)
+	sc.SkipWarnings = r.mode == notifier.ModeDelete
+	res, err := sc.Scan(ctx)
+	if err != nil {
+		return r.fail(ctx, err)
+	}
+	logReport(r.logger, res.Report)
+
+	switch r.mode {
+	case notifier.ModeReport:
+		if err := r.send(ctx, r.compose.Report(res.Report, r.mode)); err != nil {
+			r.logger.Error("sending the report failed", "error", err)
+			return ExitFatal
+		}
+		return ExitOK
+
+	case notifier.ModeFlag:
+		if err := r.send(ctx, r.compose.Report(res.Report, r.mode)); err != nil {
+			r.logger.Error("sending the report failed; no labels were set, so nothing new gets deleted", "error", err)
+			return ExitFatal
+		}
+		if res.Blocked() {
+			r.logger.Error("a skip entry matches nothing; no labels were set", "entries", res.Report.Blocked)
+			return ExitFatal
+		}
+		fr := newDeleter(clients.IaaS, r.logger).Flag(ctx, res)
+		r.logger.Info("flag run complete", "flagged", fr.Flagged, "unflagged", fr.Unflagged, "cleared", fr.Cleared,
+			"not_flagged", len(fr.NotFlagged), "not_cleared", len(fr.NotCleared))
+		if fr.Failed() {
+			// The message already went out: correct it in the chat.
+			if err := r.send(ctx, r.compose.FlagProblems(fr.NotFlagged, fr.NotCleared)); err != nil {
+				r.logger.Error("sending the correction failed", "error", err)
+			}
+			return ExitFatal
+		}
+		return ExitOK
+
+	default:
+		sum := newDeleter(clients.IaaS, r.logger).Delete(ctx, res, now().UTC())
+		saved := report.Estimate(sum.DeletedByThisRun(), r.cfg.Prices.Report())
+		r.logger.Info("delete run complete",
+			"deleted", sum.Count(report.StatusDeleted), "failed", sum.Count(report.StatusFailed),
+			"unflagged", sum.Count(report.StatusUnflagged), "deferred", sum.Count(report.StatusDeferred),
+			"skipped", sum.Count(report.StatusSkipped), "saves_eur_per_month", saved.TotalEUR())
+		if sum.HasNews() {
+			if err := r.send(ctx, r.compose.Summary(sum)); err != nil {
+				r.logger.Error("sending the deletion summary failed", "error", err)
+				return ExitFatal
+			}
+		}
+		if sum.Interrupted {
+			r.logger.Error("the delete run was interrupted; the rest follows in the next run", "error", ctx.Err())
+			return ExitFatal
+		}
+		if res.Blocked() {
+			r.logger.Error("a skip entry matches nothing; nothing was deleted", "entries", res.Report.Blocked)
+			return ExitFatal
+		}
+		return ExitOK
+	}
+}
+
+// fail reports a run that stopped before changing anything.
+func (r *run) fail(ctx context.Context, err error) int {
+	err = readableStop(err)
+	r.logger.Error("run failed before changing anything", "error", err.Error())
+	if sendErr := r.send(ctx, r.compose.Failure(r.mode, err)); sendErr != nil {
+		r.logger.Error("sending the failure message failed", "error", sendErr)
+	}
+	return ExitFatal
+}
+
+// send posts a message with its own time budget, so it still goes out when
+// the run itself was cancelled.
+func (r *run) send(ctx context.Context, msg notifier.Message) error {
+	return sendWithBudget(ctx, r.notify, msg)
+}
+
+func sendWithBudget(ctx context.Context, n notifier.Notifier, msg notifier.Message) error {
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sendTimeout)
+	defer cancel()
+	return n.Send(sendCtx, msg)
+}
+
+// reportConfigProblem posts a configuration problem to the chat when the
+// chat settings themselves are usable, so a broken config does not make
+// costguard fall silent. Otherwise the log is the only place.
+func reportConfigProblem(ctx context.Context, logger *slog.Logger, mode notifier.Mode, opts Options, problem error) {
+	output, webhookURL, ok := config.ChatFromOS(opts.ConfigPath)
+	if !ok {
+		logger.Error("the problem cannot be posted: the output or the webhook URL is not usable")
+		return
+	}
+	n := buildNotifier(config.Config{Output: output, WebhookURL: webhookURL})
+	msg := notifier.Composer{Version: opts.Version}.Failure(mode, problem)
+	if err := sendWithBudget(ctx, n, msg); err != nil {
+		logger.Error("posting the configuration problem failed", "error", err)
+	}
+}
+
+// readableStop replaces Go's context errors with what happened.
+func readableStop(err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("the run took longer than %d minutes and was stopped", int(runTimeout.Minutes()))
+	case errors.Is(err, context.Canceled):
+		return errors.New("the run was stopped from outside, for example because Kubernetes stopped the pod")
+	}
+	return err
+}
+
+func buildNotifier(cfg config.Config) notifier.Notifier {
+	switch cfg.Output {
+	case config.OutputSlack:
+		return slack.New(cfg.WebhookURL)
+	case config.OutputTeams:
+		return teams.New(cfg.WebhookURL)
+	default:
+		return googlechat.New(cfg.WebhookURL)
+	}
+}
+
+// logReport writes every listed item to the log: messages are capped, the
+// log is the full list.
+func logReport(logger *slog.Logger, rep *report.Report) {
+	for _, g := range []struct {
+		category string
+		items    []report.Item
+	}{
+		{"idle-public-ip", rep.IdlePublicIPs},
+		{"detached-volume", rep.DetachedVolumes},
+		{"requested", rep.Requested},
+		{"volume-with-snapshots", rep.WithSnapshots},
+		{"back-in-use", rep.BackInUse},
+		{"protected-but-marked", rep.ProtectedMarked},
+		{"empty-project", rep.EmptyProjects},
+		{"empty-network-area", rep.EmptyNetworkAreas},
+	} {
+		for _, it := range g.items {
+			logger.Info("finding", "category", g.category, "kind", it.Kind, "id", it.ID, "name", it.Name,
+				"project", it.ProjectName, "project_id", it.ProjectID, "region", it.Region, "detail", it.Detail, "new", it.New)
+		}
+	}
+	logger.Info("scan complete", "scope", rep.Scope, "to_delete", rep.ToDelete(),
+		"skipped_folders", rep.SkippedFolders, "skipped_projects", rep.SkippedProjects,
+		"scan_errors", len(rep.ScanErrors), "blocked", len(rep.Blocked))
+}
+
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	switch level {
@@ -107,62 +296,5 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lvl = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
-}
-
-// setup builds the STACKIT client set and the merged whitelist. A
-// whitelist store failure is fatal: running without the shared whitelist
-// would break the protection model (fail-closed).
-func setup(ctx context.Context, cfg config.Config, logger *slog.Logger) (*deps, error) {
-	clients, err := newStackitClients()
-	if err != nil {
-		return nil, fmt.Errorf("initializing STACKIT clients: %w", err)
-	}
-	wl, err := loadWhitelist(ctx, cfg, logger)
-	if err != nil {
-		return nil, err
-	}
-	return &deps{Clients: clients, Whitelist: wl}, nil
-}
-
-// loadWhitelist merges the static (env+YAML) whitelist with the Secrets
-// Manager entry when one is configured.
-func loadWhitelist(ctx context.Context, cfg config.Config, logger *slog.Logger) (*whitelist.Whitelist, error) {
-	entries := map[string]whitelist.Entry{}
-	if cfg.WhitelistSecretPath != "" {
-		if cfg.SecretsManager.URL == "" {
-			return nil, errors.New("whitelistSecretPath is set but secretsManager.url is missing")
-		}
-		store, err := newSMStore(cfg.SecretsManager.URL, cfg.SecretsManager.Username, cfg.SecretsManager.Password, cfg.WhitelistSecretPath, logger)
-		if err != nil {
-			return nil, fmt.Errorf("connecting to the whitelist Secrets Manager: %w", err)
-		}
-		entries, err = store.Load(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("loading the shared whitelist (failing closed): %w", err)
-		}
-	}
-	return whitelist.New(cfg.Whitelist, entries, logger), nil
-}
-
-// buildNotifier selects the output adapter from COSTGUARD_OUTPUT. Buttons
-// are enabled when the callback URL + secret are set.
-func buildNotifier(cfg config.Config, logger *slog.Logger) (notifier.Notifier, error) {
-	btn := notifier.NewButton(cfg.CallbackURL, cfg.CallbackSecret)
-	switch cfg.Output {
-	case config.OutputGoogleChat:
-		return googlechat.New(cfg.WebhookURL, btn, logger), nil
-	case config.OutputSlack:
-		return slack.New(cfg.WebhookURL, btn, logger), nil
-	case config.OutputTeams:
-		return teams.New(cfg.WebhookURL, btn, logger), nil
-	default:
-		return nil, fmt.Errorf("unsupported output mode %q (validated at startup — internal error)", cfg.Output)
-	}
-}
-
-// boundedRun returns the run context: the caller's context (signal-aware)
-// capped at runTimeout.
-func boundedRun(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, runTimeout)
+	return slog.New(slog.NewJSONHandler(logOutput, &slog.HandlerOptions{Level: lvl}))
 }

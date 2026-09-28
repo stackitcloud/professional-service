@@ -12,457 +12,218 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package config loads and validates costguard configuration from a YAML
-// file overlaid with environment variables (env wins). No
-// configuration value — including secrets — is hardcoded; everything is
-// supplied at runtime.
+// Package config loads and validates the costguard configuration: one
+// YAML file (a mounted ConfigMap) plus the webhook URL, which is a secret
+// and therefore only read from the environment. Unknown YAML keys are
+// rejected, so a typo such as "skips:" can never silently switch off a
+// protection.
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"strconv"
-	"strings"
-	"time"
+	"regexp"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
 )
 
-// Environment variable names.
+// Environment variables.
 const (
-	EnvScope                   = "COSTGUARD_SCOPE"
-	EnvOrgID                   = "COSTGUARD_ORG_ID"
-	EnvFolderIDs               = "COSTGUARD_FOLDER_IDS"
-	EnvRegions                 = "COSTGUARD_REGIONS"
-	EnvMaxAgeDays              = "COSTGUARD_MAX_AGE_DAYS"
-	EnvSNAMaxAgeDays           = "COSTGUARD_SNA_MAX_AGE_DAYS"
-	EnvSafeLabelKey            = "COSTGUARD_SAFE_LABEL_KEY"
-	EnvSafeLabelValue          = "COSTGUARD_SAFE_LABEL_VALUE"
-	EnvOutput                  = "COSTGUARD_OUTPUT"
-	EnvWebhookURL              = "COSTGUARD_WEBHOOK_URL"
-	EnvDryRun                  = "COSTGUARD_DRY_RUN"
-	EnvCostAnomalyThresholdPct = "COSTGUARD_COST_ANOMALY_THRESHOLD_PCT"
-	EnvVolumeCostEurPerGB      = "COSTGUARD_VOLUME_COST_EUR_PER_GB"
-	EnvPublicIPCostEurPerMonth = "COSTGUARD_PUBLIC_IP_COST_EUR_PER_MONTH"
-	EnvCallbackURL             = "COSTGUARD_CALLBACK_URL"
-	EnvCallbackPort            = "COSTGUARD_CALLBACK_PORT"
-	EnvCallbackSecret          = "COSTGUARD_CALLBACK_SECRET"
-	EnvGracePeriod             = "COSTGUARD_GRACE_PERIOD"
-	EnvWhitelistSecretPath     = "COSTGUARD_WHITELIST_SECRET_PATH"
-	EnvSMURL                   = "COSTGUARD_SM_URL"
-	EnvSMUsername              = "COSTGUARD_SM_USERNAME"
-	EnvSMPasswrd               = "COSTGUARD_SM_PASSWORD"
-	EnvS3Endpoint              = "COSTGUARD_S3_ENDPOINT"
-	EnvS3Region                = "COSTGUARD_S3_REGION"
-	EnvS3AccessKey             = "COSTGUARD_S3_ACCESS_KEY"
-	EnvS3SecretKey             = "COSTGUARD_S3_SECRET_KEY"
-	EnvS3Bucket                = "COSTGUARD_S3_BUCKET"
-	EnvWhitelistProjects       = "COSTGUARD_WHITELIST_PROJECTS"
-	EnvWhitelistFolders        = "COSTGUARD_WHITELIST_FOLDERS"
-	EnvWhitelistVolumes        = "COSTGUARD_WHITELIST_VOLUMES"
-	EnvWhitelistPublicIPs      = "COSTGUARD_WHITELIST_PUBLIC_IPS"
-	EnvWhitelistSkipVolScan    = "COSTGUARD_WHITELIST_SKIP_VOLUME_SCAN_PROJECTS"
-	EnvWhitelistSkipIPScan     = "COSTGUARD_WHITELIST_SKIP_PUBLIC_IP_SCAN_PROJECTS"
-	EnvConfigPath              = "COSTGUARD_CONFIG"
-	EnvLogLevel                = "LOG_LEVEL"
+	EnvConfigPath = "COSTGUARD_CONFIG"
+	EnvWebhookURL = "COSTGUARD_WEBHOOK_URL"
+	EnvLogLevel   = "LOG_LEVEL"
 )
 
-// Scope values.
-const (
-	ScopeOrganisation = "organisation"
-	ScopeFolder       = "folder"
-)
+// DefaultConfigPath is where the CronJobs mount the ConfigMap.
+const DefaultConfigPath = "/etc/costguard/config.yaml"
 
-// Output values. OutputPrometheus is rejected at startup (not available in v1).
+// Output values.
 const (
 	OutputGoogleChat = "googlechat"
 	OutputSlack      = "slack"
 	OutputTeams      = "teams"
-	OutputPrometheus = "prometheus"
 )
 
 // Defaults.
 const (
-	DefaultCostAnomalyThresholdPct = 20.0
-	// Standard STACKIT block storage price; verify the current price before
-	// relying on it for savings figures.
-	DefaultVolumeCostEurPerGB = 0.0619
-	// ~0.0066 EUR/h x 730 h public IP reservation; verify the current price.
-	DefaultPublicIPCostEurPerMonth = 4.82
-	DefaultCallbackPort            = 8080
-	DefaultGracePeriod             = 8 * time.Hour
+	DefaultWarnEmptyAfterDays = 30
+	// Public IP reservation (~0.0066 EUR/h x 730 h); verify the current price.
+	DefaultPublicIPMonthlyEUR = 4.82
+	// Standard block storage per GB and month; verify the current price.
+	DefaultVolumeGBMonthlyEUR = 0.0619
+	DefaultPortalURL          = "https://portal.stackit.cloud"
+	// DefaultDeleteRunAt must match the schedule of the delete CronJob.
+	DefaultDeleteRunAt = "Tuesday 08:00 (Europe/Berlin)"
 )
 
-// S3Config is the optional chart-upload target. All five fields are
-// required together; a partial S3 config is a startup validation error.
-type S3Config struct {
-	Endpoint  string `yaml:"endpoint"`
-	Region    string `yaml:"region"`
-	AccessKey string `yaml:"accessKey"`
-	SecretKey string `yaml:"secretKey"`
-	Bucket    string `yaml:"bucket"`
+// DefaultRegions is used when the config lists no regions: only eu01.
+// Installs that use other regions must list every region they use.
+var DefaultRegions = []string{"eu01"}
+
+// Selection names folders and projects by ID or by name.
+type Selection struct {
+	Folders  []string `yaml:"folders"`
+	Projects []string `yaml:"projects"`
 }
 
-// Complete reports whether all five S3 fields are set.
-func (s S3Config) Complete() bool {
-	return s.Endpoint != "" && s.Region != "" && s.AccessKey != "" && s.SecretKey != "" && s.Bucket != ""
+// Empty reports whether the selection names nothing.
+func (s Selection) Empty() bool {
+	return len(s.Folders) == 0 && len(s.Projects) == 0
 }
 
-// SetCount returns how many of the five S3 fields are set.
-func (s S3Config) SetCount() int {
-	n := 0
-	for _, v := range []string{s.Endpoint, s.Region, s.AccessKey, s.SecretKey, s.Bucket} {
-		if v != "" {
-			n++
-		}
-	}
-	return n
+// Prices feed the savings estimate.
+type Prices struct {
+	PublicIPMonthlyEUR float64 `yaml:"publicIpMonthlyEur"`
+	VolumeGBMonthlyEUR float64 `yaml:"volumeGbMonthlyEur"`
 }
 
-// Whitelist holds the static (deploy-time) whitelist: the union of the
-// YAML file lists and the env CSV variables. At runtime it is
-// merged with the Secrets Manager entry by internal/whitelist — a hit in
-// any source protects.
-type Whitelist struct {
-	Projects                 []string `yaml:"projects"`
-	Folders                  []string `yaml:"folders"`
-	Volumes                  []string `yaml:"volumes"`
-	PublicIPs                []string `yaml:"publicIps"`
-	SkipVolumeScanProjects   []string `yaml:"skipVolumeScanProjects"`
-	SkipPublicIPScanProjects []string `yaml:"skipPublicIpScanProjects"`
-}
-
-// SecretsManagerConfig locates the dedicated Secrets Manager instance that
-// hosts the shared whitelist.
-type SecretsManagerConfig struct {
-	URL      string `yaml:"url"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+// Report converts the prices for the report package.
+func (p Prices) Report() report.Prices {
+	return report.Prices{PublicIPMonthlyEUR: p.PublicIPMonthlyEUR, VolumeGBMonthlyEUR: p.VolumeGBMonthlyEUR}
 }
 
 // Config is the complete costguard configuration.
 type Config struct {
-	Scope                   string               `yaml:"scope"`
-	OrgID                   string               `yaml:"orgId"`
-	FolderIDs               []string             `yaml:"folderIds"`
-	Regions                 []string             `yaml:"regions"`
-	MaxAgeDays              int                  `yaml:"maxAgeDays"`
-	SNAMaxAgeDays           int                  `yaml:"snaMaxAgeDays"`
-	SafeLabelKey            string               `yaml:"safeLabelKey"`
-	SafeLabelValue          string               `yaml:"safeLabelValue"`
-	Output                  string               `yaml:"output"`
-	WebhookURL              string               `yaml:"webhookUrl"`
-	DryRun                  bool                 `yaml:"dryRun"`
-	CostAnomalyThresholdPct float64              `yaml:"costAnomalyThresholdPct"`
-	VolumeCostEurPerGB      float64              `yaml:"volumeCostEurPerGB"`
-	PublicIPCostEurPerMonth float64              `yaml:"publicIPCostEurPerMonth"`
-	CallbackURL             string               `yaml:"callbackUrl"`
-	CallbackPort            int                  `yaml:"callbackPort"`
-	CallbackSecret          string               `yaml:"callbackSecret"`
-	GracePeriod             time.Duration        `yaml:"-"`
-	WhitelistSecretPath     string               `yaml:"whitelistSecretPath"`
-	SecretsManager          SecretsManagerConfig `yaml:"secretsManager"`
-	S3                      S3Config             `yaml:"s3"`
-	Whitelist               Whitelist            `yaml:"whitelist"`
+	// OrganizationID is needed for the Cost API and the network-area
+	// check, and it is the scope when Scope is empty.
+	OrganizationID string `yaml:"organizationId"`
+	// Scope limits the run to these folders and projects. Empty means the
+	// whole organization. Every entry must match exactly one container.
+	Scope Selection `yaml:"scope"`
+	// Skip lists folders and projects that are never scanned. A name that
+	// matches several containers skips all of them; an entry that matches
+	// nothing blocks all writes in the run.
+	Skip    Selection `yaml:"skip"`
+	Regions []string  `yaml:"regions"`
+	Output  string    `yaml:"output"`
+	// WarnEmptyAfterDays is the minimum age of an empty project or network
+	// area before the report warns about it. 0 switches these warnings off
+	// (no cost data needed, e.g. for installs without organization-wide
+	// cost access).
+	WarnEmptyAfterDays int `yaml:"warnEmptyAfterDays"`
+	// DeleteRunAt is shown in Monday's message as the deletion time.
+	DeleteRunAt string `yaml:"deleteRunAt"`
+	Prices      Prices `yaml:"prices"`
+	PortalURL   string `yaml:"portalUrl"`
+
+	// WebhookURL comes from COSTGUARD_WEBHOOK_URL only.
+	WebhookURL string `yaml:"-"`
 }
 
-// fileConfig mirrors Config with pointer fields so that "absent in the
-// YAML file" can be distinguished from "zero value". The overlay is
-// hand-rolled: the field set is fixed and flat, which
-// keeps one fewer dependency than a config library.
-type fileConfig struct {
-	Scope                   *string               `yaml:"scope"`
-	OrgID                   *string               `yaml:"orgId"`
-	FolderIDs               []string              `yaml:"folderIds"`
-	Regions                 []string              `yaml:"regions"`
-	MaxAgeDays              *int                  `yaml:"maxAgeDays"`
-	SNAMaxAgeDays           *int                  `yaml:"snaMaxAgeDays"`
-	SafeLabelKey            *string               `yaml:"safeLabelKey"`
-	SafeLabelValue          *string               `yaml:"safeLabelValue"`
-	Output                  *string               `yaml:"output"`
-	WebhookURL              *string               `yaml:"webhookUrl"`
-	DryRun                  *bool                 `yaml:"dryRun"`
-	CostAnomalyThresholdPct *float64              `yaml:"costAnomalyThresholdPct"`
-	VolumeCostEurPerGB      *float64              `yaml:"volumeCostEurPerGB"`
-	PublicIPCostEurPerMonth *float64              `yaml:"publicIPCostEurPerMonth"`
-	CallbackURL             *string               `yaml:"callbackUrl"`
-	CallbackPort            *int                  `yaml:"callbackPort"`
-	CallbackSecret          *string               `yaml:"callbackSecret"`
-	GracePeriod             *string               `yaml:"gracePeriod"`
-	WhitelistSecretPath     *string               `yaml:"whitelistSecretPath"`
-	SecretsManager          *SecretsManagerConfig `yaml:"secretsManager"`
-	S3                      *S3Config             `yaml:"s3"`
-	Whitelist               *Whitelist            `yaml:"whitelist"`
-}
-
-// EnvLookup abstracts os.Getenv so tests can inject deterministic
-// environments.
+// EnvLookup abstracts os.Getenv for tests.
 type EnvLookup func(string) string
 
-// Load builds the configuration: defaults, then the YAML file (path from
-// the --config flag or COSTGUARD_CONFIG), then environment variables,
-// which take precedence.
-func Load(configPath string, env EnvLookup) (*Config, error) {
-	cfg := defaults()
-
-	path := configPath
-	if path == "" {
-		path = env(EnvConfigPath)
+// Load reads the YAML file (path argument, then COSTGUARD_CONFIG, then
+// DefaultConfigPath), applies defaults and reads the webhook URL from the
+// environment. It does not validate; call Validate.
+func Load(path string, env EnvLookup) (*Config, error) {
+	path = resolvePath(path, env)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config file: %w", err)
 	}
-	if path != "" {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("reading config file %s: %w", path, err)
-		}
-		var fc fileConfig
-		if err := yaml.Unmarshal(data, &fc); err != nil {
-			return nil, fmt.Errorf("parsing config file %s: %w", path, err)
-		}
-		if err := cfg.applyFile(&fc); err != nil {
-			return nil, fmt.Errorf("parsing config file %s: %w", path, err)
-		}
+	cfg, err := Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing config file %s: %w", path, err)
 	}
-	if err := cfg.applyEnv(env); err != nil {
-		return nil, err
-	}
+	cfg.WebhookURL = env(EnvWebhookURL)
 	return cfg, nil
 }
 
 // LoadFromOS is Load with os.Getenv.
-func LoadFromOS(configPath string) (*Config, error) {
-	return Load(configPath, os.Getenv)
+func LoadFromOS(path string) (*Config, error) {
+	return Load(path, os.Getenv)
 }
 
-func defaults() *Config {
-	return &Config{
-		DryRun:                  true,
-		CostAnomalyThresholdPct: DefaultCostAnomalyThresholdPct,
-		VolumeCostEurPerGB:      DefaultVolumeCostEurPerGB,
-		PublicIPCostEurPerMonth: DefaultPublicIPCostEurPerMonth,
-		CallbackPort:            DefaultCallbackPort,
-		GracePeriod:             DefaultGracePeriod,
+// resolvePath picks the config file: the argument, then COSTGUARD_CONFIG,
+// then DefaultConfigPath.
+func resolvePath(path string, env EnvLookup) string {
+	if path == "" {
+		path = env(EnvConfigPath)
 	}
+	if path == "" {
+		path = DefaultConfigPath
+	}
+	return path
 }
 
-func (c *Config) applyFile(fc *fileConfig) error {
-	if fc.Scope != nil {
-		c.Scope = *fc.Scope
+// Chat returns where to report a configuration that cannot be used: the
+// output from the file and the webhook URL from the environment. It reads
+// the file leniently, so unknown keys and invalid values elsewhere do not
+// matter. ok is false when these two settings are unusable themselves;
+// then the problem can only go to the log.
+func Chat(path string, env EnvLookup) (output, webhookURL string, ok bool) {
+	data, err := os.ReadFile(resolvePath(path, env))
+	if err != nil {
+		return "", "", false
 	}
-	if fc.OrgID != nil {
-		c.OrgID = *fc.OrgID
+	var lenient struct {
+		Output string `yaml:"output"`
 	}
-	if fc.FolderIDs != nil {
-		c.FolderIDs = fc.FolderIDs
+	if err := yaml.Unmarshal(data, &lenient); err != nil {
+		return "", "", false
 	}
-	if fc.Regions != nil {
-		c.Regions = fc.Regions
+	webhookURL = env(EnvWebhookURL)
+	switch lenient.Output {
+	case OutputGoogleChat, OutputSlack, OutputTeams:
+		return lenient.Output, webhookURL, secureURL(webhookURL)
 	}
-	if fc.MaxAgeDays != nil {
-		c.MaxAgeDays = *fc.MaxAgeDays
-	}
-	if fc.SNAMaxAgeDays != nil {
-		c.SNAMaxAgeDays = *fc.SNAMaxAgeDays
-	}
-	if fc.SafeLabelKey != nil {
-		c.SafeLabelKey = *fc.SafeLabelKey
-	}
-	if fc.SafeLabelValue != nil {
-		c.SafeLabelValue = *fc.SafeLabelValue
-	}
-	if fc.Output != nil {
-		c.Output = *fc.Output
-	}
-	if fc.WebhookURL != nil {
-		c.WebhookURL = *fc.WebhookURL
-	}
-	if fc.DryRun != nil {
-		c.DryRun = *fc.DryRun
-	}
-	if fc.CostAnomalyThresholdPct != nil {
-		c.CostAnomalyThresholdPct = *fc.CostAnomalyThresholdPct
-	}
-	if fc.VolumeCostEurPerGB != nil {
-		c.VolumeCostEurPerGB = *fc.VolumeCostEurPerGB
-	}
-	if fc.PublicIPCostEurPerMonth != nil {
-		c.PublicIPCostEurPerMonth = *fc.PublicIPCostEurPerMonth
-	}
-	if fc.CallbackURL != nil {
-		c.CallbackURL = *fc.CallbackURL
-	}
-	if fc.CallbackPort != nil {
-		c.CallbackPort = *fc.CallbackPort
-	}
-	if fc.CallbackSecret != nil {
-		c.CallbackSecret = *fc.CallbackSecret
-	}
-	if fc.GracePeriod != nil {
-		d, err := time.ParseDuration(*fc.GracePeriod)
-		if err != nil {
-			return fmt.Errorf("gracePeriod: %w", err)
-		}
-		c.GracePeriod = d
-	}
-	if fc.WhitelistSecretPath != nil {
-		c.WhitelistSecretPath = *fc.WhitelistSecretPath
-	}
-	if fc.SecretsManager != nil {
-		c.SecretsManager = *fc.SecretsManager
-	}
-	if fc.S3 != nil {
-		c.S3 = *fc.S3
-	}
-	if fc.Whitelist != nil {
-		c.Whitelist = MergeWhitelist(c.Whitelist, *fc.Whitelist)
-	}
-	return nil
+	return "", "", false
 }
 
-// applyEnv overlays every set environment variable on the config (env
-// wins). Empty strings are treated as unset.
-func (c *Config) applyEnv(env EnvLookup) error {
-	if v := env(EnvScope); v != "" {
-		c.Scope = v
-	}
-	if v := env(EnvOrgID); v != "" {
-		c.OrgID = v
-	}
-	if v := env(EnvFolderIDs); v != "" {
-		c.FolderIDs = splitCSV(v)
-	}
-	if v := env(EnvRegions); v != "" {
-		c.Regions = splitCSV(v)
-	}
-	if v := env(EnvMaxAgeDays); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvMaxAgeDays, err)
-		}
-		c.MaxAgeDays = n
-	}
-	if v := env(EnvSNAMaxAgeDays); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvSNAMaxAgeDays, err)
-		}
-		c.SNAMaxAgeDays = n
-	}
-	if v := env(EnvSafeLabelKey); v != "" {
-		c.SafeLabelKey = v
-	}
-	if v := env(EnvSafeLabelValue); v != "" {
-		c.SafeLabelValue = v
-	}
-	if v := env(EnvOutput); v != "" {
-		c.Output = v
-	}
-	if v := env(EnvWebhookURL); v != "" {
-		c.WebhookURL = v
-	}
-	if v := env(EnvDryRun); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvDryRun, err)
-		}
-		c.DryRun = b
-	}
-	if v := env(EnvCostAnomalyThresholdPct); v != "" {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvCostAnomalyThresholdPct, err)
-		}
-		c.CostAnomalyThresholdPct = f
-	}
-	if v := env(EnvVolumeCostEurPerGB); v != "" {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvVolumeCostEurPerGB, err)
-		}
-		c.VolumeCostEurPerGB = f
-	}
-	if v := env(EnvPublicIPCostEurPerMonth); v != "" {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvPublicIPCostEurPerMonth, err)
-		}
-		c.PublicIPCostEurPerMonth = f
-	}
-	if v := env(EnvCallbackURL); v != "" {
-		c.CallbackURL = v
-	}
-	if v := env(EnvCallbackPort); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvCallbackPort, err)
-		}
-		c.CallbackPort = n
-	}
-	if v := env(EnvCallbackSecret); v != "" {
-		c.CallbackSecret = v
-	}
-	if v := env(EnvGracePeriod); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return fmt.Errorf("%s: %w", EnvGracePeriod, err)
-		}
-		c.GracePeriod = d
-	}
-	if v := env(EnvWhitelistSecretPath); v != "" {
-		c.WhitelistSecretPath = v
-	}
-	if v := env(EnvSMURL); v != "" {
-		c.SecretsManager.URL = v
-	}
-	if v := env(EnvSMUsername); v != "" {
-		c.SecretsManager.Username = v
-	}
-	if v := env(EnvSMPasswrd); v != "" {
-		c.SecretsManager.Password = v
-	}
-	if v := env(EnvS3Endpoint); v != "" {
-		c.S3.Endpoint = v
-	}
-	if v := env(EnvS3Region); v != "" {
-		c.S3.Region = v
-	}
-	if v := env(EnvS3AccessKey); v != "" {
-		c.S3.AccessKey = v
-	}
-	if v := env(EnvS3SecretKey); v != "" {
-		c.S3.SecretKey = v
-	}
-	if v := env(EnvS3Bucket); v != "" {
-		c.S3.Bucket = v
-	}
-	if v := env(EnvWhitelistProjects); v != "" {
-		c.Whitelist.Projects = union(c.Whitelist.Projects, splitCSV(v))
-	}
-	if v := env(EnvWhitelistFolders); v != "" {
-		c.Whitelist.Folders = union(c.Whitelist.Folders, splitCSV(v))
-	}
-	if v := env(EnvWhitelistVolumes); v != "" {
-		c.Whitelist.Volumes = union(c.Whitelist.Volumes, splitCSV(v))
-	}
-	if v := env(EnvWhitelistPublicIPs); v != "" {
-		c.Whitelist.PublicIPs = union(c.Whitelist.PublicIPs, splitCSV(v))
-	}
-	if v := env(EnvWhitelistSkipVolScan); v != "" {
-		c.Whitelist.SkipVolumeScanProjects = union(c.Whitelist.SkipVolumeScanProjects, splitCSV(v))
-	}
-	if v := env(EnvWhitelistSkipIPScan); v != "" {
-		c.Whitelist.SkipPublicIPScanProjects = union(c.Whitelist.SkipPublicIPScanProjects, splitCSV(v))
-	}
-	return nil
+// ChatFromOS is Chat with os.Getenv.
+func ChatFromOS(path string) (output, webhookURL string, ok bool) {
+	return Chat(path, os.Getenv)
 }
 
-func splitCSV(v string) []string {
-	parts := strings.Split(v, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
+// Parse decodes a YAML document strictly (unknown keys are errors) on top
+// of the defaults.
+func Parse(data []byte) (*Config, error) {
+	cfg := &Config{
+		WarnEmptyAfterDays: DefaultWarnEmptyAfterDays,
+		DeleteRunAt:        DefaultDeleteRunAt,
+		PortalURL:          DefaultPortalURL,
+		Prices: Prices{
+			PublicIPMonthlyEUR: DefaultPublicIPMonthlyEUR,
+			VolumeGBMonthlyEUR: DefaultVolumeGBMonthlyEUR,
+		},
 	}
-	return out
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(cfg); err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	// A second document (after "---") would be ignored silently: refuse it.
+	var extra yaml.Node
+	if err := dec.Decode(&extra); err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	} else if err == nil && !emptyDocument(&extra) {
+		return nil, errors.New("the file contains more than one YAML document (a second one after ---); put all settings into one")
+	}
+	if len(cfg.Regions) == 0 {
+		cfg.Regions = append([]string(nil), DefaultRegions...)
+	}
+	return cfg, nil
+}
+
+// emptyDocument reports whether a decoded YAML document has no content, as
+// after a trailing "---".
+func emptyDocument(n *yaml.Node) bool {
+	if n.Kind == yaml.DocumentNode && len(n.Content) == 1 {
+		n = n.Content[0]
+	}
+	return n.Kind == 0 || (n.Kind == yaml.ScalarNode && n.Tag == "!!null")
+}
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// IsID reports whether a scope or skip entry is an ID (a UUID) rather
+// than a name.
+func IsID(s string) bool {
+	return uuidPattern.MatchString(s)
 }

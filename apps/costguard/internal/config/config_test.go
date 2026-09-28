@@ -17,210 +17,287 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"reflect"
+	"strings"
 	"testing"
-	"time"
 )
 
-func envFrom(m map[string]string) EnvLookup {
+const orgID = "11111111-2222-3333-4444-555555555555"
+
+func env(m map[string]string) EnvLookup {
 	return func(k string) string { return m[k] }
 }
 
-func validEnv() map[string]string {
-	return map[string]string{
-		EnvScope:          ScopeOrganisation,
-		EnvOrgID:          "org-1",
-		EnvRegions:        "eu01",
-		EnvMaxAgeDays:     "90",
-		EnvSNAMaxAgeDays:  "60",
-		EnvSafeLabelKey:   "do-not-delete",
-		EnvSafeLabelValue: "true",
-		EnvOutput:         OutputGoogleChat,
-		EnvWebhookURL:     "https://chat.example/webhook",
-	}
-}
-
-func TestLoadDefaults(t *testing.T) {
-	cfg, err := Load("", envFrom(validEnv()))
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !cfg.DryRun {
-		t.Error("DryRun default must be true")
-	}
-	if cfg.CostAnomalyThresholdPct != DefaultCostAnomalyThresholdPct {
-		t.Errorf("threshold default = %v", cfg.CostAnomalyThresholdPct)
-	}
-	if cfg.VolumeCostEurPerGB != DefaultVolumeCostEurPerGB {
-		t.Errorf("volume rate default = %v", cfg.VolumeCostEurPerGB)
-	}
-	if cfg.PublicIPCostEurPerMonth != DefaultPublicIPCostEurPerMonth {
-		t.Errorf("IP rate default = %v", cfg.PublicIPCostEurPerMonth)
-	}
-	if cfg.CallbackPort != DefaultCallbackPort {
-		t.Errorf("callback port default = %d", cfg.CallbackPort)
-	}
-	if cfg.GracePeriod != DefaultGracePeriod {
-		t.Errorf("grace default = %s", cfg.GracePeriod)
-	}
-}
-
-func TestLoadEnvValues(t *testing.T) {
-	env := validEnv()
-	env[EnvDryRun] = "false"
-	env[EnvGracePeriod] = "72h"
-	env[EnvCostAnomalyThresholdPct] = "33.5"
-	env[EnvCallbackURL] = "https://cb.example"
-	env[EnvCallbackPort] = "9091"
-	env[EnvCallbackSecret] = "s3cr3t"
-	env[EnvWhitelistSecretPath] = "secret/wl"
-	env[EnvSMURL] = "https://sm.example"
-	env[EnvSMUsername] = "u"
-	env[EnvSMPasswrd] = "p"
-	env[EnvWhitelistProjects] = "p1, p2"
-	env[EnvWhitelistPublicIPs] = "ip1"
-
-	cfg, err := Load("", envFrom(env))
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.DryRun {
-		t.Error("DryRun should be false")
-	}
-	if cfg.GracePeriod != 72*time.Hour {
-		t.Errorf("GracePeriod = %s", cfg.GracePeriod)
-	}
-	if cfg.CostAnomalyThresholdPct != 33.5 {
-		t.Errorf("threshold = %v", cfg.CostAnomalyThresholdPct)
-	}
-	if !reflect.DeepEqual(cfg.Regions, []string{"eu01"}) {
-		t.Errorf("Regions = %v", cfg.Regions)
-	}
-	if !reflect.DeepEqual(cfg.Whitelist.Projects, []string{"p1", "p2"}) {
-		t.Errorf("Whitelist.Projects = %v", cfg.Whitelist.Projects)
-	}
-	if !reflect.DeepEqual(cfg.Whitelist.PublicIPs, []string{"ip1"}) {
-		t.Errorf("Whitelist.PublicIPs = %v", cfg.Whitelist.PublicIPs)
-	}
-	if cfg.S3.SetCount() != 0 {
-		t.Error("S3 must be empty when env unset")
-	}
-}
-
-func TestLoadParseErrors(t *testing.T) {
-	cases := []struct {
-		name string
-		env  map[string]string
-	}{
-		{"bad max age", setEnv(validEnv(), EnvMaxAgeDays, "abc")},
-		{"bad dry run", setEnv(validEnv(), EnvDryRun, "notabool")},
-		{"bad grace period", setEnv(validEnv(), EnvGracePeriod, "8x")},
-		{"bad threshold", setEnv(validEnv(), EnvCostAnomalyThresholdPct, "xyz")},
-		{"bad port", setEnv(validEnv(), EnvCallbackPort, "nope")},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := Load("", envFrom(tc.env)); err == nil {
-				t.Error("expected parse error")
-			}
-		})
-	}
-}
-
-func setEnv(base map[string]string, k, v string) map[string]string {
-	m := make(map[string]string, len(base)+1)
-	for kk, vv := range base {
-		m[kk] = vv
-	}
-	m[k] = v
-	return m
-}
-
-func TestLoadEnvOverYAML(t *testing.T) {
-	yaml := []byte(`
-scope: folder
-orgId: yaml-org
-regions: [eu01]
-maxAgeDays: 30
-snaMaxAgeDays: 30
-safeLabelKey: yaml-key
-safeLabelValue: yaml-value
-output: slack
-webhookUrl: https://yaml.example/hook
-gracePeriod: 24h
-whitelist:
-  projects: [yaml-proj]
-  volumes: [yaml-vol]
-`)
-	path := filepath.Join(t.TempDir(), "cfg.yaml")
-	if err := os.WriteFile(path, yaml, 0o600); err != nil {
+func writeConfig(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env := validEnv()
-	delete(env, EnvOrgID) // let the YAML value win
-	env[EnvScope] = "folder"
-	env[EnvFolderIDs] = "f1,f2"
-	env[EnvMaxAgeDays] = "45"
-	env[EnvOutput] = OutputTeams
-	env[EnvWhitelistProjects] = "env-proj"
+	return path
+}
 
-	cfg, err := Load(path, envFrom(env))
+func validConfig() *Config {
+	cfg, err := Parse([]byte("organizationId: " + orgID + "\noutput: slack\n"))
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		panic(err)
 	}
-	if cfg.Scope != "folder" || len(cfg.FolderIDs) != 2 {
-		t.Errorf("folder scope not applied: %+v", cfg)
+	cfg.WebhookURL = "https://hooks.example.com/x"
+	return cfg
+}
+
+func TestParseAppliesDefaults(t *testing.T) {
+	cfg, err := Parse([]byte("organizationId: " + orgID + "\n"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.OrgID != "yaml-org" {
-		t.Errorf("OrgID from YAML = %q (env not set, YAML must win over default)", cfg.OrgID)
+	if strings.Join(cfg.Regions, ",") != "eu01" {
+		t.Errorf("regions = %v", cfg.Regions)
 	}
-	if cfg.MaxAgeDays != 45 {
-		t.Errorf("MaxAgeDays = %d, want env 45 over YAML 30", cfg.MaxAgeDays)
+	if cfg.WarnEmptyAfterDays != 30 || cfg.DeleteRunAt != DefaultDeleteRunAt || cfg.PortalURL != DefaultPortalURL {
+		t.Errorf("defaults not applied: %+v", cfg)
+	}
+	if cfg.Prices.PublicIPMonthlyEUR != DefaultPublicIPMonthlyEUR || cfg.Prices.VolumeGBMonthlyEUR != DefaultVolumeGBMonthlyEUR {
+		t.Errorf("price defaults = %+v", cfg.Prices)
+	}
+	if p := cfg.Prices.Report(); p.PublicIPMonthlyEUR != DefaultPublicIPMonthlyEUR || p.VolumeGBMonthlyEUR != DefaultVolumeGBMonthlyEUR {
+		t.Errorf("Report() = %+v", p)
+	}
+}
+
+func TestParseKeepsDefaultsOfPartialNestedBlocks(t *testing.T) {
+	cfg, err := Parse([]byte("prices:\n  publicIpMonthlyEur: 5\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Prices.PublicIPMonthlyEUR != 5 || cfg.Prices.VolumeGBMonthlyEUR != DefaultVolumeGBMonthlyEUR {
+		t.Errorf("prices = %+v", cfg.Prices)
+	}
+}
+
+func TestParseRejectsUnknownKeys(t *testing.T) {
+	_, err := Parse([]byte("skips:\n  projects: [a]\n"))
+	if err == nil || !strings.Contains(err.Error(), "skips") {
+		t.Fatalf("want unknown-key error, got %v", err)
+	}
+}
+
+func TestParseRefusesASecondDocument(t *testing.T) {
+	_, err := Parse([]byte("organizationId: " + orgID + "\n---\noutput: slack\n"))
+	if err == nil || !strings.Contains(err.Error(), "more than one YAML document") {
+		t.Fatalf("want second-document error, got %v", err)
+	}
+	for _, ok := range []string{
+		"organizationId: " + orgID + "\n---\n",    // trailing separator
+		"---\norganizationId: " + orgID + "\n",    // leading separator
+		"organizationId: " + orgID + "\n---\n~\n", // explicit empty document
+	} {
+		if _, err := Parse([]byte(ok)); err != nil {
+			t.Errorf("%q: %v", ok, err)
+		}
+	}
+	if _, err := Parse([]byte("organizationId: " + orgID + "\n---\n[unclosed\n")); err == nil {
+		t.Error("a broken second document must fail too")
+	}
+}
+
+func TestChatReadsOnlyTheChatSettings(t *testing.T) {
+	webhook := env(map[string]string{EnvWebhookURL: "https://hooks.example.com/x"})
+	// Unknown keys and invalid values elsewhere do not matter.
+	path := writeConfig(t, "output: teams\nskips: [a]\nwarnEmptyAfterDays: nope\n")
+	if out, url, ok := Chat(path, webhook); !ok || out != OutputTeams || url != "https://hooks.example.com/x" {
+		t.Errorf("Chat = %q %q %v", out, url, ok)
+	}
+	for name, c := range map[string]struct {
+		content string
+		env     EnvLookup
+	}{
+		"no output":    {"skips: [a]\n", webhook},
+		"bad output":   {"output: email\n", webhook},
+		"no webhook":   {"output: slack\n", env(nil)},
+		"http webhook": {"output: slack\n", env(map[string]string{EnvWebhookURL: "http://hooks.example.com/x"})},
+		"broken YAML":  {"output: [slack\n", webhook},
+	} {
+		if _, _, ok := Chat(writeConfig(t, c.content), c.env); ok {
+			t.Errorf("%s: must not be usable", name)
+		}
+	}
+	if _, _, ok := Chat(filepath.Join(t.TempDir(), "missing.yaml"), webhook); ok {
+		t.Error("missing file: must not be usable")
+	}
+	t.Setenv(EnvConfigPath, path)
+	t.Setenv(EnvWebhookURL, "https://hooks.example.com/y")
+	if out, _, ok := ChatFromOS(""); !ok || out != OutputTeams {
+		t.Errorf("ChatFromOS = %q %v", out, ok)
+	}
+}
+
+func TestParseEmptyDocument(t *testing.T) {
+	cfg, err := Parse(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OrganizationID != "" || len(cfg.Regions) != 1 {
+		t.Errorf("cfg = %+v", cfg)
+	}
+}
+
+func TestParseFullDocument(t *testing.T) {
+	cfg, err := Parse([]byte(`
+organizationId: ` + orgID + `
+scope:
+  folders: [Sandboxes]
+  projects: [aaaaaaaa-0000-0000-0000-000000000001]
+skip:
+  folders: [Platform]
+  projects: [prod-billing]
+regions: [eu01]
+output: teams
+warnEmptyAfterDays: 45
+deleteRunAt: "Tuesday 09:00"
+portalUrl: https://portal.example
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Scope.Folders[0] != "Sandboxes" || cfg.Skip.Projects[0] != "prod-billing" || cfg.Regions[0] != "eu01" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	if cfg.Output != OutputTeams || cfg.WarnEmptyAfterDays != 45 || cfg.DeleteRunAt != "Tuesday 09:00" {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	if cfg.Scope.Empty() || !(Selection{}).Empty() {
+		t.Error("Selection.Empty is wrong")
+	}
+}
+
+func TestLoadPathPrecedence(t *testing.T) {
+	flagPath := writeConfig(t, "organizationId: "+orgID+"\noutput: slack\n")
+	envPath := writeConfig(t, "organizationId: "+orgID+"\noutput: teams\n")
+
+	cfg, err := Load(flagPath, env(map[string]string{EnvConfigPath: envPath, EnvWebhookURL: "https://h"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Output != OutputSlack || cfg.WebhookURL != "https://h" {
+		t.Errorf("flag path must win: %+v", cfg)
+	}
+	cfg, err = Load("", env(map[string]string{EnvConfigPath: envPath}))
+	if err != nil {
+		t.Fatal(err)
 	}
 	if cfg.Output != OutputTeams {
-		t.Errorf("Output = %q, want env teams over YAML slack", cfg.Output)
-	}
-	if cfg.GracePeriod != 24*time.Hour {
-		t.Errorf("GracePeriod = %s, want YAML 24h", cfg.GracePeriod)
-	}
-	if cfg.WebhookURL != "https://chat.example/webhook" {
-		t.Errorf("WebhookURL = %q, want env value (env wins over YAML)", cfg.WebhookURL)
-	}
-	if !reflect.DeepEqual(cfg.Whitelist.Projects, []string{"yaml-proj", "env-proj"}) {
-		t.Errorf("whitelist union = %v", cfg.Whitelist.Projects)
+		t.Errorf("env path not used: %+v", cfg)
 	}
 }
 
-func TestLoadYAMLFileMissing(t *testing.T) {
-	if _, err := Load(filepath.Join(t.TempDir(), "nope.yaml"), envFrom(validEnv())); err == nil {
-		t.Error("expected error for missing config file")
+func TestLoadErrors(t *testing.T) {
+	if _, err := Load(filepath.Join(t.TempDir(), "missing.yaml"), env(nil)); err == nil {
+		t.Error("missing file must fail")
+	}
+	bad := writeConfig(t, "organizationId: [\n")
+	if _, err := Load(bad, env(nil)); err == nil || !strings.Contains(err.Error(), "parsing config file") {
+		t.Errorf("bad YAML: %v", err)
 	}
 }
 
-func TestLoadYAMLInvalid(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bad.yaml")
-	if err := os.WriteFile(path, []byte("scope: [unclosed"), 0o600); err != nil {
+func TestLoadFromOSUsesDefaultPath(t *testing.T) {
+	t.Setenv(EnvConfigPath, "")
+	_, err := LoadFromOS("")
+	if err == nil || !strings.Contains(err.Error(), "reading config file") {
+		t.Errorf("want read error for the default path, got %v", err)
+	}
+}
+
+func TestValidateAcceptsValidConfig(t *testing.T) {
+	if err := validConfig().Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(path, envFrom(validEnv())); err == nil {
-		t.Error("expected YAML parse error")
+}
+
+func TestValidateListsAllProblems(t *testing.T) {
+	cfg := &Config{
+		OrganizationID:     "not-a-uuid",
+		Scope:              Selection{Folders: []string{"a", "A"}, Projects: []string{" "}},
+		Skip:               Selection{Folders: []string{"x", "x"}},
+		Regions:            []string{"eu01", "eu01", "EU-1"},
+		Output:             "prometheus",
+		WebhookURL:         "not a url",
+		WarnEmptyAfterDays: 1,
+		DeleteRunAt:        " ",
+		Prices:             Prices{PublicIPMonthlyEUR: -1},
+		PortalURL:          "portal",
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("want error")
+	}
+	for _, want := range []string{
+		"organizationId must be a UUID",
+		`scope.folders lists "A" twice`,
+		"scope.projects contains an empty entry",
+		`skip.folders lists "x" twice`,
+		`region "eu01" is listed twice`,
+		`region "EU-1"`,
+		"output must be",
+		"absolute http(s) URL",
+		"warnEmptyAfterDays",
+		"deleteRunAt",
+		"prices",
+		"portalUrl",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in:\n%v", want, err)
+		}
 	}
 }
 
-func TestWhitelistMergeDedup(t *testing.T) {
-	base := Whitelist{Projects: []string{"a", "b"}}
-	extra := Whitelist{Projects: []string{" b ", "c"}}
-	merged := MergeWhitelist(base, extra)
-	if !reflect.DeepEqual(merged.Projects, []string{"a", "b", "c"}) {
-		t.Errorf("merged = %v", merged.Projects)
+func TestValidateRequiredFields(t *testing.T) {
+	cfg := validConfig()
+	cfg.OrganizationID, cfg.Output, cfg.WebhookURL = "", "", ""
+	err := cfg.Validate()
+	for _, want := range []string{"organizationId is required", "output is required", "webhook URL is required"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("missing %q in %v", want, err)
+		}
 	}
 }
 
-func TestS3ConfigSetCount(t *testing.T) {
-	if (S3Config{Endpoint: "e"}).SetCount() != 1 {
-		t.Error("SetCount with one field")
+func TestWarningsCanBeSwitchedOff(t *testing.T) {
+	for days, ok := range map[int]bool{0: true, 7: true, 30: true, 6: false, -1: false} {
+		cfg := validConfig()
+		cfg.WarnEmptyAfterDays = days
+		if err := cfg.Validate(); (err == nil) != ok {
+			t.Errorf("%d: err = %v", days, err)
+		}
 	}
-	if (S3Config{Endpoint: "e", Region: "r", AccessKey: "a", SecretKey: "s", Bucket: "b"}).SetCount() != 5 {
-		t.Error("SetCount with five fields")
+	cfg, err := Parse([]byte("warnEmptyAfterDays: 0\n"))
+	if err != nil || cfg.WarnEmptyAfterDays != 0 {
+		t.Errorf("an explicit 0 must override the default: %v %+v", err, cfg)
+	}
+}
+
+func TestWebhookMustBeHTTPS(t *testing.T) {
+	for url, ok := range map[string]bool{
+		"https://hooks.example.com/x": true,
+		"http://hooks.example.com/x":  false,
+		"http://127.0.0.1:8080/x":     true,
+		"http://localhost/x":          true,
+		"http://[::1]:9/x":            true,
+		"ftp://hooks.example.com/x":   false,
+	} {
+		cfg := validConfig()
+		cfg.WebhookURL = url
+		if err := cfg.Validate(); (err == nil) != ok {
+			t.Errorf("%s: err = %v", url, err)
+		}
+	}
+}
+
+func TestIsID(t *testing.T) {
+	if !IsID(orgID) || !IsID(strings.ToUpper(orgID)) {
+		t.Error("UUID not recognised")
+	}
+	if IsID("prod-billing") || IsID(orgID+"x") {
+		t.Error("name taken for an ID")
 	}
 }

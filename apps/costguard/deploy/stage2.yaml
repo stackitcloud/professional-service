@@ -1,0 +1,202 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# costguard stage 2: Monday 08:00 flags new cleanup candidates with
+# delete=true and posts what will be deleted; Tuesday 08:00 deletes
+# everything labelled delete=true that may go.
+#
+# Switch from stage 1 on a day between Tuesday and Sunday, so a Monday run
+# comes before the first Tuesday run:
+#
+#   kubectl delete -f stage1.yaml && kubectl apply -f stage2.yaml
+#
+# Emergency stop:
+#
+#   kubectl -n costguard patch cronjob costguard-delete -p '{"spec":{"suspend":true}}'
+#
+# The gap between flagging and deleting lives in the two schedules: keep
+# about a day between them, and keep deleteRunAt in the config in sync. For
+# a daily rhythm, the delete job must run BEFORE the flag job each day, e.g.
+# delete "30 7 * * 1-5" and flag "0 8 * * 1-5" (see the README).
+#
+# Login, one of:
+#   - workload identity (SKE): set the annotation to your stage-2 STACKIT
+#     service account (read + label write + IaaS delete), with a federated
+#     identity provider for subject system:serviceaccount:costguard:costguard-stage2;
+#   - a key: delete the annotation line and create the costguard-sa-key
+#     secret with the stage-2 key (see the README).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: costguard-stage2
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+  annotations:
+    workload-identity.stackit.cloud/service-account-email: REPLACE-WITH-STAGE2-SA@sa.stackit.cloud
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: costguard-flag
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+    app.kubernetes.io/component: flag
+spec:
+  schedule: "0 8 * * 1"
+  timeZone: Europe/Berlin
+  concurrencyPolicy: Forbid
+  # A flag run that starts late shortens the warning time; skip it instead.
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: costguard
+            app.kubernetes.io/component: flag
+        spec:
+          serviceAccountName: costguard-stage2
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          # Time between SIGTERM and kill: enough to post what happened.
+          terminationGracePeriodSeconds: 60
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: costguard
+              image: ko://github.com/stackitcloud/professional-service/apps/costguard/cmd/costguard
+              args: ["flag"]
+              env:
+                - name: COSTGUARD_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-webhook
+                      key: url
+                - name: LOG_LEVEL
+                  value: info
+                # Only used without workload identity: the key from the
+                # optional costguard-sa-key secret.
+                - name: STACKIT_SERVICE_ACCOUNT_KEY_PATH
+                  value: /var/run/secrets/costguard/key.json
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/costguard
+                  readOnly: true
+                - name: sa-key
+                  mountPath: /var/run/secrets/costguard
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+          volumes:
+            - name: config
+              configMap:
+                name: costguard-config
+            - name: sa-key
+              secret:
+                secretName: costguard-sa-key
+                optional: true
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: costguard-delete
+  namespace: costguard
+  labels:
+    app.kubernetes.io/name: costguard
+    app.kubernetes.io/component: delete
+spec:
+  schedule: "0 8 * * 2"
+  timeZone: Europe/Berlin
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: costguard
+            app.kubernetes.io/component: delete
+        spec:
+          serviceAccountName: costguard-stage2
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          # Time between SIGTERM and kill: enough to post what happened.
+          terminationGracePeriodSeconds: 60
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: costguard
+              image: ko://github.com/stackitcloud/professional-service/apps/costguard/cmd/costguard
+              args: ["delete"]
+              env:
+                - name: COSTGUARD_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: costguard-webhook
+                      key: url
+                - name: LOG_LEVEL
+                  value: info
+                # Only used without workload identity: the key from the
+                # optional costguard-sa-key secret.
+                - name: STACKIT_SERVICE_ACCOUNT_KEY_PATH
+                  value: /var/run/secrets/costguard/key.json
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/costguard
+                  readOnly: true
+                - name: sa-key
+                  mountPath: /var/run/secrets/costguard
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+          volumes:
+            - name: config
+              configMap:
+                name: costguard-config
+            - name: sa-key
+              secret:
+                secretName: costguard-sa-key
+                optional: true

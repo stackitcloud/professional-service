@@ -22,74 +22,52 @@ import (
 	costv3 "github.com/stackitcloud/stackit-sdk-go/services/cost/v3api"
 )
 
-// dateLayout is the granularity of the cost API's from/to parameters.
+// dateLayout is the granularity of the Cost API's from/to parameters.
 const dateLayout = "2006-01-02"
 
-// CostRecord is one project's charge for the requested date range.
-type CostRecord struct {
-	ProjectID   string
-	ProjectName string
-	ChargeEUR   float64
-}
-
-// Cost abstracts the billing data source.
+// Cost is the billing data source.
 type Cost interface {
-	// ListCostsForCustomer returns the per-project charges for the date
-	// range [from, to] (inclusive, day granularity).
-	ListCostsForCustomer(ctx context.Context, customerAccountID string, from, to time.Time) ([]CostRecord, error)
+	// ProjectCosts returns each project's total charge in EUR for the
+	// inclusive date range. Projects without charges may be missing.
+	ProjectCosts(ctx context.Context, organizationID string, from, to time.Time) (map[string]float64, error)
 }
 
 type cost struct {
-	client *costv3.APIClient
+	api costv3.DefaultAPI
 }
 
 func newCost(client *costv3.APIClient) Cost {
-	return &cost{client: client}
+	return &cost{api: client.DefaultAPI}
 }
 
-// ListCostsForCustomer calls the cost API once per requested range. The
-// API returns range totals per project, not per-day series, so per-day
-// data is assembled by the caller issuing one call per day. The
-// per-project breakdown is preserved so both daily totals and per-project
-// window totals can be aggregated.
-func (c *cost) ListCostsForCustomer(ctx context.Context, customerAccountID string, from, to time.Time) ([]CostRecord, error) {
-	resp, err := c.client.DefaultAPI.ListCostsForCustomer(ctx, customerAccountID).
+// ProjectCosts makes one call for the whole range: the API returns range
+// totals per project. The organization ID is the customer account ID.
+func (c *cost) ProjectCosts(ctx context.Context, organizationID string, from, to time.Time) (map[string]float64, error) {
+	resp, err := c.api.ListCostsForCustomer(ctx, organizationID).
 		From(from.Format(dateLayout)).
 		To(to.Format(dateLayout)).
 		Execute()
 	if err != nil {
-		return nil, fmt.Errorf("listing costs for %s .. %s: %w", from.Format(dateLayout), to.Format(dateLayout), err)
+		return nil, fmt.Errorf("listing costs %s .. %s: %w", from.Format(dateLayout), to.Format(dateLayout), err)
 	}
-	records := make([]CostRecord, 0, len(resp))
+	out := make(map[string]float64, len(resp))
 	for _, p := range resp {
-		var projectID, projectName string
-		var chargeCents float64
+		var projectID string
+		var cents float64
 		switch {
 		case p.ProjectCostWithDetailedServices != nil:
-			projectID = p.ProjectCostWithDetailedServices.ProjectId
-			projectName = p.ProjectCostWithDetailedServices.ProjectName
-			chargeCents = p.ProjectCostWithDetailedServices.TotalCharge
+			projectID, cents = p.ProjectCostWithDetailedServices.ProjectId, p.ProjectCostWithDetailedServices.TotalCharge
 		case p.ProjectCostWithSummarizedServices != nil:
-			projectID = p.ProjectCostWithSummarizedServices.ProjectId
-			projectName = p.ProjectCostWithSummarizedServices.ProjectName
-			chargeCents = p.ProjectCostWithSummarizedServices.TotalCharge
+			projectID, cents = p.ProjectCostWithSummarizedServices.ProjectId, p.ProjectCostWithSummarizedServices.TotalCharge
 		case p.SummarizedProjectCost != nil:
-			projectID = p.SummarizedProjectCost.ProjectId
-			projectName = p.SummarizedProjectCost.ProjectName
-			chargeCents = p.SummarizedProjectCost.TotalCharge
+			projectID, cents = p.SummarizedProjectCost.ProjectId, p.SummarizedProjectCost.TotalCharge
 		default:
 			continue
 		}
-		if projectID == "" {
-			continue
+		if projectID != "" {
+			// TotalCharge is in cents.
+			out[projectID] += cents / 100
 		}
-		// TotalCharge is documented as "value in cents" (verified against
-		// the SDK model): divide by 100.
-		records = append(records, CostRecord{
-			ProjectID:   projectID,
-			ProjectName: projectName,
-			ChargeEUR:   chargeCents / 100.0,
-		})
 	}
-	return records, nil
+	return out, nil
 }
