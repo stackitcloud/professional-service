@@ -23,6 +23,9 @@ terraform init
 terraform apply
 ```
 
+> [!WARNING]
+> The service account API generates the private key, and Terraform stores it in plain text in the state, even though the output is marked `sensitive`. Anyone who can read the state can read the key. This setup is only an example and should not be used this way in production.
+
 Write the key file used to authenticate as the service account:
 
 ```bash
