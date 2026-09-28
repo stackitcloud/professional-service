@@ -13,29 +13,32 @@
 # limitations under the License.
 
 resource "stackit_ske_cluster" "default" {
-  project_id             = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  name                   = "ske-enc-vol"
-  kubernetes_version_min = "1.33"
+  project_id = var.stackit_project_id
+  name       = "ske-enc-vol"
+  # Unset, the cluster is created with the latest Kubernetes version that
+  # SKE supports. Uncomment to pin a minimum version instead. A pinned
+  # version stops working once SKE removes it.
+  # kubernetes_version_min = "1.36"
 
   node_pools = [{
     name               = "standard"
     machine_type       = "c2i.4"
     minimum            = 1
     maximum            = 3
-    availability_zones = ["eu01-1"]
+    availability_zones = ["${var.stackit_region}-1"]
     os_name            = "flatcar"
     volume_size        = 32
   }]
 }
 
-resource "stackit_ske_kubeconfig" "default" {
-  project_id   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  cluster_name = stackit_ske_cluster.default.name
-  refresh      = true
+# The cluster ID condition defers the kubeconfig request until the cluster exists.
+ephemeral "stackit_ske_kubeconfig" "default" {
+  project_id   = var.stackit_project_id
+  cluster_name = stackit_ske_cluster.default.id != "" ? stackit_ske_cluster.default.name : ""
 }
 
 data "stackit_service_accounts" "ske_internal" {
-  project_id   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  project_id   = var.stackit_project_id
   email_suffix = "@ske.sa.stackit.cloud"
 
   depends_on = [stackit_ske_cluster.default]

@@ -27,7 +27,7 @@ resource "kubernetes_storage_class_v1" "encrypted_premium" {
     encrypted         = "true"
     kmsKeyID          = stackit_kms_key.volume_key.key_id
     kmsKeyringID      = stackit_kms_keyring.encryption.keyring_id
-    kmsProjectID      = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    kmsProjectID      = var.stackit_project_id
     kmsKeyVersion     = "1"
     kmsServiceAccount = stackit_service_account.kms_manager.email
   }

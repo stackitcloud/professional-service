@@ -12,16 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_kms_keyring" "encryption" {
-  project_id   = var.stackit_project_id
-  display_name = "ske-volume-keyring"
+variable "stackit_project_id" {
+  type        = string
+  description = "STACKIT project that holds the cluster, the KMS key and the service account"
 }
 
-resource "stackit_kms_key" "volume_key" {
-  project_id   = var.stackit_project_id
-  keyring_id   = stackit_kms_keyring.encryption.keyring_id
-  display_name = "volume-encryption-key"
-  protection   = "software"
-  algorithm    = "aes_256_gcm"
-  purpose      = "symmetric_encrypt_decrypt"
+variable "stackit_region" {
+  type        = string
+  description = "STACKIT region"
+  default     = "eu01"
+}
+
+variable "stackit_service_account_key_path" {
+  type        = string
+  description = "Path to the service account key file. Unset falls back to the STACKIT_SERVICE_ACCOUNT_KEY_PATH environment variable, then to the credentials file $HOME/.stackit/credentials.json."
+  default     = null
 }

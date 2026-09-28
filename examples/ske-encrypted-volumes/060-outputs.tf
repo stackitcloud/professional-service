@@ -12,16 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_kms_keyring" "encryption" {
-  project_id   = var.stackit_project_id
-  display_name = "ske-volume-keyring"
+output "ske_cluster_name" {
+  description = "Name of the SKE cluster"
+  value       = stackit_ske_cluster.default.name
 }
 
-resource "stackit_kms_key" "volume_key" {
-  project_id   = var.stackit_project_id
-  keyring_id   = stackit_kms_keyring.encryption.keyring_id
-  display_name = "volume-encryption-key"
-  protection   = "software"
-  algorithm    = "aes_256_gcm"
-  purpose      = "symmetric_encrypt_decrypt"
+output "kubeconfig_command" {
+  description = "Fetch a kubeconfig for kubectl"
+  value       = "stackit ske kubeconfig create ${stackit_ske_cluster.default.name} --project-id ${var.stackit_project_id} --region ${stackit_ske_cluster.default.region} --expiration 8h"
+}
+
+output "storage_class_name" {
+  description = "Encrypted StorageClass to reference from a PersistentVolumeClaim"
+  value       = kubernetes_storage_class_v1.encrypted_premium.metadata[0].name
 }
