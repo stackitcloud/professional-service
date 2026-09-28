@@ -25,7 +25,7 @@ resource "stackit_ske_cluster" "default" {
     machine_type       = "c2i.4"
     minimum            = 1
     maximum            = 3
-    availability_zones = ["eu01-1"]
+    availability_zones = ["${var.stackit_region}-1"]
     os_name            = "flatcar"
     volume_size        = 32
   }]

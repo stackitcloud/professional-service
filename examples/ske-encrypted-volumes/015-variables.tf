@@ -16,3 +16,15 @@ variable "stackit_project_id" {
   type        = string
   description = "STACKIT project that holds the cluster, the KMS key and the service account"
 }
+
+variable "stackit_region" {
+  type        = string
+  description = "STACKIT region"
+  default     = "eu01"
+}
+
+variable "stackit_service_account_key_path" {
+  type        = string
+  description = "Path to the service account key file. Unset falls back to the STACKIT_SERVICE_ACCOUNT_KEY_PATH environment variable, then to the credentials file $HOME/.stackit/credentials.json."
+  default     = null
+}
