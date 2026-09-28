@@ -59,10 +59,24 @@ jobs:
       - name: go vet
         run: make lint
 
-  # Validates the deploy/ Kubernetes manifests against the official JSON
-  # schemas — offline, no cluster required. Catches both YAML syntax errors
-  # and schema violations (wrong/missing/unknown fields) that check-yaml
-  # (pre-commit) cannot. kubeconform is pinned for reproducibility.
+  govulncheck:
+    name: "govulncheck"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    defaults:
+      run:
+        working-directory: apps/costguard
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/costguard/go.mod
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
   k8s-manifests:
     name: "Kubernetes Manifests"
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}

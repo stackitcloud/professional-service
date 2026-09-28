@@ -1,0 +1,154 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "costguard-release"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/costguard/**"
+      - "!apps/costguard/**/*.md"
+      - "!apps/costguard/**/*_test.go"
+      - "!apps/costguard/internal/fake/**"
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: costguard-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: "Release"
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/costguard
+    env:
+      KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/costguard/go.mod
+
+      - name: Unit tests + coverage gate
+        run: make test
+
+      - name: Compute the next version
+        id: version
+        run: |
+          set -euo pipefail
+          prefix="apps/costguard/v"
+          last="$(git tag --list "${prefix}*" --sort=-v:refname | head -n1)"
+          if [ -z "${last}" ]; then
+            next="0.1.0"
+            notes="$(git log --format='- %s' -- .)"
+          else
+            IFS=. read -r major minor patch <<<"${last#"${prefix}"}"
+            log="$(git log --format='%s%n%b' "${last}..HEAD" -- .)"
+            if [ -z "${log}" ]; then
+              echo "No costguard changes since ${last}; nothing to release."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE' <<<"${log}"; then
+              if [ "${major}" = 0 ]; then minor=$((minor + 1)); else major=$((major + 1)); minor=0; fi
+              patch=0
+            elif grep -qE '^feat(\([^)]*\))?:' <<<"${log}"; then
+              minor=$((minor + 1)); patch=0
+            else
+              patch=$((patch + 1))
+            fi
+            next="${major}.${minor}.${patch}"
+            notes="$(git log --format='- %s' "${last}..HEAD" -- .)"
+          fi
+          echo "version=v${next}" >> "$GITHUB_OUTPUT"
+          echo "tag=${prefix}${next}" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<EOF_NOTES"
+            echo "${notes}"
+            echo "EOF_NOTES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install ko
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          version=0.19.1
+          case "$(uname -m)" in
+            x86_64)        arch=x86_64 ;;
+            aarch64|arm64) arch=arm64 ;;
+            *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+          esac
+          dir="$(mktemp -d)"
+          base="https://github.com/ko-build/ko/releases/download/v${version}"
+          curl -sSfL "${base}/ko_${version}_Linux_${arch}.tar.gz" -o "${dir}/ko_${version}_Linux_${arch}.tar.gz"
+          curl -sSfL "${base}/checksums.txt" -o "${dir}/checksums.txt"
+          (cd "${dir}" && grep "ko_${version}_Linux_${arch}.tar.gz" checksums.txt | sha256sum -c --)
+          tar -xzf "${dir}/ko_${version}_Linux_${arch}.tar.gz" -C "${dir}" ko
+          chmod +x "${dir}/ko"
+          echo "${dir}" >> "$GITHUB_PATH"
+
+      - name: Build, push and pin the manifests
+        if: steps.version.outputs.skip != 'true'
+        env:
+          COSTGUARD_VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "${GITHUB_TOKEN}" | ko login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          out="${RUNNER_TEMP}/release"
+          mkdir -p "${out}"
+          flags=(
+            -B
+            --tags="${COSTGUARD_VERSION}"
+            --image-label=org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}/tree/main/apps/costguard
+            --image-label="org.opencontainers.image.description=STACKIT cleanup bot"
+            --image-label=org.opencontainers.image.licenses=Apache-2.0
+            --image-label=org.opencontainers.image.version=${COSTGUARD_VERSION}
+          )
+          # The image is reproducible, so the second resolve reuses the digest.
+          ko resolve "${flags[@]}" -f deploy/stage1.yaml > "${out}/stage1.yaml"
+          ko resolve "${flags[@]}" -f deploy/stage2.yaml > "${out}/stage2.yaml"
+          cp deploy/config.yaml "${out}/config.yaml"
+          grep -h "image:" "${out}"/stage*.yaml | sort -u
+
+      - name: Tag and publish the release
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          NOTES: ${{ steps.version.outputs.notes }}
+        run: |
+          set -euo pipefail
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          gh release create "${TAG}" \
+            --title "costguard ${VERSION}" \
+            --notes "${NOTES}" \
+            "${RUNNER_TEMP}/release/config.yaml" \
+            "${RUNNER_TEMP}/release/stage1.yaml" \
+            "${RUNNER_TEMP}/release/stage2.yaml"
