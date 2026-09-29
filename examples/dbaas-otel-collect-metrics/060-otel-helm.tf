@@ -62,4 +62,6 @@ resource "helm_release" "opentelemetry_collector" {
   values = [
     local.otel_helm_values
   ]
+
+  depends_on = [stackit_authorization_project_role_assignment.this]
 }
