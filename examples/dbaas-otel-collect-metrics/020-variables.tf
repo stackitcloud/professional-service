@@ -13,13 +13,14 @@
 # limitations under the License.
 
 variable "stackit_project_id" {
-  type    = string
-  default = "d75e6aab-b616-4b42-ae3b-aaf161ad626d"
+  type        = string
+  description = "STACKIT project that holds the cluster, the database and the Observability instance"
 }
 
 variable "stackit_region" {
-  type    = string
-  default = "eu01"
+  type        = string
+  description = "STACKIT region"
+  default     = "eu01"
 }
 
 variable "stackit_service_account_key_path" {
