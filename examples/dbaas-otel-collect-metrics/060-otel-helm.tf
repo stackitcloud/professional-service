@@ -15,7 +15,7 @@
 locals {
   sa_json = jsondecode(stackit_service_account_key.this.json)
   otel_helm_values = templatefile("${path.module}/helm-values/otel-collector-values.tftpl", {
-    stackit_project_id             = var.stackit_project_id
+    stackit_project_id             = local.project_id
     stackit_region                 = var.stackit_region
     stackit_postgres_instance_id   = stackit_postgresflex_instance.this.instance_id
     observability_metrics_endpoint = stackit_observability_instance.example.metrics_push_url
@@ -30,7 +30,7 @@ locals {
 
 
 resource "stackit_observability_credential" "otel" {
-  project_id  = var.stackit_project_id
+  project_id  = local.project_id
   instance_id = stackit_observability_instance.example.instance_id
 }
 

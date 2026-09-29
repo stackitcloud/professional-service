@@ -13,11 +13,11 @@
 # limitations under the License.
 
 data "stackit_postgresflex_flavors" "this" {
-  project_id = var.stackit_project_id
+  project_id = local.project_id
 }
 
 resource "stackit_postgresflex_instance" "this" {
-  project_id      = var.stackit_project_id
+  project_id      = local.project_id
   name            = "example-instance"
   backup_schedule = "0 0 * * *"
   retention_days  = 32
@@ -33,14 +33,14 @@ resource "stackit_postgresflex_instance" "this" {
 }
 
 resource "stackit_postgresflex_user" "this" {
-  project_id  = var.stackit_project_id
+  project_id  = local.project_id
   instance_id = stackit_postgresflex_instance.this.instance_id
   username    = "test"
   roles       = ["createdb", "login"]
 }
 
 resource "stackit_postgresflex_database" "this" {
-  project_id  = var.stackit_project_id
+  project_id  = local.project_id
   instance_id = stackit_postgresflex_instance.this.instance_id
   name        = "test"
   owner       = stackit_postgresflex_user.this.username

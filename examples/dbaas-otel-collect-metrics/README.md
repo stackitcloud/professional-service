@@ -61,7 +61,7 @@ flowchart LR
 
 ## Prerequisites
 
-- A STACKIT project and a service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`. The example creates a service account and a role assignment, so the key needs rights such as `project.owner`.
+- A service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`, with rights to create a project in the parent container. The example creates the project, and in it a service account and a role assignment.
 - Terraform 1.10 or later and STACKIT provider 0.117.0 or later.
 - An authenticated `stackit` CLI (`stackit auth login` or `stackit auth activate-service-account`) and `kubectl` for debugging.
 
@@ -69,7 +69,7 @@ The provider block enables the experiments `iam` for the role assignment and `sk
 
 ## Usage
 
-1. **Configure**: `cp terraform.tfvars.example terraform.tfvars` and set `stackit_project_id`.
+1. **Configure**: `cp terraform.tfvars.example terraform.tfvars` and set `stackit_parent_container_id` (organization or folder) and `stackit_admin_email`.
 2. **Deploy**:
    ```bash
    terraform init
@@ -111,7 +111,7 @@ kubectl logs deploy/otel-collector -n monitoring -f
 terraform destroy
 ```
 
-`terraform destroy` removes everything the example created.
+`terraform destroy` removes everything the example created, including the project.
 
 ## Documentation
 

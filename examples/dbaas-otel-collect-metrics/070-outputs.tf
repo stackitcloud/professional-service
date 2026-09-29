@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+output "project_id" {
+  description = "ID of the created project"
+  value       = local.project_id
+}
+
 output "ske_cluster_name" {
   description = "Name of the SKE cluster"
   value       = stackit_ske_cluster.this.name
@@ -19,7 +24,7 @@ output "ske_cluster_name" {
 
 output "kubeconfig_command" {
   description = "Fetch a kubeconfig for kubectl"
-  value       = "stackit ske kubeconfig create ${stackit_ske_cluster.this.name} --project-id ${var.stackit_project_id} --region ${stackit_ske_cluster.this.region} --expiration 8h"
+  value       = "stackit ske kubeconfig create ${stackit_ske_cluster.this.name} --project-id ${local.project_id} --region ${stackit_ske_cluster.this.region} --expiration 8h"
 }
 
 output "grafana_url" {

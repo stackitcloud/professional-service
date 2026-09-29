@@ -12,9 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "stackit_project_id" {
+variable "stackit_parent_container_id" {
   type        = string
-  description = "STACKIT project that holds the cluster, the database and the Observability instance"
+  description = "Container ID of the organization or folder the project is created in"
+}
+
+variable "stackit_admin_email" {
+  type        = string
+  description = "Email address that becomes the owner of the created project"
+}
+
+variable "project_name" {
+  type        = string
+  description = "Name of the project that holds the cluster, the database and the Observability instance"
+  default     = "dbaas-otel-metrics"
 }
 
 variable "stackit_region" {

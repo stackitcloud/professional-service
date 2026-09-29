@@ -14,14 +14,14 @@
 
 # The cluster ID condition defers the kubeconfig request until the cluster exists.
 ephemeral "stackit_ske_kubeconfig" "this" {
-  project_id   = var.stackit_project_id
+  project_id   = local.project_id
   cluster_name = stackit_ske_cluster.this.id != "" ? stackit_ske_cluster.this.name : ""
   # Two hours cover a first apply in which the database finishes long after the cluster.
   expiration = 7200
 }
 
 resource "stackit_ske_cluster" "this" {
-  project_id = var.stackit_project_id
+  project_id = local.project_id
   name       = "dbaas-otel"
 
   node_pools = [

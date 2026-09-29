@@ -14,7 +14,7 @@
 
 resource "stackit_service_account" "this" {
   name       = "prom-proxy"
-  project_id = var.stackit_project_id
+  project_id = local.project_id
 }
 
 resource "time_rotating" "rotate" {
@@ -25,7 +25,7 @@ resource "time_rotating" "rotate" {
 # plain text in the state. This is only an example and should not be used this
 # way in production.
 resource "stackit_service_account_key" "this" {
-  project_id            = var.stackit_project_id
+  project_id            = local.project_id
   service_account_email = stackit_service_account.this.email
   ttl_days              = 180
 
@@ -39,7 +39,7 @@ resource "stackit_service_account_key" "this" {
 }
 
 resource "stackit_authorization_project_role_assignment" "this" {
-  resource_id = var.stackit_project_id
+  resource_id = local.project_id
   role        = "prometheus-proxy.reader"
   subject     = stackit_service_account.this.email
 }

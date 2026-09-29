@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_observability_instance" "example" {
-  project_id   = local.project_id
-  name         = "example-obs"
-  plan_name    = var.observability_plan_name
-  alert_config = null
+resource "stackit_resourcemanager_project" "this" {
+  parent_container_id = var.stackit_parent_container_id
+  name                = var.project_name
+  owner_email         = var.stackit_admin_email
+}
+
+locals {
+  project_id = stackit_resourcemanager_project.this.project_id
 }
