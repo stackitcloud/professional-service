@@ -224,6 +224,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 - **`costguard`** `[cost, cleanup, automation, iaas, kubernetes]`  
   **costguard keeps your STACKIT cloud tidy.** It looks for things that cost money but are not used by anything, tells your team about them in a chat channel every Monday and, once you are ready, deletes them for you
+- **`costguard-vm`** `[cost, cleanup, automation, iaas]`  
+  **costguard-vm keeps your STACKIT cloud tidy.** It looks for things that cost money but are not used by anything, tells your team about them in a chat channel every Monday and, once you are ready, deletes them for you
 
 ---
 
