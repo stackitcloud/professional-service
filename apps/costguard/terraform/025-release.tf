@@ -13,20 +13,26 @@
 # limitations under the License.
 
 
-# The costguard release this Terraform code installs. `make pin
-# VERSION=vX.Y.Z` writes this file right before the release is tagged; the
-# release CI rebuilds the binaries and fails if its hashes differ (the build
-# is reproducible). So a checkout of a release tag always installs exactly
-# the binary built from that tag, and a changed download can't run.
+# The costguard release this Terraform code installs. Written by
+# `make pin VERSION=vX.Y.Z` (scripts/pin.py), never by hand. When a commit
+# that changes this file is pushed, the release workflow rebuilds the
+# binaries, refuses to release if their hashes differ (the build is
+# reproducible) and publishes them under the tag apps/costguard/<version>.
+# So a checkout of a release tag installs exactly the binary built from that
+# tag, and a changed download can't run.
 #
-# Between releases the version is empty: then only binary_override (a test
-# build with its own hash) can be applied.
+# main keeps the latest release's pin until the next release: install from a
+# release tag, not from main. A test build sets binary_override instead.
+
 locals {
   release = {
-    version = ""
-    sha256  = {}
-    # Where the release pipeline publishes the binaries; empty until the first
-    # release, so a test build must set download_url.
-    download_url = ""
+    version = "v0.1.0"
+    sha256 = {
+      amd64 = "7cff453d69043fba75bb0d105a4112d980dda16f2d482b23be067d78dbb16850"
+      arm64 = "09a9d1950529503bf8aa79da2a96886eefb4849d954189561e9c8e345a42f8bb"
+    }
+    # Where the release workflow publishes the binaries; {version} is
+    # filled in, the file name costguard_<version>_linux_<arch> appended.
+    download_url = "https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases/download/apps%2Fcostguard%2F{version}/"
   }
 }
