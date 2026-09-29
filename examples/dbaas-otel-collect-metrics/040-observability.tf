@@ -15,6 +15,6 @@
 resource "stackit_observability_instance" "example" {
   project_id   = var.stackit_project_id
   name         = "example-obs"
-  plan_name    = "Observability-Large-EU01"
+  plan_name    = var.observability_plan_name
   alert_config = null
 }

@@ -23,6 +23,12 @@ variable "stackit_region" {
   default     = "eu01"
 }
 
+variable "observability_plan_name" {
+  type        = string
+  description = "Plan of the Observability instance, for example Observability-Starter-EU01 for a smaller one"
+  default     = "Observability-Large-EU01"
+}
+
 variable "stackit_service_account_key_path" {
   type        = string
   description = "Path to the service account key file. Unset falls back to the STACKIT_SERVICE_ACCOUNT_KEY_PATH environment variable, then to that entry in the credentials file ($HOME/.stackit/credentials.json, or STACKIT_CREDENTIALS_PATH)."
