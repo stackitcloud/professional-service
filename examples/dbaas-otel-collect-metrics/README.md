@@ -79,6 +79,14 @@ flowchart LR
 
 The key is valid for 180 days. `time_rotating` replaces it on the first `terraform apply` after day 150, so run `terraform apply` between day 150 and 180, or the collector stops scraping.
 
+## Verify
+
+Open the Grafana URL and query `pg_up` in Explore. A series there shows that the collector scrapes the prom-proxy and pushes to Observability; the value `1` means the exporter reaches the database.
+
+```bash
+terraform output -raw grafana_url
+```
+
 ## Scrape Configuration
 
 The OTel Collector scrapes metrics from:
@@ -96,6 +104,14 @@ eval "$(terraform output -raw kubeconfig_command)"
 kubectl config use-context "$(terraform output -raw ske_cluster_name)"
 kubectl logs deploy/otel-collector -n monitoring -f
 ```
+
+## Clean up
+
+```bash
+terraform destroy
+```
+
+`terraform destroy` removes everything the example created.
 
 ## Documentation
 
