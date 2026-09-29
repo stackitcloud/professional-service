@@ -35,7 +35,12 @@ Tear down in reverse.
 - STACKIT provider 0.116.0 or later.
 - Rights on the organization for `01-storage`. It creates the network area, and the
   project that carries the cluster: SKE rejects a cluster whose project sits in a folder.
-- The `stackit` CLI and `kubectl` for the verify step of `02-cluster`.
+- A service account key for Terraform, see `stackit_service_account_key_path` in the
+  stages' `020-variables.tf`.
+- An authenticated `stackit` CLI (`stackit auth login` or
+  `stackit auth activate-service-account`) for the timeout check of `01-storage` and the
+  verify step of `02-cluster`.
+- `kubectl` for the verify step of `02-cluster`.
 
 `enable_beta_resources` and `experiments = ["ske"]` are already set where needed.
 
