@@ -23,6 +23,8 @@ locals {
     sa_client_id                   = local.sa_json.credentials.sub
     sa_issuer                      = local.sa_json.credentials.iss
     sa_key_id                      = local.sa_json.credentials.kid
+    sa_audience                    = local.sa_json.credentials.aud
+    sa_token_url                   = try(local.sa_json.credentials.tokenEndpoint, "https://service-account.api.stackit.cloud/token")
   })
 }
 

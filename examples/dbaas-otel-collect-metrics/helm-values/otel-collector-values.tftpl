@@ -22,7 +22,7 @@ config:
               grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer
               iss: $${SA_TOKEN_REQUEST_ISSUER}
               signature_algorithm: RS512
-              token_url: https://service-account.api.stackit.cloud/token
+              token_url: "${sa_token_url}"
             scheme: https
             scrape_interval: 1m
             static_configs:
@@ -63,7 +63,7 @@ extraEnvs:
   - name: SA_TOKEN_REQUEST_CLIENT_CERTIFICATE_KEY_ID
     value: "${sa_key_id}"
   - name: SA_TOKEN_REQUEST_AUDIENCE
-    value: "https://service-account.api.stackit.cloud/token"
+    value: "${sa_audience}"
 
 extraVolumes:
   - name: otel-secrets
