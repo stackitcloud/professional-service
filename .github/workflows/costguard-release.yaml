@@ -1,0 +1,189 @@
+# Copyright 2026 Schwarz Digits Cloud GmbH & Co. KG
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Releases costguard when a commit changing its pin (apps/costguard/terraform/
+# 025-release.tf, written by `make pin VERSION=vX.Y.Z`) is pushed: runs the
+# tests, rebuilds the binaries, refuses to release if their hashes differ from
+# the pin (the build is reproducible), then publishes them as the Forgejo
+# release of tag apps/costguard/<version>. Nothing happens when the pinned
+# version is released already.
+name: "costguard-release"
+
+on:
+  push:
+    # feat/add-app-costguard only until PR #75 is merged: remove it then.
+    branches: ["main", "feat/add-app-costguard"]
+    paths:
+      - "apps/costguard/terraform/025-release.tf"
+      - ".github/workflows/costguard-release.yaml"
+  # Retries a release that failed for another reason than the pin (Forgejo
+  # unavailable, a flaky test); the button shows once this file is on main.
+  workflow_dispatch:
+
+concurrency:
+  group: costguard-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: "Release"
+    # Releases live on Forgejo only, never on the GitHub mirror.
+    if: github.server_url == 'https://professional-service.git.onstackit.cloud'
+    runs-on: stackit-ubuntu-22
+    defaults:
+      run:
+        working-directory: apps/costguard
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          # The release notes list the commits since the previous release tag.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/costguard/go.mod
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "latest"
+          terraform_wrapper: false
+
+      - name: What is pinned
+        id: pin
+        run: |
+          set -euo pipefail
+          version="$(python3 scripts/pin.py version)"
+          if [ -z "${version}" ]; then
+            echo "025-release.tf pins no release; nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag="apps/costguard/${version}"
+          rc=0
+          git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null || rc=$?
+          case "${rc}" in
+            0)
+              echo "${tag} is released already; nothing to do."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            2) ;;
+            *)
+              echo "cannot list the tags (git ls-remote exit ${rc})" >&2
+              exit 1
+              ;;
+          esac
+          case "${version}" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          {
+            echo "release=true"
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "prerelease=${prerelease}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing ${tag} from ${GITHUB_REF_NAME} at ${GITHUB_SHA}."
+
+      - name: Unit tests + coverage gate
+        if: steps.pin.outputs.release == 'true'
+        run: make test
+
+      - name: Terraform and script tests
+        if: steps.pin.outputs.release == 'true'
+        run: make tf-test
+
+      - name: Rebuild and compare with the pin
+        if: steps.pin.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.pin.outputs.version }}
+        run: |
+          set -euo pipefail
+          make dist VERSION="${VERSION}"
+          python3 scripts/pin.py check --sums dist/SHA256SUMS
+
+      - name: Release notes
+        if: steps.pin.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          last="$(git tag --list 'apps/costguard/v*' --sort=-v:refname | head -n1)"
+          {
+            echo "Install or upgrade: check out this tag and run \`terraform apply\` in \`apps/costguard/terraform\` (see \`apps/costguard/README.md\`). The Terraform code at this tag installs exactly these binaries:"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+            echo
+            # Before the first tag, the history is the scrapped SKE edition's.
+            if [ -n "${last}" ]; then
+              echo "Changes since ${last}:"
+              echo
+              git log --no-merges --format='- %s' "${last}..HEAD" -- .
+            else
+              echo "First release."
+            fi
+          } > "${RUNNER_TEMP}/notes.md"
+          cat "${RUNNER_TEMP}/notes.md"
+
+      - name: Publish the release
+        if: steps.pin.outputs.release == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.pin.outputs.tag }}
+          VERSION: ${{ steps.pin.outputs.version }}
+          PRERELEASE: ${{ steps.pin.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          auth="Authorization: token ${TOKEN}"
+          # A draft left by an earlier failed run holds the tag name (creating
+          # the release again would answer 409): delete it.
+          curl -sS --fail-with-body -H "${auth}" "${api}/releases?draft=true&limit=50" |
+            python3 -c 'import json, os, sys; [print(r["id"]) for r in json.load(sys.stdin) if r["tag_name"] == os.environ["TAG"] and r["draft"]]' |
+            while read -r id; do
+              echo "Deleting the draft ${id} left by an earlier run."
+              curl -sS --fail-with-body -X DELETE -H "${auth}" "${api}/releases/${id}"
+            done
+          # A draft creates no tag, so a failed upload leaves nothing
+          # installable behind.
+          body="$(python3 -c 'import json, os; print(json.dumps({"tag_name": os.environ["TAG"], "target_commitish": os.environ["GITHUB_SHA"], "name": "costguard " + os.environ["VERSION"], "body": open(os.environ["RUNNER_TEMP"] + "/notes.md").read(), "draft": True, "prerelease": os.environ["PRERELEASE"] == "true", "hide_archive_links": True}))')"
+          id="$(curl -sS --fail-with-body -X POST -H "${auth}" -H "Content-Type: application/json" -d "${body}" "${api}/releases" |
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
+          for f in dist/*; do
+            curl -sS --fail-with-body -X POST -H "${auth}" -F "attachment=@${f}" \
+              "${api}/releases/${id}/assets?name=$(basename "${f}")" > /dev/null
+          done
+          # Publishing creates the tag, on the commit that was tested and built.
+          curl -sS --fail-with-body -X PATCH -H "${auth}" -H "Content-Type: application/json" \
+            -d '{"draft": false}' "${api}/releases/${id}" > /dev/null
+          echo "Released ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+
+      # What every server does: download without logging in, through the URL
+      # the Terraform code pins (the tag's slashes escaped), and check the hash.
+      - name: Download check
+        if: steps.pin.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          python3 scripts/pin.py urls | while read -r arch url sha; do
+            curl -sS -fL --proto '=https' --proto-redir '=https' -o "${RUNNER_TEMP}/${arch}" "${url}"
+            echo "${sha}  ${RUNNER_TEMP}/${arch}" | sha256sum -c -
+          done

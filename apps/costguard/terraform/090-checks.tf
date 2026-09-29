@@ -29,7 +29,7 @@ resource "terraform_data" "settings" {
 
     precondition {
       condition     = local.binary.version != ""
-      error_message = "This checkout pins no costguard release (025-release.tf is empty between releases). Check out a release tag (apps/costguard/vX.Y.Z), or set binary_override for a test build."
+      error_message = "This checkout pins no costguard release (025-release.tf is empty; the first release pins it). Check out a release tag (apps/costguard/vX.Y.Z), or set binary_override for a test build."
     }
 
     precondition {

@@ -275,12 +275,31 @@ run "delete_across_the_week_boundary" {
   }
 }
 
-run "no_release_pinned" {
+# Every release tag, and main between releases, pins a release (make pin
+# writes 025-release.tf); without binary_override the server installs it.
+run "release_pinned" {
   command = plan
   variables {
     binary_override = null
+    download_url    = null
   }
-  expect_failures = [terraform_data.settings]
+  assert {
+    condition     = can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$", local.release.version)) && keys(local.release.sha256) == ["amd64", "arm64"] && alltrue([for h in values(local.release.sha256) : can(regex("^[0-9a-f]{64}$", h))])
+    error_message = "025-release.tf must pin a version and a SHA-256 per architecture: make pin VERSION=vX.Y.Z."
+  }
+  assert {
+    condition     = local.release.download_url == "https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases/download/apps%2Fcostguard%2F{version}/"
+    error_message = "The pin must point to the Forgejo release of tag apps/costguard/<version>, slashes escaped: ${local.release.download_url}"
+  }
+  assert {
+    condition = jsondecode(one([for f in yamldecode(module.cloud_init.user_data).write_files : f.content if f.path == "/etc/costguard/install.json"])) == {
+      version = local.release.version
+      url     = local.release.download_url
+      sha256  = local.release.sha256
+      output  = "slack"
+    }
+    error_message = "Without binary_override, the server must install the pinned release."
+  }
 }
 
 # ---- Typos and wrong values fail ----
