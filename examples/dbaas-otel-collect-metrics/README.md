@@ -1,8 +1,8 @@
-<!-- tags: dbaas, postgresql, mongodb, otel, observability, metrics, monitoring -->
+<!-- tags: dbaas, postgresql, otel, observability, metrics, monitoring -->
 
 # DBaaS OpenTelemetry Metrics Collection
 
-Collect metrics from STACKIT PostgreSQL Flex and MongoDB instances using OpenTelemetry (OTel) and export them to STACKIT Observability.
+Collect metrics from STACKIT PostgreSQL Flex instances using OpenTelemetry (OTel) and export them to STACKIT Observability.
 
 ## Architecture
 
@@ -79,7 +79,6 @@ flowchart LR
 The OTel Collector scrapes metrics from:
 
 - **PostgreSQL**: `https://postgres-prom-proxy.api.stackit.cloud/v2/...`
-- **MongoDB**: `https://mongodb-prom-proxy.api.stackit.cloud/v2/...`
 
 _Note: MSSQL is not supported._
 
@@ -96,4 +95,3 @@ kubectl logs deploy/otel-collector -n monitoring -f
 ## Documentation
 
 - [PostgreSQL Flex Metrics](https://docs.stackit.cloud/products/databases/postgresql-flex/reference/observability-metrics-in-postgresql-flex/)
-- [MongoDB Flex Metrics](https://docs.stackit.cloud/products/databases/mongodb-flex/reference/observability-metrics/)
