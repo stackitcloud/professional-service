@@ -48,8 +48,7 @@ resource "kubernetes_secret_v1" "otel_secret" {
 
   data = {
     OBSERVABILITY_AUTHORIZATION_HEADER = "Basic ${base64encode("${stackit_observability_credential.otel.username}:${stackit_observability_credential.otel.password}")}"
-    JSON                               = stackit_service_account_key.this.json
-    PRIVATE_KEY                        = jsondecode(stackit_service_account_key.this.json).credentials.privateKey
+    PRIVATE_KEY                        = local.sa_json.credentials.privateKey
   }
 }
 
