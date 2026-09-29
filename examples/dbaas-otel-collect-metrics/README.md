@@ -77,6 +77,8 @@ flowchart LR
 > [!WARNING]
 > The service account API generates the private key, and Terraform stores it in plain text in the state. Anyone who can read the state can read the key. This setup is only an example and should not be used this way in production.
 
+The key is valid for 180 days. `time_rotating` replaces it on the first `terraform apply` after day 150, so run `terraform apply` between day 150 and 180, or the collector stops scraping.
+
 ## Scrape Configuration
 
 The OTel Collector scrapes metrics from:

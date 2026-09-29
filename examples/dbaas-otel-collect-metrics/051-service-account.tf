@@ -32,6 +32,10 @@ resource "stackit_service_account_key" "this" {
   rotate_when_changed = {
     rotation = time_rotating.rotate.id
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "stackit_authorization_project_role_assignment" "this" {
