@@ -99,3 +99,121 @@ jobs:
       # a broken cross-build before a release does.
       - name: Build the release binaries (linux/amd64, linux/arm64)
         run: make dist VERSION=ci-check
+
+  terraform:
+    name: "Terraform ${{ matrix.terraform }}"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest version the code supports and the newest.
+        terraform: ["1.9.8", "latest"]
+    defaults:
+      run:
+        working-directory: apps/costguard-vm/terraform
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive . ../test
+
+      - name: terraform init + validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      # Variable checks, rules across settings, rendered config and units,
+      # resources per option; the STACKIT provider is mocked.
+      - name: terraform test
+        run: terraform test
+
+      # A plan with the real provider, offline: every data source waits for
+      # the project the apply creates, so nothing calls the API. It catches
+      # what validate and the mocked tests can't (provider validators, plan
+      # modifiers). The key is generated per run and never leaves the job.
+      - name: Offline plan (report only, and delete + break-glass)
+        run: |
+          tmp=$(mktemp -d)
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/key.pem" 2>/dev/null
+          python3 -c 'import json, sys; print(json.dumps({"id": "00000000-0000-4000-8000-000000000009", "publicKey": "unused", "createdAt": "2026-01-01T00:00:00Z", "validUntil": "2099-01-01T00:00:00Z", "keyType": "USER_MANAGED", "keyOrigin": "GENERATED", "keyAlgorithm": "RSA_2048", "active": True, "credentials": {"kid": "00000000-0000-4000-8000-000000000009", "iss": "ci-offline-plan@sa.stackit.cloud", "sub": "00000000-0000-4000-8000-000000000008", "aud": "https://stackit-service-account-prod.apps.01.cf.eu01.stackit.cloud", "privateKey": open(sys.argv[1]).read()}}))' "$tmp/key.pem" >"$tmp/key.json"
+          # Everything in the tfvars, nothing exported: like an install.
+          cat >"$tmp/ci.tfvars" <<TFVARS
+          service_account_key_path = "$tmp/key.json"
+          project_owner_email      = "deployer@sa.stackit.cloud"
+          organization_id          = "11111111-0000-4000-8000-000000000000"
+          output                   = "slack"
+          webhook_url              = "https://hooks.slack.com/services/T0/B0/ci"
+          binary_override          = { version = "v0.0.0-ci", sha256 = { amd64 = "0000000000000000000000000000000000000000000000000000000000000000" } }
+          download_url             = "https://downloads.example/{version}/"
+          TFVARS
+          terraform plan -input=false -lock=false -var-file="$tmp/ci.tfvars"
+          terraform plan -input=false -lock=false -var-file="$tmp/ci.tfvars" \
+            -var 'features={ delete = { enabled = true } }' \
+            -var 'break_glass={ public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOffline+plan+key+only+for+ci+AAAAAAAAAAAAAAA", allowed_cidr = "203.0.113.7/32" }'
+          rm -rf "$tmp"
+
+  opentofu:
+    name: "OpenTofu"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    defaults:
+      run:
+        working-directory: apps/costguard-vm/terraform
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: "1.12.6"
+          tofu_wrapper: false
+
+      - name: tofu init + validate + test
+        run: |
+          tofu init -backend=false -input=false
+          tofu validate
+          tofu test
+
+  tflint:
+    name: "tflint"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    defaults:
+      run:
+        working-directory: apps/costguard-vm/terraform
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      # A pinned release with its checksum instead of a third-party action.
+      - name: Install tflint v0.64.0
+        run: |
+          curl -fsSL --proto '=https' -o /tmp/tflint.zip https://github.com/terraform-linters/tflint/releases/download/v0.64.0/tflint_linux_amd64.zip
+          echo "cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537  /tmp/tflint.zip" | sha256sum -c -
+          python3 -c 'import zipfile; zipfile.ZipFile("/tmp/tflint.zip").extract("tflint", "/tmp")'
+          chmod +x /tmp/tflint
+
+      - name: tflint (root config and module)
+        run: /tmp/tflint --format compact
+
+  installer:
+    name: "Install script tests"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          # Debian 13's python3
+          python-version: "3.13"
+
+      - name: costguard_install.py unit tests
+        run: python3 -m unittest discover -v -s apps/costguard-vm/terraform/modules/cloud-init/files -p 'test_*.py'
