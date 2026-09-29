@@ -57,7 +57,6 @@ resource "helm_release" "opentelemetry_collector" {
   chart      = "opentelemetry-collector"
   version    = "0.152.0"
   namespace  = kubernetes_namespace_v1.monitoring.metadata[0].name
-  timeout    = 30
 
   values = [
     local.otel_helm_values
