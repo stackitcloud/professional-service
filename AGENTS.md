@@ -222,10 +222,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 ## Apps
 
-- **`costguard`** `[cost, cleanup, automation, iaas, kubernetes]`  
-  **costguard keeps your STACKIT cloud tidy.** It looks for things that cost money but are not used by anything, tells your team about them in a chat channel every Monday and, once you are ready, deletes them for you
-- **`costguard-vm`** `[cost, cleanup, automation, iaas]`  
-  **costguard-vm keeps your STACKIT cloud tidy.** It looks for things that cost money but are not used by anything, tells your team about them in a chat channel every Monday and, once you are ready, deletes them for you
+- **`costguard`** `[cost, cleanup, automation, iaas, terraform]`  
+  **costguard keeps your STACKIT cloud tidy and installs with one `terraform apply`.** It looks for things that cost money but are not used by anything, reports them in a chat channel and, once you switch deletion on, deletes them. It runs on a small server that logs in with the service account attached to it, so no key is stored on the server
 
 ---
 
