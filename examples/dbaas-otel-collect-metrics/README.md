@@ -61,13 +61,13 @@ flowchart LR
 
 ## Prerequisites
 
-- STACKIT Project ID and Service Account key.
+- A STACKIT project and a service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`.
 - Terraform 1.10 or later and STACKIT provider 0.117.0 or later.
-- `kubectl` and `helm` installed.
+- An authenticated `stackit` CLI (`stackit auth login` or `stackit auth activate-service-account`) and `kubectl` for debugging.
 
 ## Usage
 
-1. **Configure**: Update `stackit_project_id` and `stackit_service_account_key_path` in `01-variables.tf`.
+1. **Configure**: `cp terraform.tfvars.example terraform.tfvars` and set `stackit_project_id`.
 2. **Deploy**:
    ```bash
    terraform init
@@ -88,7 +88,9 @@ _Note: MSSQL is not supported._
 View live scrape data in the collector logs:
 
 ```bash
-kubectl logs -l app.kubernetes.io/name=otel-collector -n monitoring -f
+eval "$(terraform output -raw kubeconfig_command)"
+kubectl config use-context "$(terraform output -raw ske_cluster_name)"
+kubectl logs deploy/otel-collector -n monitoring -f
 ```
 
 ## Documentation
