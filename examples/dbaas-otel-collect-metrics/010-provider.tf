@@ -21,10 +21,6 @@ terraform {
       source  = "stackitcloud/stackit"
       version = ">= 0.117.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = ">= 3.6.3"
-    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = ">=2.14.0"
