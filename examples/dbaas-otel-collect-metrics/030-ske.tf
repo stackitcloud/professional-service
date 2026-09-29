@@ -18,28 +18,9 @@ ephemeral "stackit_ske_kubeconfig" "this" {
   cluster_name = stackit_ske_cluster.this.id != "" ? stackit_ske_cluster.this.name : ""
 }
 
-data "stackit_ske_kubernetes_versions" "this" {
-  version_state = "SUPPORTED"
-}
-
-data "stackit_ske_machine_image_versions" "this" {
-  version_state = "SUPPORTED"
-}
-
-locals {
-  flatcar_supported_version = one(flatten([
-    for mi in data.stackit_ske_machine_image_versions.this.machine_images : [
-      for v in mi.versions :
-      v.version
-      if mi.name == "flatcar"
-    ]
-  ]))
-}
-
 resource "stackit_ske_cluster" "this" {
-  project_id             = var.stackit_project_id
-  name                   = "dbaas-otel"
-  kubernetes_version_min = data.stackit_ske_kubernetes_versions.this.kubernetes_versions.0.version
+  project_id = var.stackit_project_id
+  name       = "dbaas-otel"
 
   node_pools = [
     {
@@ -49,7 +30,6 @@ resource "stackit_ske_cluster" "this" {
       maximum            = "9"
       max_surge          = "3"
       availability_zones = ["eu01-1", "eu01-2", "eu01-3"]
-      os_version_min     = local.flatcar_supported_version
       os_name            = "flatcar"
       volume_size        = 150
       volume_type        = "storage_premium_perf6"
