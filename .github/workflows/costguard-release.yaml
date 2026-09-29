@@ -38,8 +38,13 @@ concurrency:
 jobs:
   release:
     name: "Release"
-    # Releases live on Forgejo only, never on the GitHub mirror.
-    if: github.server_url == 'https://professional-service.git.onstackit.cloud'
+    # Releases run on the internal Forgejo only, never on GitHub (the mirror
+    # is stackitcloud/professional-service on https://github.com): both the
+    # host and the repository must match. startsWith: Forgejo 16 evaluates
+    # this on the server, where server_url ends with "/".
+    if: >-
+      startsWith(github.server_url, 'https://professional-service.git.onstackit.cloud') &&
+      github.repository == 'professional-service-best-practices/professional-service'
     runs-on: stackit-ubuntu-22
     defaults:
       run:
