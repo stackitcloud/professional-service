@@ -29,7 +29,7 @@ sequenceDiagram
     API->>PG: fetch Prometheus metrics
     PG-->>API: metrics data
     API-->>OT: metrics (prometheus format)
-    OT->>OBS: push metrics (prometheus exporter)
+    OT->>OBS: push metrics (Prometheus remote write)
 ```
 
 ```mermaid
@@ -61,9 +61,11 @@ flowchart LR
 
 ## Prerequisites
 
-- A STACKIT project and a service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`.
+- A STACKIT project and a service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`. The example creates a service account and a role assignment, so the key needs rights such as `project.owner`.
 - Terraform 1.10 or later and STACKIT provider 0.117.0 or later.
 - An authenticated `stackit` CLI (`stackit auth login` or `stackit auth activate-service-account`) and `kubectl` for debugging.
+
+The provider block enables the experiments `iam` for the role assignment and `ske` for the ephemeral kubeconfig.
 
 ## Usage
 
@@ -75,7 +77,7 @@ flowchart LR
    ```
 
 > [!WARNING]
-> The service account API generates the private key, and Terraform stores it in plain text in the state. Anyone who can read the state can read the key. This setup is only an example and should not be used this way in production.
+> The service account API generates the private key, and Terraform stores it in plain text in the state and in the Kubernetes Secret `otel-secrets`. Anyone who can read the state can read the key. This setup is only an example and should not be used this way in production.
 
 The key is valid for 180 days. `time_rotating` replaces it on the first `terraform apply` after day 150, so run `terraform apply` between day 150 and 180, or the collector stops scraping.
 
@@ -92,8 +94,6 @@ terraform output -raw grafana_url
 The OTel Collector scrapes metrics from:
 
 - **PostgreSQL**: `https://postgres-prom-proxy.api.stackit.cloud/v2/...`
-
-_Note: MSSQL is not supported._
 
 ## Debugging
 
