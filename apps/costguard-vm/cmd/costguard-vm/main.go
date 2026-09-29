@@ -44,7 +44,7 @@ func main() {
 			"  report  scan and post a report; changes nothing (the report run while delete is off)\n"+
 			"  flag    post, then label new cleanup candidates delete=true (the report run while delete is on)\n"+
 			"  delete  delete everything labelled delete=true that may go (needs delete on)\n"+
-			"  boot    wait for the login, then post a report; changes nothing (once after every server start)\n\n", app.Usage)
+			"  boot    wait for the login, then post a report; changes nothing (once after the server is created)\n\n", app.Usage)
 		flag.PrintDefaults()
 	}
 	flag.Parse()

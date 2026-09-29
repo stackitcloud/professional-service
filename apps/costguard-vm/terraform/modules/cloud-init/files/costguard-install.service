@@ -1,0 +1,48 @@
+# Installed by costguard-vm's cloud-init (Terraform). Downloads and verifies
+# the binary once; every costguard run requires this unit, so a failed install
+# is retried at the next run or boot. See costguard_install.py.
+[Unit]
+Description=Download and verify the costguard-vm binary
+Documentation=https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/src/branch/main/apps/costguard-vm
+ConditionPathExists=!/usr/local/bin/costguard-vm
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Only for the failure message: the webhook URL. systemd reads the file as
+# root before starting the process.
+EnvironmentFile=/etc/costguard/costguard.env
+ExecStart=/usr/bin/python3 /usr/local/lib/costguard/costguard_install.py
+# 4 attempts with 60 s timeouts and 3 pauses of 5 minutes, plus the post.
+TimeoutStartSec=30min
+StandardOutput=journal+console
+StandardError=journal+console
+
+# Runs as root only to write /usr/local/bin; everything else is locked down.
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+InaccessiblePaths=-/var/lib/cloud
+UMask=0022

@@ -1,0 +1,14 @@
+# Installed by costguard-vm's cloud-init (Terraform).
+[Unit]
+Description=${description}
+
+[Timer]
+OnCalendar=${on_calendar}
+# Never catch up a missed run: a flagging report run caught up late would
+# leave too little time before the delete run.
+Persistent=false
+AccuracySec=1s
+Unit=${unit}
+
+[Install]
+WantedBy=timers.target

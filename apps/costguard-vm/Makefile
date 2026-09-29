@@ -20,8 +20,9 @@ VERSION   ?= dev
 PLATFORMS := linux/amd64 linux/arm64
 # sha256sum on Linux, shasum on macOS; both write the same format.
 SHA256    := $(shell command -v sha256sum 2>/dev/null || echo shasum -a 256)
+TERRAFORM ?= terraform
 
-.PHONY: build dist test lint
+.PHONY: build dist test lint tf-test vmtest
 
 # Compiles the static single binary for this machine to dist/costguard-vm.
 build:
@@ -79,3 +80,18 @@ test:
 lint:
 	go vet $(PACKAGE)
 	go vet -tags dev $(PACKAGE)
+
+# Checks the Terraform code offline: fmt, validate, the Terraform tests
+# (STACKIT provider mocked) and the install script's unit tests.
+tf-test:
+	# Not "." : a local terraform.tfvars is nobody else's business.
+	cd terraform && $(TERRAFORM) fmt -check -recursive $$(ls *.tf) modules tests ../test
+	$(TERRAFORM) -chdir=terraform init -backend=false -input=false >/dev/null
+	$(TERRAFORM) -chdir=terraform validate
+	$(TERRAFORM) -chdir=terraform test
+	python3 -m unittest discover -s terraform/modules/cloud-init/files -p 'test_*.py'
+
+# Boots the real cloud-init in a local QEMU VM with the make dist binary
+# and fake STACKIT services (needs KVM); see test/vm/run.sh.
+vmtest:
+	TERRAFORM=$(TERRAFORM) test/vm/run.sh

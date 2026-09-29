@@ -1,0 +1,41 @@
+# costguard-vm settings. Copy to terraform.tfvars and fill in; nothing needs to
+# be exported. terraform.tfvars is git-ignored: never commit it, it holds the
+# webhook URL (chmod 600 terraform.tfvars).
+
+# The deployer: a service account allowed to create the project and the
+# custom roles on the organization. Keep the key file outside the repository.
+service_account_key_path = "~/.stackit/deployer-key.json"
+project_owner_email      = "deployer@sa.stackit.cloud" # its email; becomes owner of the new project
+
+organization_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# The chat: its type and webhook. The URL is a secret.
+output      = "teams" # teams | slack | googlechat
+webhook_url = "https://..."
+
+# What costguard-vm does. Every feature has its own switch and schedule
+# (days Mon..Sun, time HH:MM in time_zone); keys left out keep the default.
+# features = {
+#   report = { enabled = true, days = ["Mon"], time = "08:00" }  # the default
+#   delete = { enabled = true, days = ["Tue"], time = "08:00" }  # default: off
+# }
+# time_zone = "Europe/Berlin"
+
+# Where it looks: folders and projects by ID or exact name.
+# scope = { folders = ["team-a"], projects = [] }  # default: the whole organization
+# skip  = { projects = ["prod-core"] }              # never scanned
+# regions = ["eu01"]
+
+# Where it runs (defaults: a new project "costguard" under the organization
+# and a new small network).
+# project_id          = "<existing project UUID>"
+# network_id          = "<existing network UUID>"
+# parent_container_id = "<folder>"  # warns: folder admins could act as costguard-vm
+# availability_zone   = "eu01-1"
+
+# Temporary SSH for debugging; replaces the server. Remove and apply to close.
+# break_glass = { public_key = "ssh-ed25519 AAAA... you@laptop", allowed_cidr = "203.0.113.7/32" }
+
+# Only for test builds (a checkout of a release tag pins its own binary):
+# binary_override = { version = "pr-75", sha256 = { amd64 = "<64 hex>" } }
+# download_url    = "https://<host>/<path>/{version}/"
