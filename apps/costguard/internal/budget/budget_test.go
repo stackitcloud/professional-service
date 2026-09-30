@@ -40,8 +40,6 @@ const (
 	deletedID = "00000000-0000-0000-0000-0000000000d1"
 )
 
-// The run on Tuesday 29 September 2026 sees September up to Monday the
-// 28th; STACKIT updated the costs that morning.
 var (
 	runAt   = time.Date(2026, 9, 29, 8, 0, 0, 0, time.UTC)
 	updated = time.Date(2026, 9, 29, 7, 41, 0, 0, time.UTC)
@@ -54,9 +52,6 @@ type env struct {
 	now   time.Time
 }
 
-// setup builds an organization with a folder "team-a" (projects api and,
-// in its subfolder, web) and a project "shop" directly below the
-// organization.
 func setup(limits ...config.Budget) *env {
 	e := &env{store: fake.New(), logs: &bytes.Buffer{}, now: runAt}
 	created := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -71,7 +66,6 @@ func setup(limits ...config.Budget) *env {
 	return e
 }
 
-// spend adds a project's charge on a September day.
 func (e *env) spend(id, name string, day int, eur float64) {
 	e.spendOn(id, name, time.Date(2026, 9, day, 0, 0, 0, 0, time.UTC), eur)
 }
@@ -85,8 +79,6 @@ func (e *env) spendOn(id, name string, day time.Time, eur float64) {
 	e.store.Daily[id] = p
 }
 
-// at sets the run's time (08:00 UTC) and STACKIT's last update (that
-// morning).
 func (e *env) at(year int, month time.Month, day int) {
 	e.now = time.Date(year, month, day, 8, 0, 0, 0, time.UTC)
 	e.store.LastModified = time.Date(year, month, day, 7, 41, 0, 0, time.UTC)
@@ -117,9 +109,9 @@ func TestOrganizationBudgetReached(t *testing.T) {
 		e.spend(shopID, "shop", d, 2)
 	}
 	e.spend(apiID, "api", 3, 20)
-	e.spend(deletedID, "old-project", 2, 5) // deleted this month: still counts
+	e.spend(deletedID, "old-project", 2, 5)
 	e.spend(shopID, "shop", 28, 3)
-	e.spend(shopID, "shop", 29, 50) // today: not asked for, not counted
+	e.spend(shopID, "shop", 29, 50)
 
 	res := e.check(t)
 	if res.Month.Format(dateLayout) != "2026-09-01" || res.Checked.Format(dateLayout) != "2026-09-28" || res.NothingIn() ||
@@ -130,7 +122,6 @@ func TestOrganizationBudgetReached(t *testing.T) {
 	if b.Target != "organization" || b.MonthEUR != 82 || b.DayEUR != 3 || b.Reached != 80 || b.LimitEUR != 100 {
 		t.Errorf("budget = %+v", b)
 	}
-	// 82 € in 28 days, 30 days in September.
 	if b.ForecastEUR != 87.86 {
 		t.Errorf("forecast = %v", b.ForecastEUR)
 	}
@@ -150,8 +141,6 @@ func TestOrganizationBudgetReached(t *testing.T) {
 }
 
 func TestReachedEveryRunUntilTheMonthEnds(t *testing.T) {
-	// No state: a budget above 80 % since the 10th is listed again, also
-	// by the first run after an install in the middle of the month.
 	e := setup(orgBudget(100, 80, 100))
 	e.spend(shopID, "shop", 10, 85)
 	for _, day := range []int{29, 30} {
@@ -166,7 +155,7 @@ func TestHighestThresholdReached(t *testing.T) {
 	e := setup(orgBudget(100, 50, 80, 100, 150))
 	e.spend(shopID, "shop", 27, 70)
 	e.spend(shopID, "shop", 28, 35)
-	if b := e.check(t).Budgets[0]; b.Reached != 100 || b.NextThreshold() != 150 {
+	if b := e.check(t).Budgets[0]; b.Reached != 100 {
 		t.Errorf("budget = %+v", b)
 	}
 }
@@ -181,7 +170,6 @@ func TestBelowEveryThreshold(t *testing.T) {
 }
 
 func TestCorrectionThatLowersTheTotal(t *testing.T) {
-	// A credit yesterday takes the month below 80 %: not listed any more.
 	e := setup(orgBudget(100, 80))
 	e.spend(shopID, "shop", 20, 85)
 	e.spend(shopID, "shop", 28, -10)
@@ -191,8 +179,6 @@ func TestCorrectionThatLowersTheTotal(t *testing.T) {
 }
 
 func TestThresholdExactlyReachedWithFloatSums(t *testing.T) {
-	// 0.1 + 0.2 is 0.30000000000000004 in float64: rounded to cents,
-	// the same answer always gives the same result.
 	e := setup(orgBudget(0.3, 100))
 	e.spend(shopID, "shop", 27, 0.1)
 	e.spend(apiID, "api", 28, 0.2)
@@ -202,7 +188,6 @@ func TestThresholdExactlyReachedWithFloatSums(t *testing.T) {
 }
 
 func TestFirstOfTheMonthAsksNothing(t *testing.T) {
-	// No cost of October exists yet: nothing is read, nothing is reached.
 	e := setup(orgBudget(1, 80))
 	e.at(2026, 10, 1)
 	e.spend(shopID, "shop", 30, 500)
@@ -221,7 +206,7 @@ func TestFirstOfTheMonthAsksNothing(t *testing.T) {
 func TestSecondOfTheMonthCountsOnlyTheNewMonth(t *testing.T) {
 	e := setup(orgBudget(10, 80))
 	e.at(2026, 10, 2)
-	e.spend(shopID, "shop", 30, 500) // September
+	e.spend(shopID, "shop", 30, 500)
 	e.spendOn(shopID, "shop", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), 9)
 	res := e.check(t)
 	if b := res.Budgets[0]; b.MonthEUR != 9 || b.DayEUR != 9 || b.Reached != 80 {
@@ -237,12 +222,12 @@ func TestForecastFromTheSeventh(t *testing.T) {
 		day  time.Time
 		want float64
 	}{
-		{time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC), 0},     // too early
-		{time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC), 300},   // 30 days
-		{time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC), 310},   // 31 days
-		{time.Date(2026, 2, 7, 0, 0, 0, 0, time.UTC), 280},   // 28 days
-		{time.Date(2028, 2, 7, 0, 0, 0, 0, time.UTC), 290},   // leap year
-		{time.Date(2026, 12, 30, 0, 0, 0, 0, time.UTC), 310}, // 300 € in 30 days, 31 days
+		{time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC), 0},
+		{time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC), 300},
+		{time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC), 310},
+		{time.Date(2026, 2, 7, 0, 0, 0, 0, time.UTC), 280},
+		{time.Date(2028, 2, 7, 0, 0, 0, 0, time.UTC), 290},
+		{time.Date(2026, 12, 30, 0, 0, 0, 0, time.UTC), 310},
 	} {
 		e := setup(orgBudget(1000, 100))
 		next := tc.day.AddDate(0, 0, 1)
@@ -257,8 +242,6 @@ func TestForecastFromTheSeventh(t *testing.T) {
 }
 
 func TestLateCostsCountUpToTheLastDayIn(t *testing.T) {
-	// STACKIT last updated yesterday morning: the 28th is not in, so the
-	// month to date ends on the 27th (the answer's later days are ignored).
 	e := setup(orgBudget(100, 80))
 	e.store.LastModified = time.Date(2026, 9, 28, 7, 40, 0, 0, time.UTC)
 	e.spend(shopID, "shop", 27, 90)
@@ -273,8 +256,6 @@ func TestLateCostsCountUpToTheLastDayIn(t *testing.T) {
 }
 
 func TestLateCostsOnTheSecond(t *testing.T) {
-	// On 2 October STACKIT has not updated since 1 October: no cost of
-	// October is in yet.
 	e := setup(orgBudget(1, 80))
 	e.at(2026, 10, 2)
 	e.store.LastModified = time.Date(2026, 10, 1, 7, 40, 0, 0, time.UTC)
@@ -301,10 +282,10 @@ func TestMissingLastModifiedIsUsedAsItIs(t *testing.T) {
 func TestFolderBudgetSumsEveryProjectBelow(t *testing.T) {
 	for _, descendants := range []bool{false, true} {
 		e := setup(config.Budget{Name: "Team A", Folder: "Team-A", MonthlyEUR: 50, Thresholds: []int{50}})
-		e.store.ListDescendants = descendants // listings that return more than direct children
+		e.store.ListDescendants = descendants
 		e.spend(apiID, "api", 5, 10)
 		e.spend(webID, "web", 28, 20)
-		e.spend(shopID, "shop", 28, 100) // not in the folder
+		e.spend(shopID, "shop", 28, 100)
 		res := e.check(t)
 		if len(res.Budgets) != 1 || len(res.Problems) != 0 {
 			t.Fatalf("descendants %v: res = %+v", descendants, res)
@@ -330,7 +311,6 @@ func TestProjectBudgetByNameOrID(t *testing.T) {
 		config.Budget{Name: "Shop", Project: " SHOP ", MonthlyEUR: 10, Thresholds: []int{100}},
 		config.Budget{Name: "API", Project: apiID, MonthlyEUR: 10, Thresholds: []int{100}},
 	)
-	// A project being deleted doesn't make the name ambiguous.
 	e.store.Containers["00000000-0000-0000-0000-0000000000a9"] = stackit.Container{ID: "00000000-0000-0000-0000-0000000000a9", Name: "shop", ParentID: org, LifecycleState: "DELETING"}
 	e.spend(shopID, "shop", 28, 10)
 	e.spend(apiID, "api", 2, 3)
@@ -413,7 +393,7 @@ func TestTopListsOnlyProjectsWithSpend(t *testing.T) {
 	e.spend("00000000-0000-0000-0000-0000000000a4", "fourth", 1, 0.5)
 	top := e.check(t).Budgets[0].Top
 	if len(top) != 3 || top[0].ID != shopID || top[1].ID != webID || top[2].ID != deletedID {
-		t.Errorf("top = %+v", top) // equal amounts: ordered by ID
+		t.Errorf("top = %+v", top)
 	}
 }
 

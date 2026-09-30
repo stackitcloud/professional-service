@@ -13,8 +13,7 @@
 # limitations under the License.
 
 # Renders the server's cloud-init user data. A pure function (no providers),
-# so test/vm renders exactly the same user data for the local QEMU boot.
-#
+
 # The whole cloud-config is built as an object and yamlencode()d: no value
 # (a skip entry, the webhook URL) can break the YAML. Nothing here may print
 # a secret: cloud-init's output goes to the serial console, which the IaaS
@@ -23,28 +22,20 @@
 locals {
   # ---- Features ----
 
-  # Week order (keys() would sort alphabetically).
   week      = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
   day_names = { Mon = "Monday", Tue = "Tuesday", Wed = "Wednesday", Thu = "Thursday", Fri = "Friday", Sat = "Saturday", Sun = "Sunday" }
 
   feature_defaults = {
     report = { enabled = true, days = ["Mon"], time = "08:00" }
     delete = { enabled = false, days = ["Tue"], time = "08:00" }
-    # Each budgets run compares the month to date with the thresholds, so
-    # any days work; workdays keep the weekend quiet.
     budgets = { enabled = false, days = ["Mon", "Tue", "Wed", "Thu", "Fri"], time = "10:00", thresholds = [80, 100], limits = [] }
   }
-  # The given keys over the defaults (the root config has checked them).
   features = { for name, defaults in local.feature_defaults : name => merge(defaults, try(var.settings.features[name], {})) }
 
   report_enabled  = local.features.report.enabled
   delete_enabled  = local.features.delete.enabled
   budgets_enabled = local.features.budgets.enabled
 
-  # Per feature: its days in week order, the minutes of the week it runs at,
-  # the systemd calendar spec and the text the messages show, e.g.
-  # "Tuesday and Thursday 08:00 (Europe/Berlin)". costguard words the
-  # budgets schedule the same way (config.DaysText).
   feature_days = { for name, f in local.features : name => [for d in local.week : d if contains(f.days, d)] }
   schedules = { for name, f in local.features : name => {
     minutes = [for d in local.feature_days[name] :
@@ -60,14 +51,10 @@ locals {
     )
   } }
 
-  # Hours from the report run before each delete run to that delete run
-  # (minutes in the week, wrapping around; the same time counts as 0).
   delete_gaps_hours = [for d in local.schedules.delete.minutes :
     min([for r in local.schedules.report.minutes : (d - r + 10080) % 10080]...) / 60
   ]
 
-  # The report timer runs "flag" when delete is on: the Monday message then
-  # also labels new candidates.
   timers = concat(
     local.report_enabled ? [{
       name        = "report"
@@ -113,10 +100,8 @@ locals {
         volumeGbMonthlyEur = var.settings.prices.volume_gb_monthly_eur
       }
     },
-    # costguard refuses deleteRunAt while delete is off.
     local.delete_enabled ? { deleteRunAt = local.schedules.delete.text } : {},
     local.report_enabled ? { reportRunAt = local.schedules.report.text } : {},
-    # Each limit gets its thresholds and only its one target key.
     local.budgets_enabled ? {
       budgets = {
         days = local.feature_days.budgets
@@ -147,8 +132,6 @@ locals {
     unit        = "costguard@${t.subcommand}.service"
   }) }
 
-  # systemd EnvironmentFile: single quotes keep every character literal. The
-  # root config refuses values with quotes, backslashes or line breaks.
   environment_file = join("", [for k in sort(keys(local.environment)) : "${k}='${local.environment[k]}'\n"])
 
   files = concat(
@@ -163,10 +146,7 @@ locals {
       { path = "/usr/local/lib/costguard/costguard_install.py", permissions = "0755", content = file("${path.module}/files/costguard_install.py") },
       { path = "/etc/systemd/system/costguard-install.service", permissions = "0644", content = file("${path.module}/files/costguard-install.service") },
       { path = "/etc/systemd/system/costguard@.service", permissions = "0644", content = file("${path.module}/files/costguard@.service") },
-      # STACKIT's Debian 13 answers LLMNR on 0.0.0.0:5355 (spike).
       { path = "/etc/systemd/resolved.conf.d/50-costguard.conf", permissions = "0644", content = "[Resolve]\nLLMNR=no\nMulticastDNS=no\n" },
-      # unattended-upgrades is installed and enabled in the image; only the
-      # reboot after kernel/libc updates needs configuring.
       {
         path        = "/etc/apt/apt.conf.d/52costguard-unattended-upgrades"
         permissions = "0644"
@@ -174,23 +154,14 @@ locals {
       },
     ],
     [for name, content in local.timer_units : { path = "/etc/systemd/system/${name}", permissions = "0644", content = content }],
-    # Debian's ssh.service doesn't start while this file exists; cloud-init
-    # writes it before sshd would start, runcmd then masks sshd for good.
-    var.break_glass ? [{
-      path        = "/etc/ssh/sshd_config.d/50-costguard.conf"
-      permissions = "0644"
-      content     = "PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\nAllowUsers debian\nX11Forwarding no\n"
-      }] : [{
+    [{
       path        = "/etc/ssh/sshd_not_to_be_run"
       permissions = "0644"
-      content     = "costguard: no SSH without break_glass\n"
+      content     = "costguard: no SSH\n"
     }],
   )
 
-  # sshd is masked unless break-glass is on.
-  # systemd 257's ssh generator also offers sshd on a local AF_UNIX socket
-  # (seen on STACKIT's Debian 13); the mask in /etc wins over the generator.
-  ssh_commands = var.break_glass ? [] : [
+  ssh_commands = [
     ["systemctl", "disable", "--now", "ssh.service", "ssh.socket"],
     ["systemctl", "mask", "ssh.service", "ssh.socket"],
     ["systemctl", "mask", "--now", "sshd-unix-local.socket"],
@@ -201,23 +172,16 @@ locals {
     package_update  = false
     package_upgrade = false
     disable_root    = true
-    # A fixed system user (not DynamicUser), so the lock directory and a
-    # later nftables rule can name it. The Debian default user only exists
-    # for break-glass.
-    users = concat(var.break_glass ? ["default"] : [], [{
+    users = [{
       name           = "costguard"
       system         = true
       shell          = "/usr/sbin/nologin"
       lock_passwd    = true
       no_create_home = true
-    }])
+    }]
     write_files = local.files
-    # No bootcmd: it runs before sysinit.target, and anything waiting there
-    # hangs the boot forever (found in the spike).
     runcmd = concat(
       [
-        # The Server Agent would run Run Command scripts as root, which could
-        # read the service account's token. Terraform already says NEVER.
         ["systemctl", "mask", "stackit-server-agent.service"],
       ],
       local.ssh_commands,
@@ -227,7 +191,6 @@ locals {
       ],
       length(local.timer_units) > 0 ? [concat(["systemctl", "enable", "--now"], keys(local.timer_units))] : [],
       [
-        # Once per server: runcmd runs only on the first boot of an instance.
         ["systemctl", "start", "--no-block", "costguard@boot.service"],
       ],
     )

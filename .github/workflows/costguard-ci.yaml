@@ -95,8 +95,6 @@ jobs:
         with:
           go-version-file: apps/costguard/go.mod
 
-      # The release attaches exactly these files; building them here catches
-      # a broken cross-build before a release does.
       - name: Build the release binaries (linux/amd64, linux/arm64)
         run: make dist VERSION=ci-check
 
@@ -106,7 +104,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The oldest version the code supports and the newest.
         terraform: ["1.9.8", "latest"]
     defaults:
       run:
@@ -129,16 +126,10 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
 
-      # Variable checks, rules across settings, rendered config and units,
-      # resources per option; the STACKIT provider is mocked.
       - name: terraform test
         run: terraform test
 
-      # A plan with the real provider, offline: every data source waits for
-      # the project the apply creates, so nothing calls the API. It catches
-      # what validate and the mocked tests can't (provider validators, plan
-      # modifiers). The key is generated per run and never leaves the job.
-      - name: Offline plan (report only, and delete + break-glass)
+      - name: Offline plan (report only, and delete on)
         run: |
           tmp=$(mktemp -d)
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/key.pem" 2>/dev/null
@@ -155,8 +146,7 @@ jobs:
           TFVARS
           terraform plan -input=false -lock=false -var-file="$tmp/ci.tfvars"
           terraform plan -input=false -lock=false -var-file="$tmp/ci.tfvars" \
-            -var 'features={ delete = { enabled = true } }' \
-            -var 'break_glass={ public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOffline+plan+key+only+for+ci+AAAAAAAAAAAAAAA", allowed_cidr = "203.0.113.7/32" }'
+            -var 'features={ delete = { enabled = true } }'
           rm -rf "$tmp"
 
   opentofu:
@@ -191,7 +181,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
 
-      # A pinned release with its checksum instead of a third-party action.
       - name: Install tflint v0.64.0
         run: |
           curl -fsSL --proto '=https' -o /tmp/tflint.zip https://github.com/terraform-linters/tflint/releases/download/v0.64.0/tflint_linux_amd64.zip
@@ -212,7 +201,6 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          # Debian 13's python3
           python-version: "3.13"
 
       - name: costguard_install.py unit tests

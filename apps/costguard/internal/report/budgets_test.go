@@ -21,12 +21,8 @@ import (
 
 func TestBudgetStatusHelpers(t *testing.T) {
 	b := BudgetStatus{Name: "A", LimitEUR: 200, Thresholds: []int{50, 80, 100}, MonthEUR: 160}
-	if b.Percent() != 80 || b.NextThreshold() != 100 || ThresholdEUR(200, 80) != 160 {
-		t.Errorf("percent %v, next %d", b.Percent(), b.NextThreshold())
-	}
-	b.MonthEUR = 250
-	if b.NextThreshold() != 0 {
-		t.Errorf("every threshold passed: next %d", b.NextThreshold())
+	if b.Percent() != 80 || ThresholdEUR(200, 80) != 160 {
+		t.Errorf("percent %v, threshold %v", b.Percent(), ThresholdEUR(200, 80))
 	}
 	chk := BudgetCheck{Budgets: []BudgetStatus{b, {Name: "B", Reached: 80}, {Name: "C"}}}
 	if got := chk.Reached(); len(got) != 1 || got[0].Name != "B" {

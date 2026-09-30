@@ -43,7 +43,6 @@ const org = "00000000-0000-0000-0000-00000000000a"
 
 var monday = time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
 
-// webhook records the messages it receives.
 type webhook struct {
 	mu     sync.Mutex
 	bodies []string
@@ -73,7 +72,6 @@ type env struct {
 	login   *fakeLogin
 }
 
-// fakeLogin records how long each run was willing to wait for the login.
 type fakeLogin struct {
 	mu    sync.Mutex
 	err   error
@@ -87,17 +85,13 @@ func (l *fakeLogin) Ready(_ context.Context, wait time.Duration) error {
 	return l.err
 }
 
-// deleteOn is what Terraform writes for an install with delete on.
 const deleteOn = "deleteEnabled: true\ndeleteRunAt: \"Tuesday 08:00 (Europe/Berlin)\"\nreportRunAt: \"Monday 08:00 (Europe/Berlin)\"\n"
 
-// setup wires the fake STACKIT, a webhook and the config of an install
-// with delete on into Run.
 func setup(t *testing.T, yaml string) *env {
 	t.Helper()
 	return setupWith(t, deleteOn+yaml)
 }
 
-// setupReportOnly is an install with delete off.
 func setupReportOnly(t *testing.T, yaml string) *env {
 	t.Helper()
 	return setupWith(t, "reportRunAt: \"Monday 08:00 (Europe/Berlin)\"\n"+yaml)
@@ -180,7 +174,6 @@ func TestReportChangesNothing(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
 	msgs := e.hook.messages()
-	// 10 GB at the default 0.065 €/GB plus one IP at 2.92 €.
 	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard report") ||
 		!strings.Contains(msgs[0], "Automatic deletion is off; nothing was changed. With delete on, 2 resources would be deleted, saving about €3.57 per month") {
 		t.Errorf("messages = %v", msgs)
@@ -190,6 +183,30 @@ func TestReportChangesNothing(t *testing.T) {
 	}
 	if !strings.Contains(e.logs.String(), `"category":"detached-volume"`) {
 		t.Errorf("findings must be logged:\n%s", e.logs)
+	}
+}
+
+func TestMessagesNameTheOrganization(t *testing.T) {
+	e := setupReportOnly(t, "")
+	e.store.OrgName = "Acme GmbH"
+	if code := e.run("report"); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, e.logs)
+	}
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], `"text":"Acme GmbH: costguard report"`) ||
+		!strings.Contains(msgs[0], "Acme GmbH · Scope: whole organization") {
+		t.Errorf("messages = %v", msgs)
+	}
+
+	e = setupReportOnly(t, "")
+	e.store.Errs["org:"+org] = fake.Status(403)
+	if code := e.run("report"); code != ExitOK {
+		t.Fatalf("exit %d\n%s", code, e.logs)
+	}
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], `"text":"`+org+`: costguard report"`) {
+		t.Errorf("messages = %v", msgs)
+	}
+	if !strings.Contains(e.logs.String(), "the organization's name could not be read") {
+		t.Errorf("logs:\n%s", e.logs)
 	}
 }
 
@@ -324,7 +341,6 @@ func TestInterruptedDeleteRunStillPosts(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// SIGTERM arrives right after the first deletion.
 	e.store.AfterDelete = func(stackit.Resource) { cancel() }
 
 	if code := e.runCtx(ctx, "delete"); code != ExitFatal {
@@ -383,8 +399,7 @@ func TestFlagPostsACorrectionWhenLabelsFail(t *testing.T) {
 
 func TestDeleteWithNothingToDoStaysQuiet(t *testing.T) {
 	e := setup(t, "")
-	e.addCandidates() // unlabelled: the delete run never flags
-	// The delete run doesn't ask SKE, so an SKE error can't make it post.
+	e.addCandidates()
 	e.store.Errs["ske:p1/eu01"] = fake.Status(403)
 	if code := e.run("delete"); code != ExitOK {
 		t.Fatalf("exit %d", code)
@@ -498,8 +513,6 @@ func TestUsageAndConfigErrors(t *testing.T) {
 }
 
 func TestBrokenConfigIsPostedToTheChat(t *testing.T) {
-	// A typo in a key: the strict parser refuses the file, the chat
-	// settings are still usable.
 	e := setup(t, "skips:\n  projects: [a]\n")
 	if code := e.run("report"); code != ExitFatal {
 		t.Fatalf("exit %d", code)
@@ -509,7 +522,6 @@ func TestBrokenConfigIsPostedToTheChat(t *testing.T) {
 		t.Errorf("messages = %v", msgs)
 	}
 
-	// A value that fails validation: each problem is listed.
 	e = setup(t, "warnEmptyAfterDays: 1\n")
 	if code := e.run("flag"); code != ExitFatal {
 		t.Fatalf("exit %d", code)
@@ -588,7 +600,6 @@ func TestLoginNotReadyPostsFailureAndScansNothing(t *testing.T) {
 	}
 }
 
-// A flag or delete timer left over while delete is off must not act.
 func TestFlagAndDeleteNeedDeleteOn(t *testing.T) {
 	for _, sub := range []string{"flag", "delete"} {
 		e := setupReportOnly(t, "")

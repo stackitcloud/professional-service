@@ -83,7 +83,6 @@ def main():
         "the collector finished (VMTEST DONE)",
     )
 
-    # Nothing secret on the console (the IaaS API shows it to project readers).
     check(args.secret not in serial, "the webhook URL never reaches the serial console")
     check(
         "eyJhbGciOiAiUlMyNTYi" not in serial and "eyJhbGciOiJSUzI1NiI" not in serial,
@@ -104,7 +103,6 @@ def main():
         f"no unexpected failed units ({' '.join(sorted(failed_units)) or '-'})",
     )
 
-    # Hardening, in both scenarios.
     check(
         v.get("cloud_init") == "done",
         f"cloud-init finished without errors ({v.get('cloud_init')})",
@@ -118,7 +116,7 @@ def main():
         v.get("agent") == "masked",
         f"the STACKIT Server Agent is masked ({v.get('agent')})",
     )
-    check(v.get("debian_user") == "absent", "no default user without break-glass")
+    check(v.get("debian_user") == "absent", "no Debian default user")
     check(
         v.get("costguard_user") == "/usr/sbin/nologin",
         "costguard is a system user without a shell",

@@ -25,10 +25,7 @@
 //	boot    once after the server was (re)created: wait for the login,
 //	        then post the cleanup report (report on) and where every
 //	        budget stands (budgets on); never writes.
-//
-// flag and delete refuse to run while delete is off in the configuration,
-// budgets while no budgets are configured. A blocked run (a skip entry
-// matches nothing) neither flags nor deletes.
+
 package app
 
 import (
@@ -38,6 +35,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/budget"
@@ -52,29 +50,18 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// Exit codes.
 const (
 	ExitOK    = 0
 	ExitFatal = 1
 	ExitUsage = 2
 )
 
-// runTimeout bounds a run; the systemd unit's TimeoutStartSec is the outer
-// bound.
 const runTimeout = 60 * time.Minute
 
-// sendTimeout is the budget for posting one message, retries included. It
-// does not depend on the run: when a run times out or systemd stops it
-// (SIGTERM), the message about what already happened must still go out.
-// The units give costguard 60 s after SIGTERM (TimeoutStopSec), which
-// covers it.
 const sendTimeout = 45 * time.Second
 
-// bootLoginWait is how long the boot run waits for the service account:
-// Terraform attaches it only after the server was created.
 const bootLoginWait = 5 * time.Minute
 
-// Usage is the command line synopsis.
 const Usage = "costguard [--config path] <report|flag|delete|budgets|boot>"
 
 var modes = map[string]notifier.Mode{
@@ -85,7 +72,6 @@ var modes = map[string]notifier.Mode{
 	"boot":    notifier.ModeBoot,
 }
 
-// Replaced in tests.
 var (
 	newClients           = func() (*stackit.Set, error) { return stackit.New() }
 	newDeleter           = deleter.New
@@ -95,7 +81,6 @@ var (
 	logOutput  io.Writer = os.Stdout
 )
 
-// Options are the command line inputs.
 type Options struct {
 	Subcommand string
 	ConfigPath string
@@ -103,7 +88,6 @@ type Options struct {
 	Version    string
 }
 
-// Run executes the subcommand and returns the exit code.
 func Run(ctx context.Context, opts Options) int {
 	logger := newLogger(opts.LogLevel)
 	mode, ok := modes[opts.Subcommand]
@@ -127,6 +111,7 @@ func Run(ctx context.Context, opts Options) int {
 		logger: logger,
 		notify: buildNotifier(*cfg),
 		compose: notifier.Composer{
+			Organization:       cfg.OrganizationID,
 			PortalURL:          cfg.PortalURL,
 			DeleteEnabled:      cfg.DeleteEnabled,
 			DeleteRunAt:        cfg.DeleteRunAt,
@@ -169,6 +154,7 @@ func (r *run) execute(ctx context.Context) int {
 	if err != nil {
 		return r.fail(ctx, fmt.Errorf("costguard cannot log in to STACKIT.\n  - %w", err))
 	}
+	r.nameOrganization(ctx, clients)
 	switch r.mode {
 	case notifier.ModeBudgets:
 		return r.budgets(ctx, clients)
@@ -237,9 +223,15 @@ func (r *run) execute(ctx context.Context) int {
 	}
 }
 
-// budgets checks the budgets and posts the ones at or above a threshold
-// and the problems. While no cost of the month is in yet (always on the
-// 1st) it posts nothing.
+func (r *run) nameOrganization(ctx context.Context, clients *stackit.Set) {
+	name, err := clients.ResourceManager.OrganizationName(ctx, r.cfg.OrganizationID)
+	if name = strings.TrimSpace(name); err != nil || name == "" {
+		r.logger.Warn("the organization's name could not be read; the messages show its ID", "error", err)
+		return
+	}
+	r.compose.Organization = name
+}
+
 func (r *run) budgets(ctx context.Context, clients *stackit.Set) int {
 	chk, err := newChecker(clients, r.cfg, r.logger).Check(ctx)
 	if err != nil {
@@ -263,9 +255,6 @@ func (r *run) budgets(ctx context.Context, clients *stackit.Set) int {
 	return ExitOK
 }
 
-// boot posts one message: the cleanup report when report is on, and where
-// every budget stands when budgets are on. A cleanup scan that fails fails
-// the run; budgets that cannot be checked are an alert in the message.
 func (r *run) boot(ctx context.Context, clients *stackit.Set) int {
 	var rep *report.Report
 	if r.cfg.ReportEnabled {
@@ -296,7 +285,6 @@ func (r *run) boot(ctx context.Context, clients *stackit.Set) int {
 	return ExitOK
 }
 
-// fail reports a run that stopped before changing anything.
 func (r *run) fail(ctx context.Context, err error) int {
 	err = readableStop(err)
 	r.logger.Error("run failed before changing anything", "error", err.Error())
@@ -306,8 +294,6 @@ func (r *run) fail(ctx context.Context, err error) int {
 	return ExitFatal
 }
 
-// send posts a message with its own time budget, so it still goes out when
-// the run itself was cancelled.
 func (r *run) send(ctx context.Context, msg notifier.Message) error {
 	return sendWithBudget(ctx, r.notify, msg)
 }
@@ -318,9 +304,6 @@ func sendWithBudget(ctx context.Context, n notifier.Notifier, msg notifier.Messa
 	return n.Send(sendCtx, msg)
 }
 
-// reportConfigProblem posts a configuration problem to the chat when the
-// chat settings themselves are usable, so a broken config does not make
-// costguard fall silent. Otherwise the log is the only place.
 func reportConfigProblem(ctx context.Context, logger *slog.Logger, mode notifier.Mode, opts Options, problem error) {
 	output, webhookURL, ok := config.ChatFromOS(opts.ConfigPath)
 	if !ok {
@@ -334,7 +317,6 @@ func reportConfigProblem(ctx context.Context, logger *slog.Logger, mode notifier
 	}
 }
 
-// readableStop replaces Go's context errors with what happened.
 func readableStop(err error) error {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
@@ -356,8 +338,6 @@ func buildNotifier(cfg config.Config) notifier.Notifier {
 	}
 }
 
-// logReport writes every listed item to the log: messages are capped, the
-// log is the full list.
 func logReport(logger *slog.Logger, rep *report.Report) {
 	for _, g := range []struct {
 		category string
@@ -382,7 +362,6 @@ func logReport(logger *slog.Logger, rep *report.Report) {
 		"scan_errors", len(rep.ScanErrors), "blocked", len(rep.Blocked))
 }
 
-// logBudgets writes where every budget stands to the log.
 func logBudgets(logger *slog.Logger, chk *report.BudgetCheck) {
 	for _, b := range chk.Budgets {
 		logger.Info("budget", "name", b.Name, "target", b.Target, "month_eur", b.MonthEUR, "day_eur", b.DayEUR,

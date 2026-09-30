@@ -22,46 +22,31 @@ import (
 	resourcemanagerv0 "github.com/stackitcloud/stackit-sdk-go/services/resourcemanager/v0api"
 )
 
-// Container is a project or folder as costguard sees it.
 type Container struct {
 	ID        string
 	Name      string
 	ParentID  string
 	Labels    map[string]string
 	CreatedAt time.Time
-	// LifecycleState is set for projects only (e.g. ACTIVE, DELETING).
 	LifecycleState string
-	// Ancestors lists the folders above the container, nearest first. It
-	// is only filled by GetProject and GetFolder.
 	Ancestors []Ancestor
 }
 
-// Ancestor is one folder above a container. The organization is not
-// included.
 type Ancestor struct {
 	ID   string
 	Name string
 }
 
-// ResourceManager is the read-only Resource Manager surface.
 type ResourceManager interface {
-	// ListProjects lists all projects directly inside the container,
-	// following pagination.
 	ListProjects(ctx context.Context, parentID string) ([]Container, error)
-	// ListFolders lists all folders directly inside the container,
-	// following pagination.
 	ListFolders(ctx context.Context, parentID string) ([]Container, error)
-	// GetProject fetches one project including its ancestors.
 	GetProject(ctx context.Context, id string) (*Container, error)
-	// GetFolder fetches one folder including its ancestors.
 	GetFolder(ctx context.Context, id string) (*Container, error)
+	OrganizationName(ctx context.Context, id string) (string, error)
 }
 
-// rmPageSize is the page size we ask for. The API caps it and echoes the
-// limit it applied, so pagination follows the echoed value.
 const rmPageSize = 100
 
-// rmMaxPages bounds pagination against a misbehaving API.
 const rmMaxPages = 1000
 
 type resourceManager struct {
@@ -72,8 +57,6 @@ func newResourceManager(client *resourcemanagerv0.APIClient) ResourceManager {
 	return &resourceManager{client: client}
 }
 
-// paginate calls page with increasing offsets until a short or empty page.
-// page returns the number of items and the limit the API applied.
 func paginate(what string, page func(offset int) (items int, limit float32, err error)) error {
 	offset := 0
 	for i := 0; i < rmMaxPages; i++ {
@@ -171,9 +154,14 @@ func (r *resourceManager) GetFolder(ctx context.Context, id string) (*Container,
 	}, nil
 }
 
-// folderAncestors orders the folder entries of the parents list nearest
-// first by following parent links from the direct parent. The API does not
-// document the order of the list, so it is not relied on.
+func (r *resourceManager) OrganizationName(ctx context.Context, id string) (string, error) {
+	o, err := r.client.DefaultAPI.GetOrganization(ctx, id).Execute()
+	if err != nil {
+		return "", fmt.Errorf("getting organization %s: %w", id, err)
+	}
+	return o.GetName(), nil
+}
+
 func folderAncestors(parents []resourcemanagerv0.ParentListInner, directParent string) []Ancestor {
 	byID := make(map[string]resourcemanagerv0.ParentListInner, len(parents))
 	for _, p := range parents {

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package googlechat renders a message as a Google Chat Cards v2 card for
-// a space webhook.
 package googlechat
 
 import (
@@ -29,17 +27,14 @@ const (
 	mutedColor = "#5f6368"
 )
 
-// Notifier posts to a Google Chat space webhook.
 type Notifier struct {
 	poster notifier.Poster
 }
 
-// New returns a Google Chat notifier.
 func New(webhookURL string) *Notifier {
 	return &Notifier{poster: notifier.NewPoster(webhookURL, "Google Chat")}
 }
 
-// Send renders and posts the message.
 func (n *Notifier) Send(ctx context.Context, msg notifier.Message) error {
 	return n.poster.Post(ctx, Render(msg))
 }
@@ -50,8 +45,6 @@ func paragraph(htmlText string) obj {
 	return obj{"textParagraph": obj{"text": htmlText}}
 }
 
-// Render builds the webhook payload: one card whose text widgets use the
-// small HTML subset Google Chat supports.
 func Render(msg notifier.Message) map[string]any {
 	var sections []obj
 	var top []obj
@@ -76,19 +69,24 @@ func Render(msg notifier.Message) map[string]any {
 		if s.Omitted > 0 {
 			lines = append(lines, `<font color="`+mutedColor+`">`+html.EscapeString(notifier.OmittedText(s.Omitted))+`</font>`)
 		}
-		sections = append(sections, obj{
+		sec := obj{
 			"header":  html.EscapeString(s.Title),
 			"widgets": []obj{paragraph(strings.Join(lines, "<br>"))},
-		})
+		}
+		if s.Folded {
+			sec["collapsible"] = true
+			sec["uncollapsibleWidgetsCount"] = 0
+		}
+		sections = append(sections, sec)
 	}
 	if msg.Footer != "" {
 		sections = append(sections, obj{"widgets": []obj{
 			paragraph(`<font color="` + mutedColor + `">` + html.EscapeString(msg.Footer) + `</font>`),
 		}})
 	}
-	card := obj{"header": obj{"title": msg.Title, "subtitle": msg.Subtitle}, "sections": sections}
+	card := obj{"header": obj{"title": msg.Title, "subtitle": msg.HeaderSubtitle()}, "sections": sections}
 	return map[string]any{
-		"text":    msg.Title,
-		"cardsV2": []obj{{"cardId": "costguard", "card": card}},
+		"fallbackText": msg.Notification(),
+		"cardsV2":      []obj{{"cardId": "costguard", "card": card}},
 	}
 }

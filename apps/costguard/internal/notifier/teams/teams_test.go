@@ -85,6 +85,41 @@ func TestRenderIsAnAdaptiveCardMessage(t *testing.T) {
 	}
 }
 
+func TestRenderOrganizationAndFoldedSections(t *testing.T) {
+	m := sample()
+	m.Organization = "Acme"
+	m.Sections[0].Folded = true
+	body := Render(m)["attachments"].([]obj)[0]["content"].(obj)["body"].([]obj)
+	if body[1]["text"] != "Acme · Scope: Teams" {
+		t.Errorf("subtitle = %v", body[1])
+	}
+	if len(body) != 9 || body[4]["text"] != "Deleted: 1" {
+		t.Fatalf("body = %v", body)
+	}
+	more, lines, less := body[5], body[6], body[7]
+	want := []string{"section-0-more", "section-0", "section-0-less"}
+	for i, c := range []obj{more, lines, less} {
+		if c["type"] != "Container" || c["id"] != want[i] || c["isVisible"] != (i == 0) {
+			t.Errorf("container %d = %v", i, c)
+		}
+	}
+	for _, c := range []obj{more, less} {
+		toggle := c["selectAction"].(obj)
+		if toggle["type"] != "Action.ToggleVisibility" || strings.Join(toggle["targetElements"].([]string), ",") != strings.Join(want, ",") {
+			t.Errorf("toggle = %v", toggle)
+		}
+	}
+	if more["items"].([]obj)[0]["text"] != "Show more" || less["items"].([]obj)[0]["text"] != "Show less" {
+		t.Errorf("links = %v / %v", more, less)
+	}
+	if items := lines["items"].([]obj); len(items) != 3 || items[0]["text"] != "• server web [open](https://portal/s)" {
+		t.Errorf("lines = %v", items)
+	}
+	if body[8]["text"] != "costguard v0.1.0" {
+		t.Errorf("footer = %v", body[8])
+	}
+}
+
 func TestSend(t *testing.T) {
 	var got string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -49,9 +49,6 @@ webhook_url = "https://..."
 # parent_container_id = "<folder>"  # warns: folder admins could act as costguard
 # availability_zone   = "eu01-1"
 
-# Temporary SSH for debugging; replaces the server. Remove and apply to close.
-# break_glass = { public_key = "ssh-ed25519 AAAA... you@laptop", allowed_cidr = "203.0.113.7/32" }
-
 # Only for test builds (a checkout of a release tag pins its own binary):
 # binary_override = { version = "pr-75", sha256 = { amd64 = "<64 hex>" } }
 # download_url    = "https://<host>/<path>/{version}/"

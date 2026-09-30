@@ -116,7 +116,6 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 	if !strings.HasPrefix(m.Alerts[1], "Some things could not be read") || !strings.Contains(m.Alerts[1], "Details at the end") {
 		t.Errorf("scan error alert = %q", m.Alerts[1])
 	}
-	// Every grouped cause is listed, as the last section, none left out.
 	last := m.Sections[len(m.Sections)-1]
 	if last.Title != "Could not be read: 5" || len(last.Lines) != 5 || last.Omitted != 0 || last.Lines[4].Text != "e5" {
 		t.Errorf("scan error section = %+v", last)
@@ -129,7 +128,6 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 	if !strings.Contains(m.Alerts[0], "Nothing is flagged or deleted until the skip list is fixed") {
 		t.Errorf("alert = %q", m.Alerts[0])
 	}
-	// A blocked flag run must not announce deletions.
 	if m.Title != "costguard: deletions blocked" ||
 		m.Intro != "Once the skip list is fixed, 3 resources would be deleted, saving about €7.92 per month (€95.04 per year)." {
 		t.Errorf("blocked title/intro = %q / %q", m.Title, m.Intro)
@@ -170,18 +168,14 @@ func TestComposeBootMessage(t *testing.T) {
 	if m.Intro != wantIntro {
 		t.Errorf("intro =\n%s\nwant\n%s", m.Intro, wantIntro)
 	}
-	// With delete off, the sections are the report's.
 	if !strings.HasPrefix(titles(m), "Idle public IPs: 1") {
 		t.Errorf("sections = %s", titles(m))
 	}
-	// Nothing known about the schedule: no "Next runs".
 	if m := composer().Report(&report.Report{GeneratedAt: at}, ModeBoot); strings.Contains(m.Intro, "Next runs") {
 		t.Errorf("intro = %q", m.Intro)
 	}
 }
 
-// With delete on, a read-only run tells what the next delete run deletes
-// (labelled now) apart from what the next report run labels first.
 func TestComposeReadOnlyWithDeleteOn(t *testing.T) {
 	c := composer()
 	c.DeleteEnabled, c.DeleteRunAt, c.ReportRunAt = true, "Tuesday 08:00 (Europe/Berlin)", "Monday 08:00 (Europe/Berlin)"
@@ -215,7 +209,6 @@ func TestComposeReadOnlyWithDeleteOn(t *testing.T) {
 		t.Error("composing must not change the report")
 	}
 
-	// Only labelled ones, nothing priced: no saving and no new candidates.
 	only := &report.Report{GeneratedAt: at, Requested: []report.Item{{Kind: "image", ID: "i1"}}}
 	if got := c.Report(only, ModeReport).Intro; got != "This run changed nothing. 1 resource labelled delete=true is deleted Tuesday 08:00 (Europe/Berlin). "+keepHint {
 		t.Errorf("intro = %q", got)
@@ -280,10 +273,10 @@ func TestComposeListsEverythingActedOn(t *testing.T) {
 		counts[strings.SplitN(s.Title, ":", 2)[0]] = [2]int{len(s.Lines), s.Omitted}
 	}
 	want := map[string][2]int{
-		"Idle public IPs":                                  {1, 5},  // listed + waiting new candidates
-		"Other resources labelled delete=true":             {27, 0}, // always in full
-		"In use again, delete label removed":               {27, 0}, // always in full
-		"Detached volumes with snapshots, not flagged":     {10, 5}, // report-only: capped
+		"Idle public IPs":                                  {1, 5},
+		"Other resources labelled delete=true":             {27, 0},
+		"In use again, delete label removed":               {27, 0},
+		"Detached volumes with snapshots, not flagged":     {10, 5},
 		"Empty projects older than 30 days (warning only)": {10, 5},
 	}
 	for title, w := range want {
@@ -294,7 +287,6 @@ func TestComposeListsEverythingActedOn(t *testing.T) {
 	if OmittedText(7) != "… and 7 more; they will be listed in the next runs." {
 		t.Errorf("omitted text = %q", OmittedText(7))
 	}
-	// Waiting candidates alone still get a section.
 	if m := composer().Report(&report.Report{GeneratedAt: at, WaitingDetachedVolumes: 3}, ModeFlag); len(m.Sections) != 1 || m.Sections[0].Omitted != 3 {
 		t.Errorf("sections = %+v", m.Sections)
 	}
@@ -407,13 +399,75 @@ func TestComposeFailure(t *testing.T) {
 		t.Errorf("a one-line error needs no details: %+v", m.Sections)
 	}
 
-	// Multi-line errors: the first line is the alert, the problems a list.
 	m = composer().Failure(ModeReport, errors.New("invalid configuration:\n  - output is required\n  - region \"eu-1\" is not a STACKIT region ID\n"))
 	if m.Alerts[0] != "invalid configuration" || len(m.Sections) != 1 || m.Sections[0].Title != "Details" {
 		t.Fatalf("failure = %+v", m)
 	}
 	if got := m.Sections[0].Lines; len(got) != 2 || got[0].Text != "output is required" || got[1].Text != `region "eu-1" is not a STACKIT region ID` {
 		t.Errorf("details = %+v", got)
+	}
+}
+
+func TestOrganizationAndFolding(t *testing.T) {
+	c := composer()
+	c.Organization = "Acme"
+	rep := fullReport()
+	rep.ScanErrors = []string{"e1"}
+	sum := &report.DeletionSummary{GeneratedAt: at, Scope: "whole organization", Results: []report.Result{
+		{Item: report.Item{Kind: "volume", ID: "v1", Name: "data"}, Status: report.StatusDeleted},
+	}}
+	budgets, _ := c.Budgets(&report.BudgetCheck{Month: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Checked: at,
+		Budgets:  []report.BudgetStatus{{Name: "Org", Target: "organization", LimitEUR: 10, Thresholds: []int{80}, MonthEUR: 9, Reached: 80}},
+		Problems: []string{"gone"}})
+	messages := map[string]Message{
+		"report":  c.Report(rep, ModeReport),
+		"boot":    c.Boot(nil, nil, nil, at),
+		"summary": c.Summary(sum),
+		"flag":    c.FlagProblems([]report.Item{{Kind: "volume", ID: "v1"}}, nil),
+		"failure": c.Failure(ModeReport, errors.New("invalid configuration:\n- output is required")),
+		"budgets": budgets,
+	}
+	for name, m := range messages {
+		if m.Organization != "Acme" {
+			t.Errorf("%s: organization = %q", name, m.Organization)
+		}
+	}
+
+	for _, sec := range messages["report"].Sections {
+		if !sec.Folded {
+			t.Errorf("report section %q must fold", sec.Title)
+		}
+	}
+	chk := &report.BudgetCheck{Month: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Checked: at,
+		Budgets: []report.BudgetStatus{{Name: "Org", Target: "organization", LimitEUR: 10, Thresholds: []int{80}}}}
+	boot := c.Boot(rep, chk, nil, at)
+	if last := boot.Sections[len(boot.Sections)-1]; last.Title != "Could not be read: 1" || !strings.HasPrefix(boot.Sections[len(boot.Sections)-2].Title, "Budgets for September 2026") {
+		t.Errorf("boot sections = %s", titles(boot))
+	}
+	for _, name := range []string{"summary", "flag"} {
+		if sec := messages[name].Sections[0]; !sec.Folded {
+			t.Errorf("%s section %q must fold", name, sec.Title)
+		}
+	}
+	if sec := messages["failure"].Sections[0]; sec.Folded {
+		t.Errorf("failure details must stay open: %+v", sec)
+	}
+	if got := budgets.Sections; len(got) != 2 || got[0].Folded || !got[1].Folded || got[1].Title != "Budgets not checked: 1" {
+		t.Errorf("budget sections = %+v", got)
+	}
+
+	m := messages["report"]
+	if got := m.HeaderSubtitle(); got != "Acme · Scope: whole organization · regions eu01 · 2026-09-28 08:00 UTC" {
+		t.Errorf("header subtitle = %q", got)
+	}
+	if got := m.Notification(); got != "Acme: costguard report" {
+		t.Errorf("notification = %q", got)
+	}
+	if got := (Message{Title: "t", Organization: "Acme"}).HeaderSubtitle(); got != "Acme" {
+		t.Errorf("organization alone = %q", got)
+	}
+	if got := (Message{Title: "t", Subtitle: "s"}); got.HeaderSubtitle() != "s" || got.Notification() != "t" {
+		t.Errorf("without organization = %q / %q", got.HeaderSubtitle(), got.Notification())
 	}
 }
 
@@ -427,7 +481,6 @@ func TestPortalLink(t *testing.T) {
 	}
 }
 
-// scripted answers with the given statuses in turn and counts requests.
 type scripted struct {
 	statuses []int
 	calls    int
@@ -504,7 +557,6 @@ func TestPosterNetworkErrorsAndLimits(t *testing.T) {
 		t.Error("bad URL must fail")
 	}
 
-	// A cancelled run does not sit out the pauses.
 	fastRetries(t, time.Hour, time.Hour)
 	srv := &scripted{statuses: []int{503}}
 	ts = httptest.NewServer(srv)

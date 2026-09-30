@@ -22,10 +22,6 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
 )
 
-// Budgets composes the message of a budgets run: every budget at or above
-// one of its thresholds, and the budgets that could not be checked. ok is
-// false when there is nothing to say: no cost of the month is in yet, or no
-// budget reached a threshold and all could be checked.
 func (c Composer) Budgets(chk *report.BudgetCheck) (m Message, ok bool) {
 	reached := chk.Reached()
 	if chk.NothingIn() || (len(reached) == 0 && len(chk.Problems) == 0) {
@@ -33,8 +29,9 @@ func (c Composer) Budgets(chk *report.BudgetCheck) (m Message, ok bool) {
 	}
 	month := chk.Month.Format("January")
 	m = Message{
-		Subtitle: fmt.Sprintf("Costs up to and including %s (UTC) · %s", chk.Checked.Format("2 January 2006"), c.clock(chk.GeneratedAt)),
-		Footer:   "costguard " + c.Version,
+		Organization: c.Organization,
+		Subtitle:     fmt.Sprintf("Costs up to and including %s (UTC) · %s", chk.Checked.Format("2 January 2006"), c.clock(chk.GeneratedAt)),
+		Footer:       "costguard " + c.Version,
 	}
 	switch len(reached) {
 	case 0:
@@ -51,16 +48,10 @@ func (c Composer) Budgets(chk *report.BudgetCheck) (m Message, ok bool) {
 		sec := Section{Title: fmt.Sprintf("%s (%s): passed %d%%", b.Name, b.Target, b.Reached)}
 		sec.Lines = append(sec.Lines,
 			Line{Text: fmt.Sprintf("%s of %s in %s (%s)", eur(b.MonthEUR), eur(b.LimitEUR), month, percent(b.Percent())), Link: c.projectLink(b.ProjectID)},
-			Line{Text: fmt.Sprintf("%s: %s", chk.Checked.Format("2 January"), eur(b.DayEUR))},
 		)
 		if b.ForecastEUR > 0 {
 			sec.Lines = append(sec.Lines, Line{Text: fmt.Sprintf("Forecast for %s: about %s (%s)",
 				month, eur(b.ForecastEUR), percent(b.ForecastEUR/b.LimitEUR*100))})
-		}
-		if next := b.NextThreshold(); next > 0 {
-			sec.Lines = append(sec.Lines, Line{Text: fmt.Sprintf("Next threshold: %d%%, %s", next, eur(report.ThresholdEUR(b.LimitEUR, next)))})
-		} else {
-			sec.Lines = append(sec.Lines, Line{Text: "Every threshold of this budget is passed"})
 		}
 		for _, p := range b.Top {
 			sec.Lines = append(sec.Lines, Line{Text: fmt.Sprintf("Top project %s: %s in %s", p.Name, eur(p.EUR), month), Link: c.projectLink(p.ID)})
@@ -71,7 +62,6 @@ func (c Composer) Budgets(chk *report.BudgetCheck) (m Message, ok bool) {
 	return m, true
 }
 
-// addBudgets adds where every budget stands to the boot message.
 func (c Composer) addBudgets(m *Message, chk *report.BudgetCheck) {
 	sec := Section{Title: fmt.Sprintf("Budgets for %s (UTC days): %d", chk.Month.Format("January 2006"), len(chk.Budgets))}
 	sec.Lines = append(sec.Lines, Line{Text: c.costsAsOf(chk)})
@@ -90,8 +80,6 @@ func (c Composer) addBudgets(m *Message, chk *report.BudgetCheck) {
 	addBudgetProblems(m, chk.Problems)
 }
 
-// costsAsOf says which days the amounts cover and when STACKIT last
-// updated them.
 func (c Composer) costsAsOf(chk *report.BudgetCheck) string {
 	text := "Costs from the 1st up to and including " + chk.Checked.Format("2 January")
 	if chk.NothingIn() {
@@ -103,27 +91,22 @@ func (c Composer) costsAsOf(chk *report.BudgetCheck) string {
 	return text + "."
 }
 
-// addBudgetProblems lists the budgets that could not be checked, like
-// scan errors: one alert, the details at the end.
 func addBudgetProblems(m *Message, problems []string) {
 	if len(problems) == 0 {
 		return
 	}
 	m.Alerts = append(m.Alerts, report.Count(len(problems), "budget")+" could not be checked; details at the end.")
-	sec := Section{Title: fmt.Sprintf("Budgets not checked: %d", len(problems))}
+	sec := Section{Title: fmt.Sprintf("Budgets not checked: %d", len(problems)), Folded: true}
 	for _, p := range problems {
 		sec.Lines = append(sec.Lines, Line{Text: p})
 	}
 	m.Sections = append(m.Sections, sec)
 }
 
-// projectLink is the portal page of a project, or "".
 func (c Composer) projectLink(projectID string) string {
 	return PortalLink(c.PortalURL, report.Item{Kind: report.KindProject, ProjectID: projectID})
 }
 
-// clock renders a time in the configured zone, e.g. "2026-10-01 14:03
-// (Europe/Berlin)".
 func (c Composer) clock(t time.Time) string {
 	if c.Location == nil || c.Location == time.UTC {
 		return t.UTC().Format("2006-01-02 15:04 UTC")

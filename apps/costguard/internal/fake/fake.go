@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package fake is an in-memory STACKIT for tests. It implements every
-// interface of internal/stackit and behaves like the real APIs where the
-// rules depend on it: deleting a server releases its volumes, NICs and
-// public IPs, and missing things answer 404.
 package fake
 
 import (
@@ -31,54 +27,35 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// Status returns an SDK error with the HTTP status code.
 func Status(code int) error {
 	return &oapierror.GenericOpenAPIError{StatusCode: code, ErrorMessage: fmt.Sprintf("HTTP %d", code)}
 }
 
-// Store is the fake STACKIT.
 type Store struct {
 	mu sync.Mutex
 
-	// Containers by ID (folders and projects); Folder marks folders.
+	OrgName string
 	Containers map[string]stackit.Container
 	Folder     map[string]bool
 	Resources  []*stackit.Resource
 	Areas      []stackit.NetworkArea
 	Costs      map[string]float64
-	// Daily holds the Cost API's daily charges per project; LastModified
-	// is its Last-Modified time.
 	Daily        map[string]stackit.ProjectDays
 	LastModified time.Time
-	// SKE, BucketNames and LB are keyed by "project/region".
 	SKE         map[string][]string
 	BucketNames map[string][]string
 	LB          map[string]map[string]string
 
-	// Errs injects errors. Keys: "list:<kind>:<project>/<region>",
-	// "folders:<parent>", "projects:<parent>", "get:<id>", "delete:<id>",
-	// "label:<id>", "costs", "daily", "areas", "ske:<p>/<r>", "buckets:<p>/<r>",
-	// "lb:<p>/<r>".
 	Errs map[string]error
-	// ErrsOnce are like Errs but happen only on the first call (a hiccup).
 	ErrsOnce map[string]error
-	// ListDescendants makes project and folder listings return everything
-	// below the container, not only its direct children.
 	ListDescendants bool
-	// AfterDelete, when set, runs after every successful delete (e.g. to
-	// cancel the run like a SIGTERM would).
 	AfterDelete func(ref stackit.Resource)
-	// DeletingReads is how many Gets a deleted server still answers (with
-	// status DELETING, attachments kept) before it is gone.
 	DeletingReads int
 
-	// Calls records every call, e.g. "delete volume v1" or
-	// "label volume v1 delete=<nil>".
 	Calls   []string
 	pending map[string]int
 }
 
-// New returns an empty store.
 func New() *Store {
 	return &Store{
 		Containers:  map[string]stackit.Container{},
@@ -93,23 +70,19 @@ func New() *Store {
 	}
 }
 
-// Set returns a client set backed by the store.
 func (s *Store) Set() *stackit.Set {
 	return &stackit.Set{ResourceManager: s, IaaS: s, Cost: s, Services: s}
 }
 
-// AddFolder adds a folder under parent (an org or folder ID).
 func (s *Store) AddFolder(id, name, parent string, labels map[string]string) {
 	s.Containers[id] = stackit.Container{ID: id, Name: name, ParentID: parent, Labels: labels, CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
 	s.Folder[id] = true
 }
 
-// AddProject adds an active project under parent.
 func (s *Store) AddProject(id, name, parent string, created time.Time, labels map[string]string) {
 	s.Containers[id] = stackit.Container{ID: id, Name: name, ParentID: parent, Labels: labels, CreatedAt: created, LifecycleState: "ACTIVE"}
 }
 
-// Add adds resources.
 func (s *Store) Add(rs ...stackit.Resource) {
 	for i := range rs {
 		r := rs[i]
@@ -117,7 +90,6 @@ func (s *Store) Add(rs ...stackit.Resource) {
 	}
 }
 
-// Find returns the resource with the ID, or nil.
 func (s *Store) Find(id string) *stackit.Resource {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,7 +105,6 @@ func (s *Store) find(id string) *stackit.Resource {
 	return nil
 }
 
-// CallsWith returns the recorded calls that start with prefix.
 func (s *Store) CallsWith(prefix string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,8 +143,6 @@ func (s *Store) children(parent string, folders bool) []stackit.Container {
 	return out
 }
 
-// below reports whether c is a direct child of parent or, with
-// ListDescendants, anywhere below it.
 func (s *Store) below(c stackit.Container, parent string) bool {
 	if c.ParentID == parent {
 		return true
@@ -189,7 +158,6 @@ func (s *Store) below(c stackit.Container, parent string) bool {
 	return false
 }
 
-// ListProjects implements stackit.ResourceManager.
 func (s *Store) ListProjects(_ context.Context, parent string) ([]stackit.Container, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -200,7 +168,6 @@ func (s *Store) ListProjects(_ context.Context, parent string) ([]stackit.Contai
 	return s.children(parent, false), nil
 }
 
-// ListFolders implements stackit.ResourceManager.
 func (s *Store) ListFolders(_ context.Context, parent string) ([]stackit.Container, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,19 +196,29 @@ func (s *Store) getContainer(id string, folder bool) (*stackit.Container, error)
 	return &c, nil
 }
 
-// GetProject implements stackit.ResourceManager.
 func (s *Store) GetProject(_ context.Context, id string) (*stackit.Container, error) {
 	return s.getContainer(id, false)
 }
 
-// GetFolder implements stackit.ResourceManager.
 func (s *Store) GetFolder(_ context.Context, id string) (*stackit.Container, error) {
 	return s.getContainer(id, true)
 }
 
+func (s *Store) OrganizationName(_ context.Context, id string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.record("get organization %s", id)
+	if err := s.err("org:" + id); err != nil {
+		return "", err
+	}
+	if s.OrgName == "" {
+		return "", Status(404)
+	}
+	return s.OrgName, nil
+}
+
 // ---- IaaS ----
 
-// List implements stackit.IaaS.
 func (s *Store) List(_ context.Context, kind stackit.Kind, project, region string) ([]stackit.Resource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -257,7 +234,6 @@ func (s *Store) List(_ context.Context, kind stackit.Kind, project, region strin
 	return out, nil
 }
 
-// Get implements stackit.IaaS.
 func (s *Store) Get(_ context.Context, ref stackit.Resource) (*stackit.Resource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -282,8 +258,6 @@ func (s *Store) Get(_ context.Context, ref stackit.Resource) (*stackit.Resource,
 	return &c, nil
 }
 
-// Delete implements stackit.IaaS. Deleting a server releases what was
-// attached to it.
 func (s *Store) Delete(_ context.Context, ref stackit.Resource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -297,8 +271,6 @@ func (s *Store) Delete(_ context.Context, ref stackit.Resource) error {
 	}
 	if r.Kind == stackit.KindServer {
 		if s.DeletingReads > 0 {
-			// Still there, DELETING, for the next reads; attachments are
-			// released when it is gone.
 			r.Status = stackit.ServerStatusDeleting
 			s.pending[r.ID] = s.DeletingReads
 			return nil
@@ -312,8 +284,6 @@ func (s *Store) Delete(_ context.Context, ref stackit.Resource) error {
 	return nil
 }
 
-// release detaches a server's volumes and deletes its NICs, which frees
-// the public IPs on them.
 func (s *Store) release(server string) {
 	var nics []string
 	for _, o := range s.Resources {
@@ -343,7 +313,6 @@ func (s *Store) remove(id string) {
 	}
 }
 
-// SetLabel implements stackit.IaaS.
 func (s *Store) SetLabel(_ context.Context, ref stackit.Resource, key string, value *string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -373,7 +342,6 @@ func (s *Store) SetLabel(_ context.Context, ref stackit.Resource, key string, va
 	return nil
 }
 
-// ListNetworkAreas implements stackit.IaaS.
 func (s *Store) ListNetworkAreas(context.Context, string) ([]stackit.NetworkArea, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -385,7 +353,6 @@ func (s *Store) ListNetworkAreas(context.Context, string) ([]stackit.NetworkArea
 
 // ---- Cost and services ----
 
-// ProjectCosts implements stackit.Cost.
 func (s *Store) ProjectCosts(_ context.Context, _ string, from, to time.Time) (map[string]float64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -400,8 +367,6 @@ func (s *Store) ProjectCosts(_ context.Context, _ string, from, to time.Time) (m
 	return out, nil
 }
 
-// DailyCosts implements stackit.Cost. Like the Cost API it returns only
-// the days within the range.
 func (s *Store) DailyCosts(_ context.Context, _ string, from, to time.Time) (*stackit.DailyCosts, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -425,7 +390,6 @@ func (s *Store) DailyCosts(_ context.Context, _ string, from, to time.Time) (*st
 	return out, nil
 }
 
-// SKEClusters implements stackit.Services.
 func (s *Store) SKEClusters(_ context.Context, project, region string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -437,7 +401,6 @@ func (s *Store) SKEClusters(_ context.Context, project, region string) ([]string
 	return s.SKE[key], nil
 }
 
-// Buckets implements stackit.Services.
 func (s *Store) Buckets(_ context.Context, project, region string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -449,7 +412,6 @@ func (s *Store) Buckets(_ context.Context, project, region string) ([]string, er
 	return s.BucketNames[key], nil
 }
 
-// LoadBalancerAddresses implements stackit.Services.
 func (s *Store) LoadBalancerAddresses(_ context.Context, project, region string) (map[string]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

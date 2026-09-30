@@ -18,9 +18,6 @@
 # across settings, what the server gets (config, units, environment) and
 # which resources each option creates.
 
-# The release's SHA256SUMS. Mocks must be static (Terraform 1.9, OpenTofu),
-# so the names carry a made-up version: the hashes are taken per
-# architecture.
 mock_provider "http" {
   mock_data "http" {
     defaults = {
@@ -60,8 +57,6 @@ mock_provider "stackit" {
   }
 }
 
-# Every variable is set here: terraform test also reads a local
-# terraform.tfvars, and the tests must not depend on anyone's settings.
 variables {
   service_account_key_path      = null
   organization_id               = "11111111-0000-4000-8000-000000000000"
@@ -78,7 +73,6 @@ variables {
   boot_volume_gb                = 10
   boot_volume_performance_class = "storage_premium_perf0"
   time_zone                     = "Europe/Berlin"
-  break_glass                   = null
   output                        = "slack"
   webhook_url                   = "https://hooks.slack.com/services/T0/B0/secret"
   features                      = {}
@@ -133,8 +127,8 @@ run "report_only_by_default" {
     error_message = "Server Agent must be off and the boot volume on perf0."
   }
   assert {
-    condition     = length(stackit_public_ip.break_glass) == 0 && length(stackit_security_group_rule.break_glass_ssh) == 0 && stackit_server.costguard.keypair_name == null
-    error_message = "Without break_glass: no public IP, no SSH rule, no key pair."
+    condition     = stackit_server.costguard.keypair_name == null
+    error_message = "The server gets no key pair: nobody logs in."
   }
 }
 
@@ -142,7 +136,7 @@ run "user_data_contents" {
   command = apply
 
   variables {
-    skip = { projects = ["prod: \"main\""] } # must not break the YAML
+    skip = { projects = ["prod: \"main\""] }
   }
 
   assert {
@@ -172,7 +166,7 @@ run "user_data_contents" {
   }
   assert {
     condition     = contains(yamldecode(module.cloud_init.user_data).runcmd, ["systemctl", "mask", "ssh.service", "ssh.socket"]) && contains(yamldecode(module.cloud_init.user_data).runcmd, ["systemctl", "mask", "--now", "sshd-unix-local.socket"]) && contains([for f in yamldecode(module.cloud_init.user_data).write_files : f.path], "/etc/ssh/sshd_not_to_be_run")
-    error_message = "Without break_glass, sshd must never start and be masked."
+    error_message = "sshd must never start and be masked."
   }
   assert {
     condition     = contains(yamldecode(module.cloud_init.user_data).runcmd, ["systemctl", "start", "--no-block", "costguard@boot.service"])
@@ -184,7 +178,7 @@ run "user_data_contents" {
   }
   assert {
     condition     = [for u in yamldecode(module.cloud_init.user_data).users : u.name] == ["costguard"]
-    error_message = "Without break_glass only the costguard system user exists."
+    error_message = "Only the costguard system user exists (no Debian default user)."
   }
 }
 
@@ -571,7 +565,6 @@ run "delete_at_the_same_time_as_report" {
 run "delete_across_the_week_boundary" {
   command = plan
   variables {
-    # Sunday 20:00 report, Monday 18:00 delete: 22 hours.
     features = { report = { days = ["Sun"], time = "20:00" }, delete = { enabled = true, days = ["Mon"], time = "18:00" } }
   }
   assert {
@@ -580,9 +573,6 @@ run "delete_across_the_week_boundary" {
   }
 }
 
-# Every release tag, and main between releases, pins a released version
-# (000-release.tf); without binary_override the server installs it, with
-# the hashes from the release's SHA256SUMS (mocked: any version's names).
 run "release_pinned" {
   command = apply
   variables {
@@ -753,7 +743,7 @@ run "key_file_missing" {
 run "key_file_present" {
   command = plan
   variables {
-    service_account_key_path = "010-provider.tf" # any existing file; the mocked provider ignores it
+    service_account_key_path = "010-provider.tf"
   }
 }
 
@@ -824,31 +814,4 @@ run "existing_project_and_network" {
     condition     = stackit_network_interface.costguard.network_id == var.network_id && stackit_server.costguard.project_id == var.project_id
     error_message = "The server must use the given project and network."
   }
-}
-
-run "break_glass" {
-  command = apply
-  variables {
-    break_glass = { public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTestsOnly test", allowed_cidr = "203.0.113.7/32" }
-  }
-  assert {
-    condition     = length(stackit_public_ip.break_glass) == 1 && stackit_security_group_rule.break_glass_ssh[0].ip_range == "203.0.113.7/32" && stackit_server.costguard.keypair_name == "costguard-break-glass"
-    error_message = "break_glass needs the public IP, the SSH rule for the CIDR and the key pair."
-  }
-  assert {
-    condition     = !contains(yamldecode(module.cloud_init.user_data).runcmd, ["systemctl", "mask", "ssh.service", "ssh.socket"]) && !contains([for f in yamldecode(module.cloud_init.user_data).write_files : f.path], "/etc/ssh/sshd_not_to_be_run")
-    error_message = "With break_glass, sshd stays."
-  }
-  assert {
-    condition     = yamldecode(module.cloud_init.user_data).users[0] == "default"
-    error_message = "With break_glass the default user (debian) gets the key."
-  }
-}
-
-run "break_glass_open_to_the_world" {
-  command = plan
-  variables {
-    break_glass = { public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForTestsOnly", allowed_cidr = "0.0.0.0/0" }
-  }
-  expect_failures = [var.break_glass]
 }

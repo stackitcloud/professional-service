@@ -68,15 +68,28 @@ func TestRenderFollowsBlockKitRules(t *testing.T) {
 	}
 }
 
+func TestRenderOrganizationAndFoldedSections(t *testing.T) {
+	m := sample()
+	m.Organization = "Acme"
+	m.Sections[0].Folded = true
+	p := Render(m)
+	if p["text"] != "Acme: costguard: 2 resources will be deleted Tuesday" {
+		t.Errorf("fallback text = %v", p["text"])
+	}
+	data, _ := json.Marshal(p)
+	for _, want := range []string{`Acme · Scope: a\u0026lt;b`, `• no link`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("payload lacks %s:\n%s", want, data)
+		}
+	}
+}
+
 func TestRenderRespectsLimits(t *testing.T) {
 	msg := notifier.Message{Title: strings.Repeat("ü", 200)}
 	for i := 0; i < 60; i++ {
 		msg.Sections = append(msg.Sections, notifier.Section{Title: "s", Lines: []notifier.Line{{Text: strings.Repeat("x", 4000)}}})
 	}
 	blocks := Render(msg)["blocks"].([]block)
-	// Nothing is cut: 1 header + 60 sections of 2 blocks each (the title
-	// chunk and the long line). Slack rejects more than 50 blocks, which makes
-	// the run fail visibly instead of hiding entries.
 	if len(blocks) != 121 {
 		t.Errorf("blocks = %d", len(blocks))
 	}

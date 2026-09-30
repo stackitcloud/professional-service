@@ -151,25 +151,6 @@ variable "time_zone" {
   }
 }
 
-variable "break_glass" {
-  description = "Temporary SSH access for debugging: a public key and the only CIDR allowed to connect. Adds a public IP, sshd and port 22. Toggling it replaces the server. Remove it and apply to close again."
-  type = object({
-    public_key   = string
-    allowed_cidr = string
-  })
-  default = null
-
-  validation {
-    condition     = var.break_glass == null ? true : can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]+( .*)?$", var.break_glass.public_key))
-    error_message = "break_glass.public_key must be one OpenSSH public key line (ssh-ed25519 ..., ssh-rsa ... or ecdsa-sha2-...)."
-  }
-
-  validation {
-    condition     = var.break_glass == null ? true : can(cidrhost(var.break_glass.allowed_cidr, 0)) && !startswith(var.break_glass.allowed_cidr, "0.0.0.0/")
-    error_message = "break_glass.allowed_cidr must be an IPv4 CIDR and not 0.0.0.0/x: allow only your own address, e.g. 203.0.113.7/32."
-  }
-}
-
 # ---- Chat ----
 
 variable "output" {
@@ -187,8 +168,6 @@ variable "webhook_url" {
   type        = string
   sensitive   = true
 
-  # Written single-quoted into a systemd EnvironmentFile, so no quotes,
-  # backslashes, spaces or line breaks.
   validation {
     condition     = can(regex("^https://[^\\s'\"\\\\]+$", var.webhook_url))
     error_message = "webhook_url must be an https URL without spaces, quotes or backslashes."
@@ -214,7 +193,6 @@ variable "features" {
                project = "<ID or name>"), monthly_eur, and optionally its own thresholds.
     Keys left out keep their default.
   EOT
-  # any, not object(): an object type would silently drop misspelled keys.
   type    = any
   default = {}
 

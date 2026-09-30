@@ -60,7 +60,6 @@ func quiet() report.BudgetStatus {
 	return report.BudgetStatus{Name: "Quiet", Target: "organization", LimitEUR: 1000, Thresholds: []int{80}, MonthEUR: 10}
 }
 
-// september28 is a check on 29 September with everything in.
 func september28(budgets ...report.BudgetStatus) *report.BudgetCheck {
 	return &report.BudgetCheck{Month: september, Checked: checkedDay, GeneratedAt: checkedAt, LastModified: updatedAt, Budgets: budgets}
 }
@@ -89,9 +88,7 @@ func TestComposeOneBudgetReached(t *testing.T) {
 	}
 	want := strings.Join([]string{
 		"€2034.12 of €2500.00 in September (81%) <>",
-		"28 September: €123.45 <>",
 		"Forecast for September: about €2179.41 (87%) <>",
-		"Next threshold: 100%, €2500.00 <>",
 		"Top project shop: €1200.00 in September <https://portal.example/projects/p1>",
 		"Top project api: €834.12 in September <https://portal.example/projects/p2>",
 	}, "\n")
@@ -113,10 +110,9 @@ func TestComposeSeveralBudgetsAndProblems(t *testing.T) {
 	if got := titles(m); got != "Team A (folder team-a): passed 80% | Sandbox (project sandbox): passed 100% | Budgets not checked: 1" {
 		t.Errorf("sections = %s", got)
 	}
-	want := "€51.00 of €50.00 in September (102%) <https://portal.example/projects/p3>\n28 September: €2.00 <>\n" +
-		"Every threshold of this budget is passed <>"
+	want := "€51.00 of €50.00 in September (102%) <https://portal.example/projects/p3>"
 	if got := lines(m.Sections[1]); got != want {
-		t.Errorf("sandbox lines =\n%s\nwant\n%s", got, want) // no forecast (0), no top projects
+		t.Errorf("sandbox lines =\n%s\nwant\n%s", got, want)
 	}
 	if len(m.Alerts) != 1 || m.Alerts[0] != "1 budget could not be checked; details at the end." {
 		t.Errorf("alerts = %v", m.Alerts)
@@ -139,7 +135,6 @@ func TestComposeNoBudgetNews(t *testing.T) {
 	if _, ok := composer().Budgets(september28(quiet())); ok {
 		t.Error("no budget reached a threshold and no problem: no message")
 	}
-	// No cost of the month in yet (the 1st): nothing, not even problems.
 	nothing := &report.BudgetCheck{Month: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Checked: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
 		Budgets: []report.BudgetStatus{sandbox()}, Problems: []string{"x"}}
 	if _, ok := composer().Budgets(nothing); ok {
@@ -183,7 +178,6 @@ func TestComposeBootWithoutReport(t *testing.T) {
 	if titles(m) != "Budgets for September 2026 (UTC days): 1" || m.Sections[0].Lines[0].Text != "Costs from the 1st up to and including 28 September." {
 		t.Errorf("sections = %+v", m.Sections)
 	}
-	// Nothing on at all: no "Next runs".
 	if m := composer().Boot(nil, nil, nil, checkedAt); m.Intro != "Login and this chat work. The cleanup report is off." || len(m.Sections) != 0 {
 		t.Errorf("message = %+v", m)
 	}

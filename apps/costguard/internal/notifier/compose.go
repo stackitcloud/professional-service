@@ -22,38 +22,24 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
 )
 
-// Mode is the kind of run a message is about.
 type Mode string
 
-// Run modes.
 const (
 	ModeReport Mode = "report"
 	ModeFlag   Mode = "flag"
 	ModeDelete Mode = "delete"
-	// ModeBudgets is the daily budgets run.
 	ModeBudgets Mode = "budgets"
-	// ModeBoot is the read-only run right after the server was (re)created.
 	ModeBoot Mode = "boot"
 )
 
-// Composer writes the messages.
 type Composer struct {
-	PortalURL string
-	// DeleteEnabled words the read-only runs (report, boot): with delete on
-	// they say what the next runs do, with delete off what they would do.
+	Organization string
+	PortalURL    string
 	DeleteEnabled bool
-	// DeleteRunAt is when the delete run happens, e.g. "Tuesday 08:00
-	// (Europe/Berlin)".
 	DeleteRunAt string
-	// ReportRunAt is when the report run happens, for the boot message's
-	// "Next runs"; empty if not known.
 	ReportRunAt string
-	// BudgetsRunAt is when the budgets run happens, e.g. "every day 10:00
-	// (Europe/Berlin)"; empty with budgets off.
 	BudgetsRunAt string
-	// Location is the time zone of the timestamps; nil means UTC.
 	Location *time.Location
-	// Prices value what a run deletes.
 	Prices             report.Prices
 	WarnEmptyAfterDays int
 	Version            string
@@ -61,19 +47,15 @@ type Composer struct {
 
 const (
 	keepHint = "To keep a resource, open it and set the label do-not-delete=true (or remove delete=true)."
-	// keepHintOff tells the readers of a report without delete how to keep
-	// something before delete gets switched on.
 	keepHintOff = "To keep a resource once delete is on, set the label do-not-delete=true on it."
 )
 
-// Report composes the message of a read-only run (report, boot) or a flag
-// run.
 func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	n := rep.ToDelete()
 	saving := savingPhrase(report.Estimate(toDelete(rep), c.Prices))
 	readOnly := mode == ModeReport || mode == ModeBoot
 
-	m := Message{Subtitle: c.subtitle(rep.Scope, rep.Regions, rep.GeneratedAt)}
+	m := Message{Organization: c.Organization, Subtitle: c.subtitle(rep.Scope, rep.Regions, rep.GeneratedAt)}
 	switch {
 	case readOnly:
 		m.Title = "costguard report"
@@ -118,9 +100,6 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	} else {
 		ips := report.Estimate(rep.IdlePublicIPs, c.Prices)
 		vols := report.Estimate(rep.DetachedVolumes, c.Prices)
-		// Everything that will be deleted or unflagged is listed in full;
-		// the scanner already capped the new candidates. Report-only lists
-		// show report.ListLimit entries.
 		c.add(&m, fmt.Sprintf("Idle public IPs: %d, about %s/month", ips.IdleIPs, eur(ips.TotalEUR())), rep.IdlePublicIPs, 0, rep.WaitingIdlePublicIPs)
 		c.add(&m, fmt.Sprintf("Detached volumes: %d, %d GB, about %s/month", vols.Volumes, vols.VolumesGB, eur(vols.TotalEUR())), rep.DetachedVolumes, 0, rep.WaitingDetachedVolumes)
 		c.add(&m, fmt.Sprintf("Other resources labelled delete=true: %d", len(rep.Requested)), rep.Requested, 0, 0)
@@ -147,25 +126,25 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 			m.Intro += " " + next
 		}
 	}
-	addScanErrors(&m, rep.ScanErrors)
+	if mode != ModeBoot {
+		addScanErrors(&m, rep.ScanErrors)
+	}
 	m.Footer = fmt.Sprintf("Skipped: %s, %s · costguard %s",
 		report.Count(rep.SkippedFolders, "folder"), report.Count(rep.SkippedProjects, "project"), c.Version)
 	return m
 }
 
-// Boot composes the message of the boot run: the cleanup report when
-// report is on (rep is nil when it is off), then the budgets when they are
-// on (chk, or budgetErr when they could not be checked).
 func (c Composer) Boot(rep *report.Report, chk *report.BudgetCheck, budgetErr error, at time.Time) Message {
 	var m Message
 	if rep != nil {
 		m = c.Report(rep, ModeBoot)
 	} else {
 		m = Message{
-			Title:    "costguard " + c.Version + " is running",
-			Subtitle: c.clock(at),
-			Intro:    "Login and this chat work. The cleanup report is off.",
-			Footer:   "costguard " + c.Version,
+			Title:        "costguard " + c.Version + " is running",
+			Organization: c.Organization,
+			Subtitle:     c.clock(at),
+			Intro:        "Login and this chat work. The cleanup report is off.",
+			Footer:       "costguard " + c.Version,
 		}
 		if next := c.nextRuns(); next != "" {
 			m.Intro += " " + next
@@ -181,10 +160,12 @@ func (c Composer) Boot(rep *report.Report, chk *report.BudgetCheck, budgetErr er
 		}
 		m.Alerts = append(m.Alerts, "The budgets could not be checked: "+strings.Join(lines, " "))
 	}
+	if rep != nil {
+		addScanErrors(&m, rep.ScanErrors)
+	}
 	return m
 }
 
-// toDelete is what the next delete run would delete.
 func toDelete(rep *report.Report) []report.Item {
 	var out []report.Item
 	for _, list := range [][]report.Item{rep.IdlePublicIPs, rep.DetachedVolumes, rep.Requested} {
@@ -193,8 +174,6 @@ func toDelete(rep *report.Report) []report.Item {
 	return out
 }
 
-// labelled and fresh split what the next delete run deletes (labelled
-// now) from the new candidates (labelled by the next report run first).
 func labelled(rep *report.Report) (labelled, fresh []report.Item) {
 	for _, it := range append(append([]report.Item{}, rep.IdlePublicIPs...), rep.DetachedVolumes...) {
 		if it.New {
@@ -207,7 +186,6 @@ func labelled(rep *report.Report) (labelled, fresh []report.Item) {
 	return append(labelled, rep.Requested...), fresh
 }
 
-// readOnlyIntro says that nothing changed and what delete does or would do.
 func (c Composer) readOnlyIntro(rep *report.Report, mode Mode, n int, saving string) string {
 	var b strings.Builder
 	if mode == ModeBoot {
@@ -246,8 +224,6 @@ func (c Composer) readOnlyIntro(rep *report.Report, mode Mode, n int, saving str
 	return b.String()
 }
 
-// addUpcoming lists, for a read-only run with delete on, what the next
-// delete run deletes and what the next report run labels.
 func (c Composer) addUpcoming(m *Message, rep *report.Report) {
 	now, fresh := labelled(rep)
 	title := "Labelled delete=true, deleted " + c.DeleteRunAt
@@ -259,8 +235,6 @@ func (c Composer) addUpcoming(m *Message, rep *report.Report) {
 	c.add(m, fmt.Sprintf("New candidates, labelled at the next report run: %d", len(fresh)+waiting), fresh, 0, waiting)
 }
 
-// nextRuns renders "Next runs: report Monday 08:00 · delete Tuesday 08:00."
-// from what is known.
 func (c Composer) nextRuns() string {
 	var runs []string
 	if c.ReportRunAt != "" {
@@ -285,12 +259,12 @@ func isAre(n int) string {
 	return "are"
 }
 
-// Summary composes the message of a delete run.
 func (c Composer) Summary(sum *report.DeletionSummary) Message {
 	m := Message{
-		Title:    summaryTitle(sum),
-		Subtitle: c.subtitle(sum.Scope, nil, sum.GeneratedAt),
-		Footer:   "costguard " + c.Version,
+		Title:        summaryTitle(sum),
+		Organization: c.Organization,
+		Subtitle:     c.subtitle(sum.Scope, nil, sum.GeneratedAt),
+		Footer:       "costguard " + c.Version,
 	}
 	if len(sum.Blocked) > 0 {
 		m.Alerts = append(m.Alerts, "Nothing was deleted: these skip entries match nothing inside the scope (or it could not be read): "+
@@ -336,7 +310,6 @@ func (c Composer) Summary(sum *report.DeletionSummary) Message {
 	return m
 }
 
-// summaryTitle names the most important thing a delete run did.
 func summaryTitle(sum *report.DeletionSummary) string {
 	deleted, failed, unflagged := sum.Count(report.StatusDeleted), sum.Count(report.StatusFailed), sum.Count(report.StatusUnflagged)
 	switch {
@@ -354,8 +327,6 @@ func summaryTitle(sum *report.DeletionSummary) string {
 	return "costguard: nothing deleted"
 }
 
-// savingPhrase renders "about €19.28 per month (€231.36 per year)", or ""
-// when nothing has a price.
 func savingPhrase(s report.Savings) string {
 	total := s.TotalEUR()
 	if total <= 0 {
@@ -364,30 +335,26 @@ func savingPhrase(s report.Savings) string {
 	return fmt.Sprintf("about %s per month (%s per year)", eur(total), eur(total*12))
 }
 
-// FlagProblems composes the follow-up of a flag run whose label writes
-// failed after its message went out: the message needs a correction.
 func (c Composer) FlagProblems(notFlagged, notCleared []report.Item) Message {
 	m := Message{
-		Title:  "costguard: correction to today's message",
-		Intro:  "Some labels could not be written after the message went out. costguard tries again at the next report run.",
-		Footer: "costguard " + c.Version,
+		Title:        "costguard: correction to today's message",
+		Organization: c.Organization,
+		Intro:        "Some labels could not be written after the message went out. costguard tries again at the next report run.",
+		Footer:       "costguard " + c.Version,
 	}
 	c.add(&m, fmt.Sprintf("Not marked, so NOT deleted in the next delete run: %d", len(notFlagged)), notFlagged, 0, 0)
 	c.add(&m, fmt.Sprintf("delete label could not be removed (they are not deleted either way): %d", len(notCleared)), notCleared, 0, 0)
 	return m
 }
 
-// Failure composes the message of a run that stopped before changing
-// anything.
-// Multi-line errors (the configuration and scope checks list one problem
-// per line) become the alert plus a list of the problems.
 func (c Composer) Failure(mode Mode, err error) Message {
 	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
 	m := Message{
-		Title:  fmt.Sprintf("costguard %s run failed", mode),
-		Alerts: []string{strings.TrimSuffix(strings.TrimSpace(lines[0]), ":")},
-		Intro:  "The run stopped before changing anything.",
-		Footer: "costguard " + c.Version,
+		Title:        fmt.Sprintf("costguard %s run failed", mode),
+		Organization: c.Organization,
+		Alerts:       []string{strings.TrimSuffix(strings.TrimSpace(lines[0]), ":")},
+		Intro:        "The run stopped before changing anything.",
+		Footer:       "costguard " + c.Version,
 	}
 	if len(lines) > 1 {
 		sec := Section{Title: "Details"}
@@ -401,14 +368,11 @@ func (c Composer) Failure(mode Mode, err error) Message {
 	return m
 }
 
-// add appends a section. limit > 0 lists at most that many entries;
-// waiting counts entries the caller already left out. Either way the
-// section says how many more there are.
 func (c Composer) add(m *Message, title string, items []report.Item, limit, waiting int) {
 	if len(items) == 0 && waiting == 0 {
 		return
 	}
-	sec := Section{Title: title, Omitted: waiting}
+	sec := Section{Title: title, Omitted: waiting, Folded: true}
 	for i, it := range items {
 		if limit > 0 && i == limit {
 			sec.Omitted += len(items) - limit
@@ -419,9 +383,6 @@ func (c Composer) add(m *Message, title string, items []report.Item, limit, wait
 	m.Sections = append(m.Sections, sec)
 }
 
-// protectedMarkedItems says per entry what happens to its stale delete
-// label: the flag run removes it from volumes and public IPs, the rest
-// needs a person.
 func (c Composer) protectedMarkedItems(items []report.Item, readOnly bool) []report.Item {
 	out := make([]report.Item, 0, len(items))
 	for _, it := range items {
@@ -440,7 +401,6 @@ func (c Composer) protectedMarkedItems(items []report.Item, readOnly bool) []rep
 	return out
 }
 
-// lineText renders "volume data · shop (eu01) · 50 GB · new".
 func lineText(it report.Item) string {
 	name := it.Name
 	if name == "" {
@@ -463,8 +423,6 @@ func lineText(it report.Item) string {
 	return strings.Join(parts, " · ")
 }
 
-// subtitle renders "Scope: … · regions eu01 · 2026-10-01 14:03
-// (Europe/Berlin)", in the configured time zone like the schedules.
 func (c Composer) subtitle(scope string, regions []string, at time.Time) string {
 	parts := []string{"Scope: " + scope}
 	if len(regions) > 0 {
@@ -481,13 +439,11 @@ func scanErrorAlert(errs []string) []string {
 	return []string{"Some things could not be read, so this may be incomplete. Nothing that could not be read is flagged or deleted. Details at the end."}
 }
 
-// addScanErrors lists every cause of a scan error once (the scanner groups
-// them), at the end of the message.
 func addScanErrors(m *Message, errs []string) {
 	if len(errs) == 0 {
 		return
 	}
-	sec := Section{Title: fmt.Sprintf("Could not be read: %d", len(errs))}
+	sec := Section{Title: fmt.Sprintf("Could not be read: %d", len(errs)), Folded: true}
 	for _, e := range errs {
 		sec.Lines = append(sec.Lines, Line{Text: e})
 	}

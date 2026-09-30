@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package slack renders a message as Slack Block Kit for an incoming
-// webhook.
 package slack
 
 import (
@@ -23,25 +21,19 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier"
 )
 
-// Block Kit limits. The 50-block limit is not enforced here on purpose:
-// cutting blocks would hide entries, so an oversized message fails
-// visibly instead.
 const (
 	maxHeaderChars = 150
 	maxTextChars   = 3000
 )
 
-// Notifier posts to a Slack incoming webhook.
 type Notifier struct {
 	poster notifier.Poster
 }
 
-// New returns a Slack notifier.
 func New(webhookURL string) *Notifier {
 	return &Notifier{poster: notifier.NewPoster(webhookURL, "Slack")}
 }
 
-// Send renders and posts the message.
 func (n *Notifier) Send(ctx context.Context, msg notifier.Message) error {
 	return n.poster.Post(ctx, Render(msg))
 }
@@ -54,13 +46,12 @@ func contextBlock(t string) block {
 	return block{"type": "context", "elements": []block{text(t)}}
 }
 
-// Render builds the webhook payload. "text" is the notification fallback.
 func Render(msg notifier.Message) map[string]any {
 	blocks := []block{
 		{"type": "header", "text": block{"type": "plain_text", "text": truncate(msg.Title, maxHeaderChars)}},
 	}
-	if msg.Subtitle != "" {
-		blocks = append(blocks, contextBlock(escape(msg.Subtitle)))
+	if sub := msg.HeaderSubtitle(); sub != "" {
+		blocks = append(blocks, contextBlock(escape(sub)))
 	}
 	for _, a := range msg.Alerts {
 		blocks = append(blocks, section(truncate(":warning: *"+escape(a)+"*", maxTextChars)))
@@ -87,10 +78,9 @@ func Render(msg notifier.Message) map[string]any {
 	if msg.Footer != "" {
 		blocks = append(blocks, contextBlock(escape(msg.Footer)))
 	}
-	return map[string]any{"text": msg.Title, "blocks": blocks}
+	return map[string]any{"text": msg.Notification(), "blocks": blocks}
 }
 
-// chunks joins lines with newlines into pieces of at most max characters.
 func chunks(lines []string, max int) []string {
 	var out []string
 	var cur strings.Builder
@@ -111,7 +101,6 @@ func chunks(lines []string, max int) []string {
 	return out
 }
 
-// escape protects Slack's control characters.
 func escape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }

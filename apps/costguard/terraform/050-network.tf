@@ -26,9 +26,6 @@ resource "stackit_network" "costguard" {
   labels           = local.labels
 }
 
-# Egress only. A new security group already allows all outbound IPv4 and
-# IPv6 traffic (spike); nothing comes in, except SSH from one CIDR while
-# break_glass is set.
 resource "stackit_security_group" "costguard" {
   project_id  = local.project_id
   name        = "costguard"
@@ -37,32 +34,10 @@ resource "stackit_security_group" "costguard" {
   labels      = local.labels
 }
 
-resource "stackit_security_group_rule" "break_glass_ssh" {
-  count = var.break_glass == null ? 0 : 1
-
-  project_id        = local.project_id
-  security_group_id = stackit_security_group.costguard.security_group_id
-  description       = "costguard break-glass SSH"
-  direction         = "ingress"
-  ether_type        = "IPv4"
-  ip_range          = var.break_glass.allowed_cidr
-  protocol          = { name = "tcp" }
-  port_range        = { min = 22, max = 22 }
-}
-
-# Security stays on (tf-az-flavor-test sets security = false; don't copy that).
 resource "stackit_network_interface" "costguard" {
   project_id         = local.project_id
   network_id         = local.network_id
   name               = "costguard"
   security_group_ids = [stackit_security_group.costguard.security_group_id]
   labels             = local.labels
-}
-
-resource "stackit_public_ip" "break_glass" {
-  count = var.break_glass == null ? 0 : 1
-
-  project_id           = local.project_id
-  network_interface_id = stackit_network_interface.costguard.network_interface_id
-  labels               = local.labels
 }

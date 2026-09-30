@@ -19,10 +19,6 @@ data "stackit_image_v2" "os" {
 }
 
 locals {
-  # image_id is Optional but not Computed in stackit_image_v2: while the data
-  # source waits for a new project it is null in the plan, and the server
-  # would get source_id = null. The computed id ("project_id,region,image_id")
-  # is unknown instead, which is what the plan needs.
   image_id = element(split(",", data.stackit_image_v2.os.id), 2)
 }
 
@@ -44,29 +40,19 @@ module "cloud_init" {
   webhook_url           = var.webhook_url
   service_account_email = stackit_service_account.costguard.email
   binary                = local.binary
-  break_glass           = var.break_glass != null
 }
 
-# A second line of defence: user_data already forces a replacement, this
-# also covers a provider that stops doing so.
 resource "terraform_data" "cloud_init" {
   input = sha256(module.cloud_init.user_data)
 }
 
-# Immutable: any settings change replaces the server (costguard keeps no
-# state). The image only refreshes with a replacement; STACKIT rebuilds it
-# daily, so following it would replace the server on every apply. For a
-# fresh image: terraform apply -replace=stackit_server.costguard
 resource "stackit_server" "costguard" {
   project_id        = local.project_id
   name              = "costguard"
   machine_type      = var.machine_type
   availability_zone = var.availability_zone
   user_data         = module.cloud_init.user_data
-  keypair_name      = var.break_glass == null ? null : stackit_key_pair.break_glass[0].name
 
-  # No STACKIT Server Agent: it runs scripts sent through the Run Command API
-  # as root, which could read the service account's token.
   agent = {
     provisioning_policy = "NEVER"
   }
@@ -95,18 +81,8 @@ resource "stackit_server" "costguard" {
   depends_on = [terraform_data.settings]
 }
 
-# The provider can't attach a service account at creation (the IaaS API
-# could), so this follows right after; the boot run waits for it.
 resource "stackit_server_service_account_attach" "costguard" {
   project_id            = local.project_id
   server_id             = stackit_server.costguard.server_id
   service_account_email = stackit_service_account.costguard.email
-}
-
-resource "stackit_key_pair" "break_glass" {
-  count = var.break_glass == null ? 0 : 1
-
-  name       = "costguard-break-glass"
-  public_key = var.break_glass.public_key
-  labels     = local.labels
 }

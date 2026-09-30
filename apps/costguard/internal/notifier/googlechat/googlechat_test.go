@@ -45,8 +45,6 @@ func TestRenderIsCardsV2(t *testing.T) {
 	p := Render(sample())
 	data, _ := json.Marshal(p)
 
-	// Decode into the documented shape: cardsV2 is an array of
-	// {cardId, card}; section headers are strings.
 	var doc struct {
 		Text    string `json:"text"`
 		CardsV2 []struct {
@@ -91,6 +89,32 @@ func TestRenderIsCardsV2(t *testing.T) {
 	}
 	if !strings.Contains(card.Sections[2].Widgets[0].TextParagraph.Text, "costguard v0.1.0") {
 		t.Errorf("footer = %+v", card.Sections[2])
+	}
+}
+
+func TestRenderOrganizationAndFoldedSections(t *testing.T) {
+	m := sample()
+	m.Organization = "Acme"
+	m.Sections[0].Folded = true
+	m.Sections = append(m.Sections, notifier.Section{Title: "Details", Lines: []notifier.Line{{Text: "why"}}})
+	p := Render(m)
+	if _, ok := p["text"]; ok {
+		t.Error("text must be empty: Google Chat shows it as a line of its own above the card")
+	}
+	if p["fallbackText"] != "Acme: costguard report" {
+		t.Errorf("fallbackText = %v", p["fallbackText"])
+	}
+	card := p["cardsV2"].([]obj)[0]["card"].(obj)
+	if sub := card["header"].(obj)["subtitle"]; sub != "Acme · Scope: Teams" {
+		t.Errorf("subtitle = %v", sub)
+	}
+	sections := card["sections"].([]obj)
+	folded, open := sections[1], sections[2]
+	if folded["header"] != "Idle public IPs: 1" || folded["collapsible"] != true || folded["uncollapsibleWidgetsCount"] != 0 {
+		t.Errorf("folded section = %v", folded)
+	}
+	if _, ok := open["collapsible"]; ok || open["header"] != "Details" {
+		t.Errorf("open section = %v", open)
 	}
 }
 

@@ -35,7 +35,6 @@ import (
 
 var ctx = context.Background()
 
-// router serves canned JSON per "METHOD path" and records requests.
 type router struct {
 	t      *testing.T
 	mu     sync.Mutex
@@ -58,7 +57,6 @@ func (rt *router) json(method, path string, status int, body any) {
 }
 
 func (rt *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// The SDK rejects responses that are not explicitly JSON.
 	w.Header().Set("Content-Type", "application/json")
 	key := r.Method + " " + r.URL.Path
 	body, _ := io.ReadAll(r.Body)
@@ -114,7 +112,6 @@ func TestListProjectsFollowsPagination(t *testing.T) {
 		if r.URL.Query().Get("containerParentId") != "f1" || r.URL.Query().Get("limit") != "100" {
 			t.Errorf("query = %s", r.URL.RawQuery)
 		}
-		// The API caps the page at 2 and says so.
 		items := []any{project("p1", "a", "f1", nil), project("p2", "b", "f1", nil)}
 		if r.URL.Query().Get("offset") == "2" {
 			items = []any{project("p3", "c", "f1", map[string]string{"k": "v"})}
@@ -140,7 +137,6 @@ func TestListFoldersStopsOnEmptyPage(t *testing.T) {
 		if r.URL.Query().Get("offset") != "0" {
 			items = []any{}
 		}
-		// No usable limit echoed: pagination continues until an empty page.
 		_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "limit": 0, "offset": 0})
 	}
 	got, err := testSet(t, rt).ResourceManager.ListFolders(ctx, "org")
@@ -210,6 +206,23 @@ func TestGetProjectAndFolderWithAncestors(t *testing.T) {
 	}
 	if _, err := set.ResourceManager.GetFolder(ctx, "missing"); !IsNotFound(err) {
 		t.Errorf("want 404, got %v", err)
+	}
+}
+
+func TestOrganizationName(t *testing.T) {
+	rt := newRouter(t)
+	rt.json("GET", "/v2/organizations/"+orgID, 200, map[string]any{
+		"organizationId": orgID, "containerId": "acme-1234", "name": "Acme GmbH", "lifecycleState": "ACTIVE",
+		"creationTime": "2025-01-01T00:00:00Z", "updateTime": "2025-01-01T00:00:00Z",
+	})
+	rt.json("GET", "/v2/organizations/other", 403, map[string]any{"message": "no"})
+	set := testSet(t, rt)
+
+	if name, err := set.ResourceManager.OrganizationName(ctx, orgID); err != nil || name != "Acme GmbH" {
+		t.Errorf("name = %q, %v", name, err)
+	}
+	if _, err := set.ResourceManager.OrganizationName(ctx, "other"); err == nil || !strings.Contains(err.Error(), "getting organization other") {
+		t.Errorf("err = %v", err)
 	}
 }
 
@@ -445,7 +458,6 @@ func TestServicesSKEAndBuckets(t *testing.T) {
 	if b, err := svc.Buckets(ctx, "p1", "eu01"); err != nil || len(b) != 1 || b[0] != "logs" {
 		t.Errorf("buckets = %v %v", b, err)
 	}
-	// Not enabled (404) is "nothing there", not an error.
 	if c, err := svc.SKEClusters(ctx, "p2", "eu01"); err != nil || len(c) != 0 {
 		t.Errorf("404 clusters = %v %v", c, err)
 	}
@@ -512,7 +524,6 @@ func TestServicesLoadBalancerAddresses(t *testing.T) {
 		}
 	}
 
-	// Neither service enabled: no addresses, no error.
 	if got, err := lbServices(t, newRouter(t), newRouter(t)).LoadBalancerAddresses(ctx, "p1", "eu01"); err != nil || len(got) != 0 {
 		t.Errorf("404: %v %v", got, err)
 	}

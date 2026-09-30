@@ -23,31 +23,21 @@ import (
 	"github.com/stackitcloud/stackit-sdk-go/core/oapierror"
 )
 
-// The two labels users steer costguard with.
 const (
-	// LabelDelete=true asks for deletion in the next delete run. costguard
-	// sets it on cleanup candidates; users may set it on any IaaS resource.
 	LabelDelete = "delete"
-	// LabelDoNotDelete=true protects a resource. On a project or folder it
-	// skips the whole subtree.
 	LabelDoNotDelete = "do-not-delete"
-	// LabelTrue is the value costguard writes.
 	LabelTrue = "true"
 )
 
-// Requested reports whether the resource carries delete=true.
 func Requested(labels map[string]string) bool {
 	return strings.EqualFold(labels[LabelDelete], LabelTrue)
 }
 
-// Protected reports whether the resource carries do-not-delete. Any value
-// other than "false" protects: when in doubt, keep the resource.
 func Protected(labels map[string]string) bool {
 	v, ok := labels[LabelDoNotDelete]
 	return ok && !strings.EqualFold(v, "false")
 }
 
-// StatusCode extracts the HTTP status from an SDK error.
 func StatusCode(err error) (int, bool) {
 	var apiErr *oapierror.GenericOpenAPIError
 	if errors.As(err, &apiErr) && apiErr != nil {
@@ -56,18 +46,13 @@ func StatusCode(err error) (int, bool) {
 	return 0, false
 }
 
-// IsNotFound reports whether err is an HTTP 404.
 func IsNotFound(err error) bool {
 	code, ok := StatusCode(err)
 	return ok && code == 404
 }
 
-// maxDescribed caps the API message quoted by Describe.
 const maxDescribed = 200
 
-// Describe renders an error for a chat message. API errors become
-// "HTTP 403: <the message the API sent>" instead of the SDK's text with the
-// raw response body; other errors keep their text.
 func Describe(err error) string {
 	var apiErr *oapierror.GenericOpenAPIError
 	if !errors.As(err, &apiErr) || apiErr == nil {
@@ -87,16 +72,8 @@ func Describe(err error) string {
 	return out
 }
 
-// notEnabledPhrases are the wordings that say a service is not enabled for
-// a project. ❓ Not verified against the real APIs yet (README_internal.md,
-// check L): replace them with the exact answers once they are known.
 var notEnabledPhrases = []string{"not enabled", "not activated", "not been enabled", "not been activated"}
 
-// NotEnabled reports whether err means that a service is not enabled for
-// the project or region: an HTTP 404, or a 4xx answer that says so. Such a
-// project has nothing of that service, so callers treat it as empty. Any
-// other 403 stays an error on purpose: it can also mean that costguard may
-// not look, and "no load balancer" must never be concluded from that.
 func NotEnabled(err error) bool {
 	var apiErr *oapierror.GenericOpenAPIError
 	if !errors.As(err, &apiErr) || apiErr == nil {
@@ -128,8 +105,6 @@ func copyLabels(in map[string]string) map[string]string {
 	return out
 }
 
-// stringLabels converts the IaaS label type to map[string]string,
-// dropping non-string values (which well-formed labels never have).
 func stringLabels(in map[string]interface{}) map[string]string {
 	if in == nil {
 		return nil

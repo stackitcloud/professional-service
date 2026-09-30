@@ -12,28 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package teams renders a message as an Adaptive Card for a Teams
-// Workflows webhook ("Post to a channel when a webhook request is
-// received").
 package teams
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier"
 )
 
-// Notifier posts to a Teams Workflows webhook.
 type Notifier struct {
 	poster notifier.Poster
 }
 
-// New returns a Teams notifier.
 func New(webhookURL string) *Notifier {
 	return &Notifier{poster: notifier.NewPoster(webhookURL, "Teams")}
 }
 
-// Send renders and posts the message.
 func (n *Notifier) Send(ctx context.Context, msg notifier.Message) error {
 	return n.poster.Post(ctx, Render(msg))
 }
@@ -48,11 +43,10 @@ func textBlock(text string, props obj) obj {
 	return b
 }
 
-// Render builds the webhook payload.
 func Render(msg notifier.Message) map[string]any {
 	body := []obj{textBlock(msg.Title, obj{"size": "Large", "weight": "Bolder"})}
-	if msg.Subtitle != "" {
-		body = append(body, textBlock(msg.Subtitle, obj{"isSubtle": true, "spacing": "None"}))
+	if sub := msg.HeaderSubtitle(); sub != "" {
+		body = append(body, textBlock(sub, obj{"isSubtle": true, "spacing": "None"}))
 	}
 	for _, a := range msg.Alerts {
 		body = append(body, textBlock("⚠ "+a, obj{"color": "Attention", "weight": "Bolder"}))
@@ -60,18 +54,34 @@ func Render(msg notifier.Message) map[string]any {
 	if msg.Intro != "" {
 		body = append(body, textBlock(msg.Intro, nil))
 	}
-	for _, s := range msg.Sections {
+	for i, s := range msg.Sections {
 		body = append(body, textBlock(s.Title, obj{"weight": "Bolder", "spacing": "Medium"}))
+		var lines []obj
 		for _, l := range s.Lines {
 			line := "• " + l.Text
 			if l.Link != "" {
 				line += " [open](" + l.Link + ")"
 			}
-			body = append(body, textBlock(line, obj{"spacing": "None"}))
+			lines = append(lines, textBlock(line, obj{"spacing": "None"}))
 		}
 		if s.Omitted > 0 {
-			body = append(body, textBlock(notifier.OmittedText(s.Omitted), obj{"isSubtle": true, "spacing": "None"}))
+			lines = append(lines, textBlock(notifier.OmittedText(s.Omitted), obj{"isSubtle": true, "spacing": "None"}))
 		}
+		if !s.Folded {
+			body = append(body, lines...)
+			continue
+		}
+		id := fmt.Sprintf("section-%d", i)
+		toggle := obj{"type": "Action.ToggleVisibility", "targetElements": []string{id + "-more", id, id + "-less"}}
+		link := func(suffix, text string, visible bool) obj {
+			return obj{"type": "Container", "id": id + suffix, "isVisible": visible, "spacing": "None", "selectAction": toggle,
+				"items": []obj{textBlock(text, obj{"color": "Accent", "spacing": "None"})}}
+		}
+		body = append(body,
+			link("-more", "Show more", true),
+			obj{"type": "Container", "id": id, "isVisible": false, "spacing": "None", "items": lines},
+			link("-less", "Show less", false),
+		)
 	}
 	if msg.Footer != "" {
 		body = append(body, textBlock(msg.Footer, obj{"isSubtle": true, "size": "Small", "spacing": "Medium"}))

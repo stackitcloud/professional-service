@@ -51,9 +51,3 @@ variable "binary" {
     sha256  = map(string)
   })
 }
-
-variable "break_glass" {
-  description = "Keep sshd (key-only, default user) instead of masking it."
-  type        = bool
-  default     = false
-}

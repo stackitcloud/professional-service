@@ -42,8 +42,3 @@ output "image" {
   description = "The OS image a new server would get (the running one keeps its image until it is replaced)."
   value       = { id = local.image_id, name = data.stackit_image_v2.os.name }
 }
-
-output "break_glass_ip" {
-  description = "Public IP for break-glass SSH (user debian), while break_glass is set."
-  value       = one(stackit_public_ip.break_glass[*].ip)
-}
