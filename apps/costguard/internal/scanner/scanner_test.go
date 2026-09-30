@@ -681,3 +681,29 @@ func TestPacers(t *testing.T) {
 	}
 	runPooled(context.Background(), 0, []func(context.Context){func(context.Context) {}})
 }
+
+func TestVolumesWithSnapshotsPointToTheNewestSnapshot(t *testing.T) {
+	st := oneProject()
+	created := func(at time.Time) opt { return func(r *stackit.Resource) { r.CreatedAt = at } }
+	st.Add(
+		r(stackit.KindVolume, "v1", "p1", detached(10)),
+		r(stackit.KindSnapshot, "sn-old", "p1", of("v1"), created(now.AddDate(0, 0, -9))),
+		r(stackit.KindSnapshot, "sn-new", "p1", of("v1"), created(now.AddDate(0, 0, -1))),
+		r(stackit.KindSnapshot, "sn-mid", "p1", of("v1"), created(now.AddDate(0, 0, -5))),
+		r(stackit.KindVolume, "v2", "p1", detached(5)),
+		r(stackit.KindSnapshot, "sn-a", "p1", of("v2")),
+		r(stackit.KindSnapshot, "sn-b", "p1", of("v2")),
+		r(stackit.KindVolume, "v3", "p1", detached(1)),
+	)
+	rep := scan(t, st, testConfig(nil)).Report
+	got := map[string]string{}
+	for _, it := range rep.WithSnapshots {
+		got[it.ID] = it.SnapshotID
+	}
+	if got["v1"] != "sn-new" || got["v2"] != "sn-b" || len(got) != 2 {
+		t.Errorf("snapshot links = %v", got)
+	}
+	if len(rep.DetachedVolumes) != 1 || rep.DetachedVolumes[0].ID != "v3" || rep.DetachedVolumes[0].SnapshotID != "" {
+		t.Errorf("a volume without snapshots links to itself: %+v", rep.DetachedVolumes)
+	}
+}

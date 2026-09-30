@@ -63,6 +63,7 @@ type Item struct {
 	New         bool
 	NetworkID   string
 	VolumeID    string
+	SnapshotID  string
 	SizeGB      int64
 }
 

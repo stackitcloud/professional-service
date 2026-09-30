@@ -488,6 +488,7 @@ func TestPortalLink(t *testing.T) {
 		"https://p/disk-volumes/volumes/v2/overview?project=p+1":            item("volume", "v2"),
 		"https://p/public-ip/public-ips/ip1/overview?project=p+1":           item("publicip", "ip1"),
 		"https://p/disk-volumes/volumes/v1/snapshots/sn1?project=p+1":       item("snapshot", "sn1"),
+		"https://p/disk-volumes/volumes/v3/snapshots/sn9?project=p+1":       {Kind: "volume", ID: "v3", ProjectID: "p 1", SnapshotID: "sn9"},
 		"https://p/nic/nics/n1/overview?project=p+1":                        item("nic", "n1"),
 		"https://p/security-group/groups/g1/overview?project=p+1":           item("securitygroup", "g1"),
 		"https://p/dashboard?project=p+1":                                   item(report.KindProject, "p 1"),

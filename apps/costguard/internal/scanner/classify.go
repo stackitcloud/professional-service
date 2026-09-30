@@ -127,6 +127,7 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 	}
 
 	snapshots := snapshotCounts(inv)
+	newest := newestSnapshots(inv)
 	for _, v := range inv.res[stackit.KindVolume] {
 		if stackit.Protected(v.Labels) {
 			if stackit.Requested(v.Labels) {
@@ -147,7 +148,9 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 			}
 		case !unusedVolume(v) || !inv.ok(stackit.KindSnapshot):
 		case snapshots[v.ID] > 0:
-			rep.WithSnapshots = append(rep.WithSnapshots, item(v, size+", "+report.Count(snapshots[v.ID], "snapshot"), false))
+			it := item(v, size+", "+report.Count(snapshots[v.ID], "snapshot"), false)
+			it.SnapshotID = newest[v.ID].ID
+			rep.WithSnapshots = append(rep.WithSnapshots, it)
 		case !inv.skeChecked || inv.skeFailed:
 		case len(inv.skeClusters) > 0:
 		default:
@@ -193,6 +196,17 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 		}
 	}
 	return newIPs, newVolumes
+}
+
+func newestSnapshots(inv *inventory) map[string]stackit.Resource {
+	out := map[string]stackit.Resource{}
+	for _, s := range inv.res[stackit.KindSnapshot] {
+		cur, ok := out[s.VolumeID]
+		if !ok || s.CreatedAt.After(cur.CreatedAt) || (s.CreatedAt.Equal(cur.CreatedAt) && s.ID > cur.ID) {
+			out[s.VolumeID] = s
+		}
+	}
+	return out
 }
 
 func requestDetail(r stackit.Resource) string {

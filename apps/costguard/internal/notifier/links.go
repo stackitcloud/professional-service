@@ -40,6 +40,9 @@ func PortalLink(portalURL, organizationID string, it report.Item) string {
 	case "server":
 		return inProject("/server/servers/" + id + "/overview")
 	case "volume":
+		if it.SnapshotID != "" {
+			return inProject("/disk-volumes/volumes/" + id + "/snapshots/" + url.PathEscape(it.SnapshotID))
+		}
 		return inProject("/disk-volumes/volumes/" + id + "/overview")
 	case "publicip":
 		return inProject("/public-ip/public-ips/" + id + "/overview")
