@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	LabelDelete = "delete"
+	LabelDelete      = "delete"
 	LabelDoNotDelete = "do-not-delete"
-	LabelTrue = "true"
+	LabelTrue        = "true"
 )
 
 func Requested(labels map[string]string) bool {

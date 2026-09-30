@@ -26,8 +26,8 @@ locals {
   day_names = { Mon = "Monday", Tue = "Tuesday", Wed = "Wednesday", Thu = "Thursday", Fri = "Friday", Sat = "Saturday", Sun = "Sunday" }
 
   feature_defaults = {
-    report = { enabled = true, days = ["Mon"], time = "08:00" }
-    delete = { enabled = false, days = ["Tue"], time = "08:00" }
+    report  = { enabled = true, days = ["Mon"], time = "08:00" }
+    delete  = { enabled = false, days = ["Tue"], time = "08:00" }
     budgets = { enabled = false, days = ["Mon", "Tue", "Wed", "Thu", "Fri"], time = "10:00", thresholds = [80, 100], limits = [] }
   }
   features = { for name, defaults in local.feature_defaults : name => merge(defaults, try(var.settings.features[name], {})) }

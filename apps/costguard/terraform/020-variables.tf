@@ -193,8 +193,8 @@ variable "features" {
                project = "<ID or name>"), monthly_eur, and optionally its own thresholds.
     Keys left out keep their default.
   EOT
-  type    = any
-  default = {}
+  type        = any
+  default     = {}
 
   validation {
     condition     = can(keys(var.features)) && alltrue([for f in try(keys(var.features), []) : contains(["report", "delete", "budgets"], f)])

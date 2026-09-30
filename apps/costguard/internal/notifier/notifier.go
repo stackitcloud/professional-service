@@ -25,20 +25,20 @@ import (
 )
 
 type Message struct {
-	Title string
+	Title        string
 	Organization string
 	Subtitle     string
-	Alerts []string
-	Intro    string
-	Sections []Section
-	Footer   string
+	Alerts       []string
+	Intro        string
+	Sections     []Section
+	Footer       string
 }
 
 type Section struct {
-	Title string
-	Lines []Line
+	Title   string
+	Lines   []Line
 	Omitted int
-	Folded bool
+	Folded  bool
 }
 
 func (m Message) HeaderSubtitle() string {
@@ -74,7 +74,7 @@ type Notifier interface {
 type Poster struct {
 	URL    string
 	Client *http.Client
-	Name string
+	Name   string
 }
 
 const attemptTimeout = 12 * time.Second

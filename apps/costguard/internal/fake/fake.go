@@ -34,23 +34,23 @@ func Status(code int) error {
 type Store struct {
 	mu sync.Mutex
 
-	OrgName string
-	Containers map[string]stackit.Container
-	Folder     map[string]bool
-	Resources  []*stackit.Resource
-	Areas      []stackit.NetworkArea
-	Costs      map[string]float64
+	OrgName      string
+	Containers   map[string]stackit.Container
+	Folder       map[string]bool
+	Resources    []*stackit.Resource
+	Areas        []stackit.NetworkArea
+	Costs        map[string]float64
 	Daily        map[string]stackit.ProjectDays
 	LastModified time.Time
-	SKE         map[string][]string
-	BucketNames map[string][]string
-	LB          map[string]map[string]string
+	SKE          map[string][]string
+	BucketNames  map[string][]string
+	LB           map[string]map[string]string
 
-	Errs map[string]error
-	ErrsOnce map[string]error
+	Errs            map[string]error
+	ErrsOnce        map[string]error
 	ListDescendants bool
-	AfterDelete func(ref stackit.Resource)
-	DeletingReads int
+	AfterDelete     func(ref stackit.Resource)
+	DeletingReads   int
 
 	Calls   []string
 	pending map[string]int

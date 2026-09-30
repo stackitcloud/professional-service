@@ -23,13 +23,13 @@ import (
 )
 
 type Container struct {
-	ID        string
-	Name      string
-	ParentID  string
-	Labels    map[string]string
-	CreatedAt time.Time
+	ID             string
+	Name           string
+	ParentID       string
+	Labels         map[string]string
+	CreatedAt      time.Time
 	LifecycleState string
-	Ancestors []Ancestor
+	Ancestors      []Ancestor
 }
 
 type Ancestor struct {

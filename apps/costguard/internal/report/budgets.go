@@ -17,12 +17,12 @@ package report
 import "time"
 
 type BudgetCheck struct {
-	Month time.Time
-	Checked time.Time
+	Month        time.Time
+	Checked      time.Time
 	LastModified time.Time
-	Budgets []BudgetStatus
-	Problems    []string
-	GeneratedAt time.Time
+	Budgets      []BudgetStatus
+	Problems     []string
+	GeneratedAt  time.Time
 }
 
 func (c *BudgetCheck) NothingIn() bool {
@@ -40,16 +40,16 @@ func (c *BudgetCheck) Reached() []BudgetStatus {
 }
 
 type BudgetStatus struct {
-	Name string
-	Target string
-	ProjectID  string
-	LimitEUR   float64
-	Thresholds []int
-	MonthEUR float64
-	DayEUR   float64
-	Reached int
+	Name        string
+	Target      string
+	ProjectID   string
+	LimitEUR    float64
+	Thresholds  []int
+	MonthEUR    float64
+	DayEUR      float64
+	Reached     int
 	ForecastEUR float64
-	Top []ProjectSpend
+	Top         []ProjectSpend
 }
 
 type ProjectSpend struct {

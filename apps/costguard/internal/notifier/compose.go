@@ -25,28 +25,28 @@ import (
 type Mode string
 
 const (
-	ModeReport Mode = "report"
-	ModeFlag   Mode = "flag"
-	ModeDelete Mode = "delete"
+	ModeReport  Mode = "report"
+	ModeFlag    Mode = "flag"
+	ModeDelete  Mode = "delete"
 	ModeBudgets Mode = "budgets"
-	ModeBoot Mode = "boot"
+	ModeBoot    Mode = "boot"
 )
 
 type Composer struct {
-	Organization string
-	PortalURL    string
-	DeleteEnabled bool
-	DeleteRunAt string
-	ReportRunAt string
-	BudgetsRunAt string
-	Location *time.Location
+	Organization       string
+	PortalURL          string
+	DeleteEnabled      bool
+	DeleteRunAt        string
+	ReportRunAt        string
+	BudgetsRunAt       string
+	Location           *time.Location
 	Prices             report.Prices
 	WarnEmptyAfterDays int
 	Version            string
 }
 
 const (
-	keepHint = "To keep a resource, open it and set the label do-not-delete=true (or remove delete=true)."
+	keepHint    = "To keep a resource, open it and set the label do-not-delete=true (or remove delete=true)."
 	keepHintOff = "To keep a resource once delete is on, set the label do-not-delete=true on it."
 )
 
