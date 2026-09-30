@@ -13,10 +13,22 @@
 # limitations under the License.
 
 
-# Offline tests of the root config: terraform test (no STACKIT access; the
-# provider is mocked). Covers the variable checks, the rules across settings,
-# what the server gets (config, units, environment) and which resources each
-# option creates.
+# Offline tests of the root config: terraform test (no STACKIT access, no
+# download; the providers are mocked). Covers the variable checks, the rules
+# across settings, what the server gets (config, units, environment) and
+# which resources each option creates.
+
+# The release's SHA256SUMS. Mocks must be static (Terraform 1.9, OpenTofu),
+# so the names carry a made-up version: the hashes are taken per
+# architecture.
+mock_provider "http" {
+  mock_data "http" {
+    defaults = {
+      status_code   = 200
+      response_body = "1111111111111111111111111111111111111111111111111111111111111111  costguard_v9.9.9_linux_amd64\n2222222222222222222222222222222222222222222222222222222222222222  costguard_v9.9.9_linux_arm64\n"
+    }
+  }
+}
 
 mock_provider "stackit" {
   mock_resource "stackit_resourcemanager_project" {
@@ -224,6 +236,19 @@ run "several_days" {
   }
 }
 
+run "report_on_workdays" {
+  command = plan
+
+  variables {
+    features = { report = { days = ["Fri", "Thu", "Wed", "Tue", "Mon"] } }
+  }
+
+  assert {
+    condition     = module.cloud_init.config.reportRunAt == "Monday to Friday 08:00 (Europe/Berlin)"
+    error_message = "reportRunAt: ${module.cloud_init.config.reportRunAt}"
+  }
+}
+
 run "every_day" {
   command = plan
 
@@ -235,6 +260,286 @@ run "every_day" {
     condition     = module.cloud_init.config.reportRunAt == "every day 08:00 (Europe/Berlin)"
     error_message = "reportRunAt: ${module.cloud_init.config.reportRunAt}"
   }
+}
+
+# ---- budgets ----
+
+run "budgets_on" {
+  command = apply
+
+  variables {
+    features = {
+      budgets = {
+        enabled = true
+        limits = [
+          { name = "Whole organization", organization = true, monthly_eur = 20000 },
+          { name = " Team A ", folder = "team-a", monthly_eur = 2500.5, thresholds = [50, 100] },
+          { name = "Sandbox", project = "99999999-0000-4000-8000-0000000000aa", monthly_eur = 50 },
+        ]
+      }
+    }
+  }
+
+  assert {
+    condition = jsonencode(yamldecode(one([for f in yamldecode(module.cloud_init.user_data).write_files : f.content if f.path == "/etc/costguard/config.yaml"])).budgets) == jsonencode({
+      days = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+      time = "10:00"
+      limits = [
+        { name = "Whole organization", organization = true, monthlyEur = 20000, thresholds = [80, 100] },
+        { name = "Team A", folder = "team-a", monthlyEur = 2500.5, thresholds = [50, 100] },
+        { name = "Sandbox", project = "99999999-0000-4000-8000-0000000000aa", monthlyEur = 50, thresholds = [80, 100] },
+      ]
+    })
+    error_message = "config.yaml budgets: ${jsonencode(module.cloud_init.config.budgets)}"
+  }
+  assert {
+    condition     = [for t in module.cloud_init.timers : "${t.name}=${t.subcommand}@${t.on_calendar}"] == ["report=report@Mon *-*-* 08:00:00 Europe/Berlin", "budgets=budgets@Mon,Tue,Wed,Thu,Fri *-*-* 10:00:00 Europe/Berlin"]
+    error_message = "Timers: ${jsonencode(module.cloud_init.timers)}"
+  }
+  assert {
+    condition     = module.cloud_init.config.reportEnabled && module.cloud_init.schedule.budgets == "Monday to Friday 10:00 (Europe/Berlin)"
+    error_message = "reportEnabled must be true and budgets run Monday to Friday by default: ${module.cloud_init.schedule.budgets}"
+  }
+  assert {
+    condition     = length(stackit_authorization_organization_custom_role.reader.permissions) == 26 && contains(stackit_authorization_organization_custom_role.reader.permissions, "cost-management.billing.get") && length(stackit_authorization_organization_custom_role.cleaner) == 0
+    error_message = "Budgets need no new rights: costguard.reader already reads costs."
+  }
+}
+
+run "budgets_default_thresholds_of_the_feature" {
+  command = plan
+
+  variables {
+    time_zone = "UTC"
+    features = {
+      budgets = { enabled = true, time = "08:00", thresholds = [90], limits = [{ name = "Org", organization = true, monthly_eur = 1 }] }
+    }
+  }
+
+  assert {
+    condition     = module.cloud_init.config.budgets.limits[0].thresholds == [90] && module.cloud_init.config.budgets.time == "08:00"
+    error_message = "A limit without thresholds takes the feature's: ${jsonencode(module.cloud_init.config.budgets)}"
+  }
+}
+
+run "budget_quoted_amount" {
+  command = plan
+
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "Org", organization = true, monthly_eur = "100" }] } }
+  }
+
+  assert {
+    condition     = jsonencode(module.cloud_init.config.budgets.limits[0]) == jsonencode({ monthlyEur = 100, name = "Org", organization = true, thresholds = [80, 100] })
+    error_message = "A quoted amount must reach config.yaml as a number: ${jsonencode(module.cloud_init.config.budgets.limits[0])}"
+  }
+}
+
+run "budget_quoted_threshold" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, thresholds = ["80"], limits = [{ name = "Org", organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budgets_only" {
+  command = plan
+
+  variables {
+    features = {
+      report  = { enabled = false }
+      budgets = { enabled = true, limits = [{ name = "Org", organization = true, monthly_eur = 100 }] }
+    }
+  }
+
+  assert {
+    condition     = [for t in module.cloud_init.timers : t.name] == ["budgets"] && module.cloud_init.config.reportEnabled == false && !contains(keys(module.cloud_init.config), "reportRunAt")
+    error_message = "Budgets only: one budgets timer, reportEnabled false, no reportRunAt."
+  }
+}
+
+run "budgets_off_writes_no_budgets" {
+  command = plan
+
+  variables {
+    features = { budgets = { enabled = false, limits = [{ name = "Org", organization = true, monthly_eur = 100 }] } }
+  }
+
+  assert {
+    condition     = !contains(keys(module.cloud_init.config), "budgets") && length([for t in module.cloud_init.timers : t if t.name == "budgets"]) == 0
+    error_message = "With budgets off, the config has no budgets and there is no budgets timer."
+  }
+}
+
+run "nothing_enabled" {
+  command = plan
+  variables {
+    features = { report = { enabled = false } }
+  }
+  expect_failures = [terraform_data.settings]
+}
+
+run "budgets_during_reboot_window" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, time = "04:15", limits = [{ name = "Org", organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [check.reboot_window]
+}
+
+run "budgets_on_chosen_days" {
+  command = plan
+
+  variables {
+    time_zone = "UTC"
+    features  = { budgets = { enabled = true, days = ["Sun", "Wed"], time = "09:00", limits = [{ name = "Org", organization = true, monthly_eur = 1 }] } }
+  }
+
+  assert {
+    condition     = module.cloud_init.config.budgets.days == ["Wed", "Sun"] && module.cloud_init.schedule.budgets == "Wednesday and Sunday 09:00 (UTC)"
+    error_message = "Days in week order: ${jsonencode(module.cloud_init.config.budgets.days)}, ${module.cloud_init.schedule.budgets}"
+  }
+  assert {
+    condition     = one([for t in module.cloud_init.timers : t.on_calendar if t.name == "budgets"]) == "Wed,Sun *-*-* 09:00:00 UTC"
+    error_message = "Timers: ${jsonencode(module.cloud_init.timers)}"
+  }
+}
+
+run "budgets_every_day" {
+  command = plan
+
+  variables {
+    features = { budgets = { enabled = true, days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], limits = [{ name = "Org", organization = true, monthly_eur = 1 }] } }
+  }
+
+  assert {
+    condition     = module.cloud_init.schedule.budgets == "every day 10:00 (Europe/Berlin)" && one([for t in module.cloud_init.timers : t.on_calendar if t.name == "budgets"]) == "*-*-* 10:00:00 Europe/Berlin"
+    error_message = "Every day: ${module.cloud_init.schedule.budgets}"
+  }
+}
+
+run "budgets_bad_day" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, days = ["Monday"], limits = [{ name = "Org", organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budgets_typo_key" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limit = [{ name = "Org", organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budgets_without_limits" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_typo_key" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "Org", organization = true, monthly_eur = 1, treshold = [50] }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_two_targets" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", organization = true, folder = "team-a", monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_no_target" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", organization = false, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_quoted_organization" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", organization = "true", monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_empty_folder" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", folder = " ", monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_zero_amount" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", organization = true, monthly_eur = 0 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_without_name" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_names_twice" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [
+      { name = "Team", folder = "a", monthly_eur = 1 },
+      { name = "team ", folder = "b", monthly_eur = 1 },
+    ] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_thresholds_descending" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, thresholds = [100, 80], limits = [{ name = "X", organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_threshold_fraction" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", organization = true, monthly_eur = 1, thresholds = [80.5] }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_threshold_out_of_range" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, limits = [{ name = "X", organization = true, monthly_eur = 1, thresholds = [0, 1001] }] } }
+  }
+  expect_failures = [var.features]
+}
+
+run "budget_thresholds_empty" {
+  command = plan
+  variables {
+    features = { budgets = { enabled = true, thresholds = [], limits = [{ name = "X", organization = true, monthly_eur = 1 }] } }
+  }
+  expect_failures = [var.features]
 }
 
 # ---- Rules across settings ----
@@ -275,30 +580,91 @@ run "delete_across_the_week_boundary" {
   }
 }
 
-# Every release tag, and main between releases, pins a release (make pin
-# writes 025-release.tf); without binary_override the server installs it.
+# Every release tag, and main between releases, pins a released version
+# (000-release.tf); without binary_override the server installs it, with
+# the hashes from the release's SHA256SUMS (mocked: any version's names).
 run "release_pinned" {
-  command = plan
+  command = apply
   variables {
     binary_override = null
     download_url    = null
   }
   assert {
-    condition     = can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$", local.release.version)) && keys(local.release.sha256) == ["amd64", "arm64"] && alltrue([for h in values(local.release.sha256) : can(regex("^[0-9a-f]{64}$", h))])
-    error_message = "025-release.tf must pin a version and a SHA-256 per architecture: make pin VERSION=vX.Y.Z."
+    condition     = can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$", local.release.version))
+    error_message = "000-release.tf must pin a version vX.Y.Z: ${local.release.version}"
   }
   assert {
     condition     = local.release.download_url == "https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases/download/apps%2Fcostguard%2F{version}/"
     error_message = "The pin must point to the Forgejo release of tag apps/costguard/<version>, slashes escaped: ${local.release.download_url}"
   }
   assert {
+    condition     = data.http.release_sums[0].url == "https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases/download/apps%2Fcostguard%2F${local.release.version}/SHA256SUMS"
+    error_message = "SHA256SUMS URL: ${data.http.release_sums[0].url}"
+  }
+  assert {
     condition = jsondecode(one([for f in yamldecode(module.cloud_init.user_data).write_files : f.content if f.path == "/etc/costguard/install.json"])) == {
       version = local.release.version
       url     = local.release.download_url
-      sha256  = local.release.sha256
-      output  = "slack"
+      sha256 = {
+        amd64 = "1111111111111111111111111111111111111111111111111111111111111111"
+        arm64 = "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+      output = "slack"
     }
-    error_message = "Without binary_override, the server must install the pinned release."
+    error_message = "Without binary_override, the server must install the pinned release with the hashes of its SHA256SUMS."
+  }
+  assert {
+    condition     = output.binary.sha256.amd64 == "1111111111111111111111111111111111111111111111111111111111111111"
+    error_message = "The binary output shows the hashes."
+  }
+}
+
+run "own_download_location" {
+  command = plan
+  variables {
+    binary_override = null
+    download_url    = "https://files.example/costguard/{version}"
+  }
+  assert {
+    condition     = data.http.release_sums[0].url == "https://files.example/costguard/${local.release.version}/SHA256SUMS"
+    error_message = "SHA256SUMS comes from the same place as the binaries: ${data.http.release_sums[0].url}"
+  }
+}
+
+run "release_not_published" {
+  command = plan
+  variables {
+    binary_override = null
+    download_url    = null
+  }
+  override_data {
+    target = data.http.release_sums
+    values = { status_code = 404, response_body = "Not Found" }
+  }
+  expect_failures = [data.http.release_sums[0]]
+}
+
+run "release_sums_incomplete" {
+  command = plan
+  variables {
+    binary_override = null
+    download_url    = null
+  }
+  override_data {
+    target = data.http.release_sums
+    values = {
+      status_code   = 200
+      response_body = "1111111111111111111111111111111111111111111111111111111111111111  costguard_v9.9.9_linux_amd64\n1111111111111111111111111111111111111111111111111111111111111111  costguard_v9.9.9_linux_amd64\n"
+    }
+  }
+  expect_failures = [terraform_data.settings]
+}
+
+run "test_build_reads_no_release" {
+  command = plan
+  assert {
+    condition     = length(data.http.release_sums) == 0 && jsonencode(local.binary.sha256) == jsonencode(var.binary_override.sha256)
+    error_message = "With binary_override nothing is downloaded at plan time."
   }
 }
 

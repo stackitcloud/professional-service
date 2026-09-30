@@ -200,10 +200,18 @@ variable "webhook_url" {
 variable "features" {
   description = <<-EOT
     The features, each with its own switch and schedule (days Mon..Sun, time HH:MM in time_zone):
-      report: posts the cleanup report; with delete on it also labels new candidates delete=true.
-              Default { enabled = true, days = ["Mon"], time = "08:00" }.
-      delete: deletes what is labelled delete=true; needs report, and each delete run must come at
-              least 20 hours after the report run before it. Default { enabled = false, days = ["Tue"], time = "08:00" }.
+      report:  posts the cleanup report; with delete on it also labels new candidates delete=true.
+               Default { enabled = true, days = ["Mon"], time = "08:00" }.
+      delete:  deletes what is labelled delete=true; needs report, and each delete run must come at
+               least 20 hours after the report run before it. Default { enabled = false, days = ["Tue"], time = "08:00" }.
+      budgets: monthly budgets; each run posts every budget whose month to date is at or above a threshold
+               (percent of the limit), again in every run until the month ends. The 1st posts nothing (no
+               cost of the month yet). STACKIT has a day's costs after 07:30 UTC the next day; earlier runs
+               see them a day later.
+               Default { enabled = false, days = ["Mon", "Tue", "Wed", "Thu", "Fri"], time = "10:00",
+               thresholds = [80, 100], limits = [] }.
+               Each limit: name, exactly one target (organization = true, folder = "<ID or name>" or
+               project = "<ID or name>"), monthly_eur, and optionally its own thresholds.
     Keys left out keep their default.
   EOT
   # any, not object(): an object type would silently drop misspelled keys.
@@ -211,15 +219,15 @@ variable "features" {
   default = {}
 
   validation {
-    condition     = can(keys(var.features)) && alltrue([for f in try(keys(var.features), []) : contains(["report", "delete"], f)])
-    error_message = "features may only contain report and delete (check the spelling; budgets come in a later version)."
+    condition     = can(keys(var.features)) && alltrue([for f in try(keys(var.features), []) : contains(["report", "delete", "budgets"], f)])
+    error_message = "features may only contain report, delete and budgets (check the spelling)."
   }
 
   validation {
     condition = alltrue([for f, v in try(tomap(var.features), var.features, {}) :
-      can(keys(v)) && alltrue([for k in try(keys(v), []) : contains(["enabled", "days", "time"], k)])
+      can(keys(v)) && alltrue([for k in try(keys(v), []) : contains(f == "budgets" ? ["enabled", "days", "time", "thresholds", "limits"] : ["enabled", "days", "time"], k)])
     ])
-    error_message = "Each feature is an object with only these keys: enabled, days, time (check the spelling)."
+    error_message = "report and delete take only the keys enabled, days, time; budgets enabled, days, time, thresholds, limits (check the spelling)."
   }
 
   validation {
@@ -241,6 +249,52 @@ variable "features" {
   validation {
     condition     = alltrue([for f, v in try(tomap(var.features), var.features, {}) : !can(v.time) || can(regex("^([01][0-9]|2[0-3]):[0-5][0-9]$", v.time))])
     error_message = "features.<name>.time must be HH:MM (24 hours), e.g. \"08:00\"."
+  }
+
+  # ---- budgets ----
+
+  validation {
+    condition = alltrue([for t in concat(
+      can(var.features.budgets.thresholds) ? [var.features.budgets.thresholds] : [],
+      [for l in try(var.features.budgets.limits, []) : l.thresholds if can(l.thresholds)],
+      ) : try(
+      !can(keys(t)) && length(t) > 0 &&
+      alltrue([for x in t : floor(x) == x && x >= 1 && x <= 1000]) &&
+      alltrue([for i in range(1, length(t)) : t[i] > t[i - 1]]),
+    false)])
+    error_message = "Budget thresholds must be a non-empty list of whole percentages from 1 to 1000, ascending without repeats, e.g. [80, 100]."
+  }
+
+  validation {
+    condition = !can(var.features.budgets.limits) || try(
+      !can(keys(var.features.budgets.limits)) &&
+      alltrue([for l in var.features.budgets.limits :
+        can(keys(l)) && alltrue([for k in keys(l) : contains(["name", "organization", "folder", "project", "monthly_eur", "thresholds"], k)])
+      ]),
+    false)
+    error_message = "features.budgets.limits must be a list of objects with only these keys: name, organization, folder, project, monthly_eur, thresholds (check the spelling)."
+  }
+
+  validation {
+    condition = try(alltrue([for l in try(var.features.budgets.limits, []) : length([for t in [
+      try(l.organization == true, false),
+      try(trimspace(l.folder) != "", false),
+      try(trimspace(l.project) != "", false),
+    ] : t if t]) == 1 && try(l.organization == true, true)]), false)
+    error_message = "Each budget needs exactly one target: organization = true, folder = \"<ID or name>\" or project = \"<ID or name>\"."
+  }
+
+  validation {
+    condition = try(
+      alltrue([for l in try(var.features.budgets.limits, []) : trimspace(l.name) != "" && l.monthly_eur > 0]) &&
+      length(distinct([for l in try(var.features.budgets.limits, []) : lower(trimspace(l.name))])) == length(try(var.features.budgets.limits, [])),
+    false)
+    error_message = "Each budget needs a name (unique) and monthly_eur above 0."
+  }
+
+  validation {
+    condition     = try(var.features.budgets.enabled, false) != true || try(length(var.features.budgets.limits), 0) > 0
+    error_message = "features.budgets is enabled but has no limits: add at least one budget."
   }
 }
 
@@ -313,10 +367,10 @@ variable "log_level" {
   }
 }
 
-# ---- The binary (normally pinned in 025-release.tf) ----
+# ---- The binary (normally pinned in 000-release.tf) ----
 
 variable "binary_override" {
-  description = "Only for test builds: runs another binary than the release this code pins. version as in the file names, sha256 per architecture (amd64, arm64)."
+  description = "Only for test builds, or to pin hashes you checked yourself: runs another binary than the release this code pins, with these hashes (nothing is read from a SHA256SUMS then). version as in the file names, sha256 per architecture (amd64, arm64)."
   type = object({
     version = string
     sha256  = map(string)
@@ -334,7 +388,7 @@ variable "binary_override" {
 }
 
 variable "download_url" {
-  description = "Where the server downloads the binary: an https address; {version} is replaced, the file name costguard_<version>_linux_<arch> is appended. Default: the release location in 025-release.tf."
+  description = "Where the server downloads the binary: an https address; {version} is replaced, the file name costguard_<version>_linux_<arch> is appended. Without binary_override, Terraform reads SHA256SUMS from the same place when it plans. Default: the release location in 000-release.tf."
   type        = string
   default     = null
 

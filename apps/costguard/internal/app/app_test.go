@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/budget"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/deleter"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/fake"
@@ -117,9 +118,9 @@ func setupWith(t *testing.T, yaml string) *env {
 	}
 
 	restore := []func(){}
-	oldClients, oldScanner, oldDeleter, oldNow, oldLog := newClients, newScanner, newDeleter, now, logOutput
+	oldClients, oldScanner, oldDeleter, oldChecker, oldNow, oldLog := newClients, newScanner, newDeleter, newChecker, now, logOutput
 	restore = append(restore, func() {
-		newClients, newScanner, newDeleter, now, logOutput = oldClients, oldScanner, oldDeleter, oldNow, oldLog
+		newClients, newScanner, newDeleter, newChecker, now, logOutput = oldClients, oldScanner, oldDeleter, oldChecker, oldNow, oldLog
 	})
 	t.Cleanup(func() {
 		for _, f := range restore {
@@ -138,6 +139,11 @@ func setupWith(t *testing.T, yaml string) *env {
 		s := scanner.New(set, cfg, logger)
 		s.Pacer, s.Now = scanner.NopPacer{}, func() time.Time { return monday }
 		return s
+	}
+	newChecker = func(set *stackit.Set, cfg config.Config, logger *slog.Logger) *budget.Checker {
+		c := budget.New(set, cfg, logger)
+		c.Pacer, c.Now = scanner.NopPacer{}, func() time.Time { return now() }
+		return c
 	}
 	newDeleter = func(iaas stackit.IaaS, logger *slog.Logger) *deleter.Deleter {
 		d := deleter.New(iaas, logger)

@@ -20,11 +20,15 @@
 //	        candidates. No message, no labels.
 //	delete  the delete run: scan, delete what is labelled, post when
 //	        something happened.
+//	budgets the budgets run: post the budgets at or above a threshold
+//	        this month; nothing when none is. Never writes.
 //	boot    once after the server was (re)created: wait for the login,
-//	        scan and post like report; never writes.
+//	        then post the cleanup report (report on) and where every
+//	        budget stands (budgets on); never writes.
 //
-// flag and delete refuse to run while delete is off in the configuration.
-// A blocked run (a skip entry matches nothing) neither flags nor deletes.
+// flag and delete refuse to run while delete is off in the configuration,
+// budgets while no budgets are configured. A blocked run (a skip entry
+// matches nothing) neither flags nor deletes.
 package app
 
 import (
@@ -36,6 +40,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/stackitcloud/professional-service/apps/costguard/internal/budget"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/deleter"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/notifier"
@@ -70,13 +75,14 @@ const sendTimeout = 45 * time.Second
 const bootLoginWait = 5 * time.Minute
 
 // Usage is the command line synopsis.
-const Usage = "costguard [--config path] <report|flag|delete|boot>"
+const Usage = "costguard [--config path] <report|flag|delete|budgets|boot>"
 
 var modes = map[string]notifier.Mode{
-	"report": notifier.ModeReport,
-	"flag":   notifier.ModeFlag,
-	"delete": notifier.ModeDelete,
-	"boot":   notifier.ModeBoot,
+	"report":  notifier.ModeReport,
+	"flag":    notifier.ModeFlag,
+	"delete":  notifier.ModeDelete,
+	"budgets": notifier.ModeBudgets,
+	"boot":    notifier.ModeBoot,
 }
 
 // Replaced in tests.
@@ -84,6 +90,7 @@ var (
 	newClients           = func() (*stackit.Set, error) { return stackit.New() }
 	newDeleter           = deleter.New
 	newScanner           = scanner.New
+	newChecker           = budget.New
 	now                  = time.Now
 	logOutput  io.Writer = os.Stdout
 )
@@ -124,6 +131,7 @@ func Run(ctx context.Context, opts Options) int {
 			DeleteEnabled:      cfg.DeleteEnabled,
 			DeleteRunAt:        cfg.DeleteRunAt,
 			ReportRunAt:        cfg.ReportRunAt,
+			BudgetsRunAt:       cfg.BudgetsRunAt(),
 			Location:           cfg.Location(),
 			Prices:             cfg.Prices.Report(),
 			WarnEmptyAfterDays: cfg.WarnEmptyAfterDays,
@@ -147,6 +155,9 @@ func (r *run) execute(ctx context.Context) int {
 	if (r.mode == notifier.ModeFlag || r.mode == notifier.ModeDelete) && !r.cfg.DeleteEnabled {
 		return r.fail(ctx, fmt.Errorf("the %s run only works with delete on, and the configuration has deleteEnabled: false. Nothing was changed; run terraform apply to bring the timers in line with the configuration", r.mode))
 	}
+	if r.mode == notifier.ModeBudgets && r.cfg.Budgets == nil {
+		return r.fail(ctx, errors.New("the budgets run only works with budgets on, and the configuration has no budgets. Run terraform apply to bring the timers in line with the configuration"))
+	}
 	clients, err := newClients()
 	if err == nil && clients.Login != nil {
 		wait := time.Duration(0)
@@ -158,6 +169,12 @@ func (r *run) execute(ctx context.Context) int {
 	if err != nil {
 		return r.fail(ctx, fmt.Errorf("costguard cannot log in to STACKIT.\n  - %w", err))
 	}
+	switch r.mode {
+	case notifier.ModeBudgets:
+		return r.budgets(ctx, clients)
+	case notifier.ModeBoot:
+		return r.boot(ctx, clients)
+	}
 	sc := newScanner(clients, r.cfg, r.logger)
 	sc.DeleteRun = r.mode == notifier.ModeDelete
 	res, err := sc.Scan(ctx)
@@ -167,7 +184,7 @@ func (r *run) execute(ctx context.Context) int {
 	logReport(r.logger, res.Report)
 
 	switch r.mode {
-	case notifier.ModeReport, notifier.ModeBoot:
+	case notifier.ModeReport:
 		if err := r.send(ctx, r.compose.Report(res.Report, r.mode)); err != nil {
 			r.logger.Error("sending the report failed", "error", err)
 			return ExitFatal
@@ -218,6 +235,65 @@ func (r *run) execute(ctx context.Context) int {
 		}
 		return ExitOK
 	}
+}
+
+// budgets checks the budgets and posts the ones at or above a threshold
+// and the problems. While no cost of the month is in yet (always on the
+// 1st) it posts nothing.
+func (r *run) budgets(ctx context.Context, clients *stackit.Set) int {
+	chk, err := newChecker(clients, r.cfg, r.logger).Check(ctx)
+	if err != nil {
+		return r.fail(ctx, err)
+	}
+	logBudgets(r.logger, chk)
+	if chk.NothingIn() {
+		r.logger.Info("no cost of this month is in yet; nothing to check", "month", chk.Month.Format("2006-01"),
+			"last_modified", chk.LastModified)
+		return ExitOK
+	}
+	if msg, post := r.compose.Budgets(chk); post {
+		if err := r.send(ctx, msg); err != nil {
+			r.logger.Error("sending the budgets message failed", "error", err)
+			return ExitFatal
+		}
+	}
+	if len(chk.Problems) > 0 {
+		return ExitFatal
+	}
+	return ExitOK
+}
+
+// boot posts one message: the cleanup report when report is on, and where
+// every budget stands when budgets are on. A cleanup scan that fails fails
+// the run; budgets that cannot be checked are an alert in the message.
+func (r *run) boot(ctx context.Context, clients *stackit.Set) int {
+	var rep *report.Report
+	if r.cfg.ReportEnabled {
+		res, err := newScanner(clients, r.cfg, r.logger).Scan(ctx)
+		if err != nil {
+			return r.fail(ctx, err)
+		}
+		logReport(r.logger, res.Report)
+		rep = res.Report
+	}
+	var chk *report.BudgetCheck
+	var budgetErr error
+	if r.cfg.Budgets != nil {
+		if chk, budgetErr = newChecker(clients, r.cfg, r.logger).Check(ctx); budgetErr == nil {
+			logBudgets(r.logger, chk)
+		} else {
+			budgetErr = readableStop(budgetErr)
+			r.logger.Error("checking the budgets failed", "error", budgetErr.Error())
+		}
+	}
+	if err := r.send(ctx, r.compose.Boot(rep, chk, budgetErr, now())); err != nil {
+		r.logger.Error("sending the boot message failed", "error", err)
+		return ExitFatal
+	}
+	if budgetErr != nil || (chk != nil && len(chk.Problems) > 0) {
+		return ExitFatal
+	}
+	return ExitOK
 }
 
 // fail reports a run that stopped before changing anything.
@@ -304,6 +380,19 @@ func logReport(logger *slog.Logger, rep *report.Report) {
 	logger.Info("scan complete", "scope", rep.Scope, "to_delete", rep.ToDelete(),
 		"skipped_folders", rep.SkippedFolders, "skipped_projects", rep.SkippedProjects,
 		"scan_errors", len(rep.ScanErrors), "blocked", len(rep.Blocked))
+}
+
+// logBudgets writes where every budget stands to the log.
+func logBudgets(logger *slog.Logger, chk *report.BudgetCheck) {
+	for _, b := range chk.Budgets {
+		logger.Info("budget", "name", b.Name, "target", b.Target, "month_eur", b.MonthEUR, "day_eur", b.DayEUR,
+			"limit_eur", b.LimitEUR, "reached", b.Reached, "forecast_eur", b.ForecastEUR)
+	}
+	for _, p := range chk.Problems {
+		logger.Error("budget not checked", "problem", p)
+	}
+	logger.Info("budgets checked", "month", chk.Month.Format("2006-01"), "checked_up_to", chk.Checked.Format("2006-01-02"),
+		"last_modified", chk.LastModified, "reached", len(chk.Reached()), "problems", len(chk.Problems))
 }
 
 func newLogger(level string) *slog.Logger {

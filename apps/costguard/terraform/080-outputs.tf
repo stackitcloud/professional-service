@@ -34,8 +34,8 @@ output "schedule" {
 }
 
 output "binary" {
-  description = "The costguard version the server runs and where it downloads it from."
-  value       = { version = local.binary.version, download_url = local.binary.url }
+  description = "The costguard version the server runs, where it downloads it from and the SHA-256 it accepts (compare with your own make dist build if you like: it is reproducible)."
+  value       = { version = local.binary.version, download_url = local.binary.url, sha256 = local.binary.sha256 }
 }
 
 output "image" {

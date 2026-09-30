@@ -30,6 +30,8 @@ const (
 	ModeReport Mode = "report"
 	ModeFlag   Mode = "flag"
 	ModeDelete Mode = "delete"
+	// ModeBudgets is the daily budgets run.
+	ModeBudgets Mode = "budgets"
 	// ModeBoot is the read-only run right after the server was (re)created.
 	ModeBoot Mode = "boot"
 )
@@ -46,6 +48,9 @@ type Composer struct {
 	// ReportRunAt is when the report run happens, for the boot message's
 	// "Next runs"; empty if not known.
 	ReportRunAt string
+	// BudgetsRunAt is when the budgets run happens, e.g. "every day 10:00
+	// (Europe/Berlin)"; empty with budgets off.
+	BudgetsRunAt string
 	// Location is the time zone of the timestamps; nil means UTC.
 	Location *time.Location
 	// Prices value what a run deletes.
@@ -148,6 +153,37 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	return m
 }
 
+// Boot composes the message of the boot run: the cleanup report when
+// report is on (rep is nil when it is off), then the budgets when they are
+// on (chk, or budgetErr when they could not be checked).
+func (c Composer) Boot(rep *report.Report, chk *report.BudgetCheck, budgetErr error, at time.Time) Message {
+	var m Message
+	if rep != nil {
+		m = c.Report(rep, ModeBoot)
+	} else {
+		m = Message{
+			Title:    "costguard " + c.Version + " is running",
+			Subtitle: c.clock(at),
+			Intro:    "Login and this chat work. The cleanup report is off.",
+			Footer:   "costguard " + c.Version,
+		}
+		if next := c.nextRuns(); next != "" {
+			m.Intro += " " + next
+		}
+	}
+	switch {
+	case chk != nil:
+		c.addBudgets(&m, chk)
+	case budgetErr != nil:
+		lines := strings.Split(strings.TrimSpace(budgetErr.Error()), "\n")
+		for i := range lines {
+			lines[i] = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[i]), "- "))
+		}
+		m.Alerts = append(m.Alerts, "The budgets could not be checked: "+strings.Join(lines, " "))
+	}
+	return m
+}
+
 // toDelete is what the next delete run would delete.
 func toDelete(rep *report.Report) []report.Item {
 	var out []report.Item
@@ -232,6 +268,9 @@ func (c Composer) nextRuns() string {
 	}
 	if c.DeleteEnabled && c.DeleteRunAt != "" {
 		runs = append(runs, "delete "+c.DeleteRunAt)
+	}
+	if c.BudgetsRunAt != "" {
+		runs = append(runs, "budgets "+c.BudgetsRunAt)
 	}
 	if len(runs) == 0 {
 		return ""
@@ -431,11 +470,7 @@ func (c Composer) subtitle(scope string, regions []string, at time.Time) string 
 	if len(regions) > 0 {
 		parts = append(parts, "regions "+strings.Join(regions, ", "))
 	}
-	if c.Location == nil || c.Location == time.UTC {
-		parts = append(parts, at.UTC().Format("2006-01-02 15:04 UTC"))
-	} else {
-		parts = append(parts, at.In(c.Location).Format("2006-01-02 15:04")+" ("+c.Location.String()+")")
-	}
+	parts = append(parts, c.clock(at))
 	return strings.Join(parts, " · ")
 }
 

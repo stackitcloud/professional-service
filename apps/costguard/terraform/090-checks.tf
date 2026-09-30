@@ -23,18 +23,33 @@ resource "terraform_data" "settings" {
     }
 
     precondition {
+      condition     = local.report_enabled || local.budgets_enabled
+      error_message = "No feature is enabled, so costguard would never post anything: enable features.report or features.budgets."
+    }
+
+    precondition {
       condition     = !local.delete_enabled || !local.report_enabled || min(concat(module.cloud_init.delete_gaps_hours, [168])...) >= 20
       error_message = "Every delete run must come at least 20 hours after the report run before it (that run labels what gets deleted and announces it). Now: ${join(", ", [for h in module.cloud_init.delete_gaps_hours : "${h} h"])}."
     }
 
     precondition {
       condition     = local.binary.version != ""
-      error_message = "This checkout pins no costguard release (025-release.tf is empty; the first release pins it). Check out a release tag (apps/costguard/vX.Y.Z), or set binary_override for a test build."
+      error_message = "This checkout pins no costguard release (000-release.tf is empty; the first release pins it). Check out a release tag (apps/costguard/vX.Y.Z), or set binary_override for a test build."
+    }
+
+    precondition {
+      condition     = var.binary_override != null || local.release.version == "" || local.release_version_ok
+      error_message = "000-release.tf: version must be vMAJOR.MINOR.PATCH, optionally with -pre.release (e.g. v0.2.0 or v0.2.0-rc.1); got \"${local.release.version}\"."
+    }
+
+    precondition {
+      condition     = var.binary_override != null || !local.release_version_ok || alltrue([for arch in ["amd64", "arm64"] : length(try(local.release_sums[arch], [])) == 1])
+      error_message = "The SHA256SUMS of costguard ${local.binary.version} must list costguard_${local.binary.version}_linux_amd64 and _arm64 once each (found: ${jsonencode(local.release_sums)})."
     }
 
     precondition {
       condition     = local.binary.url != "-"
-      error_message = "download_url is required: this checkout has no release location (025-release.tf)."
+      error_message = "download_url is required: this checkout has no release location (000-release.tf)."
     }
   }
 }

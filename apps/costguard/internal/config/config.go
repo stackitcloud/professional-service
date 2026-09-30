@@ -26,6 +26,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -110,6 +111,10 @@ type Config struct {
 	// (no cost data needed, e.g. for installs without organization-wide
 	// cost access).
 	WarnEmptyAfterDays int `yaml:"warnEmptyAfterDays"`
+	// ReportEnabled says whether the report feature is on (default true).
+	// Only the boot run reads it: with report off its message has no
+	// cleanup part.
+	ReportEnabled bool `yaml:"reportEnabled"`
 	// DeleteEnabled says whether the delete feature is on. The flag and
 	// delete runs refuse to work without it, and the read-only runs word
 	// their messages by it.
@@ -126,9 +131,84 @@ type Config struct {
 	TimeZone  string `yaml:"timeZone"`
 	Prices    Prices `yaml:"prices"`
 	PortalURL string `yaml:"portalUrl"`
+	// Budgets is the budgets feature; nil means it is off. Budgets ignore
+	// Scope and Skip: those protect resources from deletion and must not
+	// hide spend.
+	Budgets *Budgets `yaml:"budgets"`
 
 	// WebhookURL comes from COSTGUARD_WEBHOOK_URL only.
 	WebhookURL string `yaml:"-"`
+}
+
+// Budgets are monthly budgets on calendar months (UTC days, like the Cost
+// API). Each budgets run lists the budgets whose month to date is at or
+// above one of their thresholds.
+type Budgets struct {
+	// Days are the weekdays of the budgets run in TimeZone (Mon ... Sun),
+	// Time its time of day, HH:MM in TimeZone. costguard uses them only to
+	// say when the run happens; the timer is Terraform's.
+	Days   []string `yaml:"days"`
+	Time   string   `yaml:"time"`
+	Limits []Budget `yaml:"limits"`
+}
+
+// Weekdays are the day names of Budgets.Days, Monday first.
+var Weekdays = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+var dayNames = map[string]string{"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday",
+	"Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"}
+
+// BudgetsRunAt renders when the budgets run happens, e.g. "Monday to
+// Friday 10:00 (Europe/Berlin)", in the words Terraform uses for the other
+// schedules.
+func (c *Config) BudgetsRunAt() string {
+	if c.Budgets == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s %s (%s)", DaysText(c.Budgets.Days), c.Budgets.Time, c.TimeZone)
+}
+
+// DaysText renders weekdays like Terraform's schedule texts: "every day",
+// "Monday to Friday", or "Monday, Wednesday and Friday" (week order).
+func DaysText(days []string) string {
+	var names []string
+	var short []string
+	for _, d := range Weekdays {
+		for _, given := range days {
+			if given == d {
+				names = append(names, dayNames[d])
+				short = append(short, d)
+				break
+			}
+		}
+	}
+	switch strings.Join(short, ",") {
+	case strings.Join(Weekdays, ","):
+		return "every day"
+	case "Mon,Tue,Wed,Thu,Fri":
+		return "Monday to Friday"
+	}
+	if len(names) <= 1 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// Budget is one monthly limit on exactly one target.
+type Budget struct {
+	// Name is how the messages call the budget.
+	Name string `yaml:"name"`
+	// Exactly one target: the whole organization, a folder (with every
+	// project below it) or a project. Folder and project by ID or name;
+	// a name must match exactly one container.
+	Organization bool   `yaml:"organization"`
+	Folder       string `yaml:"folder"`
+	Project      string `yaml:"project"`
+	// MonthlyEUR is the limit per calendar month.
+	MonthlyEUR float64 `yaml:"monthlyEur"`
+	// Thresholds are percentages of MonthlyEUR, ascending; each alerts
+	// once when the month to date reaches it.
+	Thresholds []int `yaml:"thresholds"`
 }
 
 // EnvLookup abstracts os.Getenv for tests.
@@ -201,6 +281,7 @@ func ChatFromOS(path string) (output, webhookURL string, ok bool) {
 // of the defaults.
 func Parse(data []byte) (*Config, error) {
 	cfg := &Config{
+		ReportEnabled:      true,
 		WarnEmptyAfterDays: DefaultWarnEmptyAfterDays,
 		TimeZone:           DefaultTimeZone,
 		PortalURL:          DefaultPortalURL,

@@ -145,6 +145,7 @@ def main():
         sorted(timers)
         == sorted(
             [
+                "costguard-budgets.timer/active/costguard@budgets.service/Mon..Fri_*-*-*_10:00:00_Europe/Berlin",
                 "costguard-delete.timer/active/costguard@delete.service/Tue_*-*-*_08:00:00_Europe/Berlin",
                 "costguard-report.timer/active/costguard@flag.service/Mon_*-*-*_08:00:00_Europe/Berlin",
             ]
@@ -181,6 +182,10 @@ def main():
         check(
             any(args.version in p for p in posts),
             f"the boot run posted to the chat ({len(posts)} posts)",
+        )
+        check(
+            not any("invalid configuration" in p for p in posts),
+            "costguard accepts the config Terraform wrote",
         )
         check(
             number(v.get("lock_wait_seconds"), 0) >= 15,

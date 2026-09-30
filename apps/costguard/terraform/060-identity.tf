@@ -50,7 +50,7 @@ locals {
     "object-storage.bucket.list",
     "nlb.loadbalancer.list",
     "alb.loadbalancer.list",
-    # cost.go: ListCostsForCustomer (age and cost of empty projects)
+    # cost.go: ListCostsForCustomer (budgets; cost of empty projects)
     "cost-management.billing.get",
   ]
   cleaner_permissions = [

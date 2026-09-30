@@ -100,11 +100,6 @@ jobs:
       - name: Build the release binaries (linux/amd64, linux/arm64)
         run: make dist VERSION=ci-check
 
-      # A release PR (make pin) is checked before the merge: its pin must
-      # match what this commit builds. Released pins are skipped.
-      - name: Check an unreleased pin
-        run: make pin-check
-
   terraform:
     name: "Terraform ${{ matrix.terraform }}"
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
@@ -208,7 +203,7 @@ jobs:
         run: /tmp/tflint --format compact
 
   installer:
-    name: "Script tests (install, pin)"
+    name: "Script tests (install)"
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
     steps:
       - name: Checkout Code
@@ -222,6 +217,3 @@ jobs:
 
       - name: costguard_install.py unit tests
         run: python3 -m unittest discover -v -s apps/costguard/terraform/modules/cloud-init/files -p 'test_*.py'
-
-      - name: pin.py unit tests
-        run: python3 -m unittest discover -v -s apps/costguard/scripts -p 'test_*.py'

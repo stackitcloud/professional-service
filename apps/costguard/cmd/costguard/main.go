@@ -13,7 +13,8 @@
 // limitations under the License.
 
 // costguard cleans up idle and labelled resources in a STACKIT
-// organization, run by systemd timers on a server that Terraform sets up.
+// organization and watches its monthly budgets, run by systemd timers on a
+// server that Terraform sets up.
 // See the README for the features and labels.
 package main
 
@@ -44,7 +45,8 @@ func main() {
 			"  report  scan and post a report; changes nothing (the report run while delete is off)\n"+
 			"  flag    post, then label new cleanup candidates delete=true (the report run while delete is on)\n"+
 			"  delete  delete everything labelled delete=true that may go (needs delete on)\n"+
-			"  boot    wait for the login, then post a report; changes nothing (once after the server is created)\n\n", app.Usage)
+			"  budgets post the budgets at or above a threshold this month; changes nothing (needs budgets)\n"+
+			"  boot    wait for the login, then post the report and the budgets; changes nothing (once after the server is created)\n\n", app.Usage)
 		flag.PrintDefaults()
 	}
 	flag.Parse()

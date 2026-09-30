@@ -25,6 +25,11 @@ terraform {
       # plan check (the role assignments are an experimental feature).
       version = ">= 0.115.0"
     }
+    # Reads the release's SHA256SUMS when Terraform plans (030-locals.tf).
+    http = {
+      source  = "hashicorp/http"
+      version = ">= 3.6.0"
+    }
   }
 }
 

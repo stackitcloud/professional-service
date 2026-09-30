@@ -114,7 +114,7 @@ render() {
 		-var "webhook_url=https://$HOST_IP:$WEBHOOK_PORT/hook/$WEBHOOK_SECRET" \
 		-var "download_url=https://$HOST_IP:$DOWNLOAD_PORT/{version}/" \
 		-var "binary_version=$VERSION" -var "binary_sha256=$sha" \
-		-var 'features={ delete = { enabled = true } }' >/dev/null
+		-var 'features={ delete = { enabled = true }, budgets = { enabled = true, limits = [{ name = "Org", organization = true, monthly_eur = 100 }] } }' >/dev/null
 	"$TERRAFORM" -chdir="$HERE/render" output -state="$dir/render.tfstate" -raw user_data >"$dir/user-data.real"
 	python3 "$HERE/compose.py" --real "$dir/user-data.real" --ca "$WORK/tls/ca.pem" \
 		--collector "$HERE/collect.sh" --out "$dir/seed/user-data"

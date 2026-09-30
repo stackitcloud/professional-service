@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Releases costguard when a commit changing its pin (apps/costguard/terraform/
-# 025-release.tf, written by `make pin VERSION=vX.Y.Z`) is pushed: runs the
-# tests, rebuilds the binaries, refuses to release if their hashes differ from
-# the pin (the build is reproducible), then publishes them as the Forgejo
-# release of tag apps/costguard/<version>. Nothing happens when the pinned
-# version is released already.
+# Releases costguard when a commit changing the version in its pin
+# (apps/costguard/terraform/000-release.tf, edited by hand) is pushed: runs the
+# tests, builds the binaries (reproducibly) and publishes them with their
+# SHA256SUMS as the Forgejo release of tag apps/costguard/<version>, on that
+# commit. Terraform reads the hashes from that SHA256SUMS when it plans.
+# Nothing happens when the pinned version is released already.
 name: "costguard-release"
 
 on:
@@ -25,7 +25,7 @@ on:
     # feat/add-app-costguard only until PR #75 is merged: remove it then.
     branches: ["main", "feat/add-app-costguard"]
     paths:
-      - "apps/costguard/terraform/025-release.tf"
+      - "apps/costguard/terraform/000-release.tf"
       - ".github/workflows/costguard-release.yaml"
   # Retries a release that failed for another reason than the pin (Forgejo
   # unavailable, a flaky test); the button shows once this file is on main.
@@ -76,12 +76,23 @@ jobs:
         id: pin
         run: |
           set -euo pipefail
-          version="$(python3 scripts/pin.py version)"
+          pin=terraform/000-release.tf
+          value() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "${pin}"; }
+          version="$(value version)"
           if [ -z "${version}" ]; then
-            echo "025-release.tf pins no release; nothing to do."
+            echo "000-release.tf pins no release; nothing to do."
             echo "release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # The rule of 030-locals.tf (terraform test checks it too).
+          if ! printf '%s\n' "${version}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+            echo "000-release.tf: version ${version} is not vMAJOR.MINOR.PATCH (optionally -pre.release), e.g. v0.2.0" >&2
+            exit 1
+          fi
+          # Where servers and Terraform download the files: the pinned URL
+          # with the version filled in (the tag's slashes stay escaped).
+          url="$(value download_url)"
+          base="${url//"{version}"/${version}}"
           tag="apps/costguard/${version}"
           rc=0
           git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null || rc=$?
@@ -106,6 +117,7 @@ jobs:
             echo "version=${version}"
             echo "tag=${tag}"
             echo "prerelease=${prerelease}"
+            echo "base=${base%/}"
           } >> "$GITHUB_OUTPUT"
           echo "Releasing ${tag} from ${GITHUB_REF_NAME} at ${GITHUB_SHA}."
 
@@ -117,22 +129,23 @@ jobs:
         if: steps.pin.outputs.release == 'true'
         run: make tf-test
 
-      - name: Rebuild and compare with the pin
+      - name: Build the release files
         if: steps.pin.outputs.release == 'true'
         env:
           VERSION: ${{ steps.pin.outputs.version }}
         run: |
           set -euo pipefail
           make dist VERSION="${VERSION}"
-          python3 scripts/pin.py check --sums dist/SHA256SUMS
 
       - name: Release notes
         if: steps.pin.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.pin.outputs.version }}
         run: |
           set -euo pipefail
           last="$(git tag --list 'apps/costguard/v*' --sort=-v:refname | head -n1)"
           {
-            echo "Install or upgrade: check out this tag and run \`terraform apply\` in \`apps/costguard/terraform\` (see \`apps/costguard/README.md\`). The Terraform code at this tag installs exactly these binaries:"
+            echo "Install or upgrade: check out this tag and run \`terraform apply\` in \`apps/costguard/terraform\` (see \`apps/costguard/README.md\`). Terraform reads these hashes from SHA256SUMS when it plans, and the server installs only a binary with that hash. The build is reproducible: \`make dist VERSION=${VERSION}\` at this tag builds the same files."
             echo
             echo '```'
             cat dist/SHA256SUMS
@@ -182,13 +195,18 @@ jobs:
             -d '{"draft": false}' "${api}/releases/${id}" > /dev/null
           echo "Released ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
 
-      # What every server does: download without logging in, through the URL
-      # the Terraform code pins (the tag's slashes escaped), and check the hash.
+      # What Terraform and every server do: download without logging in,
+      # through the URL the pin names (the tag's slashes escaped), and check
+      # that SHA256SUMS and both binaries are byte for byte what was built here.
       - name: Download check
         if: steps.pin.outputs.release == 'true'
+        env:
+          BASE: ${{ steps.pin.outputs.base }}
         run: |
           set -euo pipefail
-          python3 scripts/pin.py urls | while read -r arch url sha; do
-            curl -sS -fL --proto '=https' --proto-redir '=https' -o "${RUNNER_TEMP}/${arch}" "${url}"
-            echo "${sha}  ${RUNNER_TEMP}/${arch}" | sha256sum -c -
+          for f in dist/*; do
+            name="$(basename "${f}")"
+            curl -sS -fL --proto '=https' --proto-redir '=https' -o "${RUNNER_TEMP}/${name}" "${BASE}/${name}"
+            cmp "${f}" "${RUNNER_TEMP}/${name}"
+            echo "OK ${name}"
           done

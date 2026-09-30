@@ -18,6 +18,22 @@ webhook_url = "https://..."
 # features = {
 #   report = { enabled = true, days = ["Mon"], time = "08:00" }  # the default
 #   delete = { enabled = true, days = ["Tue"], time = "08:00" }  # default: off
+#   # Monthly budgets (default: off). Each run posts every budget whose month
+#   # to date is at or above a threshold (percent of the limit), again in
+#   # every run until the month ends; the 1st posts nothing. Each limit has
+#   # exactly one target; folders and projects by ID or exact name. Budgets
+#   # ignore scope and skip.
+#   budgets = {
+#     enabled    = true
+#     days       = ["Mon", "Tue", "Wed", "Thu", "Fri"] # the default
+#     time       = "10:00"
+#     thresholds = [80, 100] # the default for every limit
+#     limits = [
+#       { name = "Whole organization", organization = true, monthly_eur = 20000 },
+#       { name = "Team A", folder = "team-a", monthly_eur = 2500 }, # every project below the folder
+#       { name = "Sandbox X", project = "<project UUID>", monthly_eur = 50, thresholds = [50, 100] },
+#     ]
+#   }
 # }
 # time_zone = "Europe/Berlin"
 

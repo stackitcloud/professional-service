@@ -23,31 +23,36 @@
 locals {
   # ---- Features ----
 
-  feature_defaults = {
-    report = { enabled = true, days = ["Mon"], time = "08:00" }
-    delete = { enabled = false, days = ["Tue"], time = "08:00" }
-  }
-  # The given keys over the defaults (the root config has checked them).
-  features = { for name, defaults in local.feature_defaults : name => merge(defaults, try(var.settings.features[name], {})) }
-
-  report_enabled = local.features.report.enabled
-  delete_enabled = local.features.delete.enabled
-
   # Week order (keys() would sort alphabetically).
   week      = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
   day_names = { Mon = "Monday", Tue = "Tuesday", Wed = "Wednesday", Thu = "Thursday", Fri = "Friday", Sat = "Saturday", Sun = "Sunday" }
 
+  feature_defaults = {
+    report = { enabled = true, days = ["Mon"], time = "08:00" }
+    delete = { enabled = false, days = ["Tue"], time = "08:00" }
+    # Each budgets run compares the month to date with the thresholds, so
+    # any days work; workdays keep the weekend quiet.
+    budgets = { enabled = false, days = ["Mon", "Tue", "Wed", "Thu", "Fri"], time = "10:00", thresholds = [80, 100], limits = [] }
+  }
+  # The given keys over the defaults (the root config has checked them).
+  features = { for name, defaults in local.feature_defaults : name => merge(defaults, try(var.settings.features[name], {})) }
+
+  report_enabled  = local.features.report.enabled
+  delete_enabled  = local.features.delete.enabled
+  budgets_enabled = local.features.budgets.enabled
+
   # Per feature: its days in week order, the minutes of the week it runs at,
   # the systemd calendar spec and the text the messages show, e.g.
-  # "Tuesday and Thursday 08:00 (Europe/Berlin)".
+  # "Tuesday and Thursday 08:00 (Europe/Berlin)". costguard words the
+  # budgets schedule the same way (config.DaysText).
   feature_days = { for name, f in local.features : name => [for d in local.week : d if contains(f.days, d)] }
   schedules = { for name, f in local.features : name => {
     minutes = [for d in local.feature_days[name] :
       index(local.week, d) * 1440 + tonumber(substr(f.time, 0, 2)) * 60 + tonumber(substr(f.time, 3, 2))
     ]
-    on_calendar = "${join(",", local.feature_days[name])} *-*-* ${f.time}:00 ${var.settings.time_zone}"
+    on_calendar = "${length(local.feature_days[name]) == 7 ? "" : "${join(",", local.feature_days[name])} "}*-*-* ${f.time}:00 ${var.settings.time_zone}"
     text = format("%s %s (%s)",
-      length(local.feature_days[name]) == 7 ? "every day" : join(" and ", compact([
+      length(local.feature_days[name]) == 7 ? "every day" : join(",", local.feature_days[name]) == "Mon,Tue,Wed,Thu,Fri" ? "Monday to Friday" : join(" and ", compact([
         join(", ", [for d in slice(local.feature_days[name], 0, length(local.feature_days[name]) - 1) : local.day_names[d]]),
         local.day_names[local.feature_days[name][length(local.feature_days[name]) - 1]],
       ])),
@@ -76,6 +81,12 @@ locals {
       on_calendar = local.schedules.delete.on_calendar
       description = "costguard delete run, ${local.schedules.delete.text}"
     }] : [],
+    local.budgets_enabled ? [{
+      name        = "budgets"
+      subcommand  = "budgets"
+      on_calendar = local.schedules.budgets.on_calendar
+      description = "costguard budgets run, ${local.schedules.budgets.text}"
+    }] : [],
   )
 
   # ---- costguard's config (the keys of internal/config) ----
@@ -94,6 +105,7 @@ locals {
       regions            = var.settings.regions
       output             = var.settings.output
       warnEmptyAfterDays = var.settings.warn_empty_after_days
+      reportEnabled      = local.report_enabled
       deleteEnabled      = local.delete_enabled
       timeZone           = var.settings.time_zone
       prices = {
@@ -104,6 +116,23 @@ locals {
     # costguard refuses deleteRunAt while delete is off.
     local.delete_enabled ? { deleteRunAt = local.schedules.delete.text } : {},
     local.report_enabled ? { reportRunAt = local.schedules.report.text } : {},
+    # Each limit gets its thresholds and only its one target key.
+    local.budgets_enabled ? {
+      budgets = {
+        days = local.feature_days.budgets
+        time = local.features.budgets.time
+        limits = [for l in local.features.budgets.limits : merge(
+          {
+            name       = trimspace(l.name)
+            monthlyEur = tonumber(l.monthly_eur)
+            thresholds = try(l.thresholds, local.features.budgets.thresholds)
+          },
+          try(l.organization, false) ? { organization = true } : {},
+          can(l.folder) ? { folder = trimspace(tostring(l.folder)) } : {},
+          can(l.project) ? { project = trimspace(tostring(l.project)) } : {},
+        )]
+      }
+    } : {},
   )
 
   environment = {

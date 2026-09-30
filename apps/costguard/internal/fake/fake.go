@@ -46,6 +46,10 @@ type Store struct {
 	Resources  []*stackit.Resource
 	Areas      []stackit.NetworkArea
 	Costs      map[string]float64
+	// Daily holds the Cost API's daily charges per project; LastModified
+	// is its Last-Modified time.
+	Daily        map[string]stackit.ProjectDays
+	LastModified time.Time
 	// SKE, BucketNames and LB are keyed by "project/region".
 	SKE         map[string][]string
 	BucketNames map[string][]string
@@ -53,7 +57,7 @@ type Store struct {
 
 	// Errs injects errors. Keys: "list:<kind>:<project>/<region>",
 	// "folders:<parent>", "projects:<parent>", "get:<id>", "delete:<id>",
-	// "label:<id>", "costs", "areas", "ske:<p>/<r>", "buckets:<p>/<r>",
+	// "label:<id>", "costs", "daily", "areas", "ske:<p>/<r>", "buckets:<p>/<r>",
 	// "lb:<p>/<r>".
 	Errs map[string]error
 	// ErrsOnce are like Errs but happen only on the first call (a hiccup).
@@ -392,6 +396,31 @@ func (s *Store) ProjectCosts(_ context.Context, _ string, from, to time.Time) (m
 	out := map[string]float64{}
 	for k, v := range s.Costs {
 		out[k] = v
+	}
+	return out, nil
+}
+
+// DailyCosts implements stackit.Cost. Like the Cost API it returns only
+// the days within the range.
+func (s *Store) DailyCosts(_ context.Context, _ string, from, to time.Time) (*stackit.DailyCosts, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	first, last := from.Format("2006-01-02"), to.Format("2006-01-02")
+	s.record("daily costs %s %s", first, last)
+	if err := s.err("daily"); err != nil {
+		return nil, err
+	}
+	out := &stackit.DailyCosts{Projects: map[string]stackit.ProjectDays{}, LastModified: s.LastModified}
+	for id, p := range s.Daily {
+		days := stackit.ProjectDays{Name: p.Name, EUR: map[string]float64{}}
+		for day, v := range p.EUR {
+			if day >= first && day <= last {
+				days.EUR[day] = v
+			}
+		}
+		if len(days.EUR) > 0 {
+			out.Projects[id] = days
+		}
 	}
 	return out, nil
 }

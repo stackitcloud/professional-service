@@ -23,7 +23,13 @@ import (
 	"time"
 )
 
-var regionPattern = regexp.MustCompile(`^[a-z]{2}[0-9]{2}$`)
+var (
+	regionPattern = regexp.MustCompile(`^[a-z]{2}[0-9]{2}$`)
+	clockPattern  = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
+)
+
+// MaxThreshold caps budget thresholds (percent of the limit).
+const MaxThreshold = 1000
 
 // Validate checks every field and returns one error that lists all
 // problems. It runs before any API call.
@@ -90,6 +96,9 @@ func (c *Config) Validate() error {
 	case !c.DeleteEnabled && runAt != "":
 		add("deleteRunAt is set, but deleteEnabled is false; set both or neither")
 	}
+	if c.DeleteEnabled && !c.ReportEnabled {
+		add("deleteEnabled needs reportEnabled: nothing is deleted without a report message first")
+	}
 	if _, err := time.LoadLocation(c.TimeZone); err != nil || strings.TrimSpace(c.TimeZone) == "" || c.TimeZone == "Local" {
 		add("timeZone must be an IANA time zone such as Europe/Berlin (got %q)", c.TimeZone)
 	}
@@ -98,6 +107,9 @@ func (c *Config) Validate() error {
 	}
 	if !absoluteHTTP(c.PortalURL) {
 		add("portalUrl must be an absolute http(s) URL (got %q)", c.PortalURL)
+	}
+	if c.Budgets != nil {
+		problems = append(problems, c.Budgets.validate()...)
 	}
 
 	if len(problems) == 0 {
@@ -127,4 +139,76 @@ func secureURL(raw string) bool {
 func absoluteHTTP(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+// validate checks the budgets section. Any time of day works: before 07:30
+// UTC STACKIT's costs of the day before are not in yet, so the run sees
+// them a day later.
+func (b *Budgets) validate() []string {
+	var problems []string
+	add := func(format string, args ...any) {
+		problems = append(problems, fmt.Sprintf(format, args...))
+	}
+	seenDay := map[string]bool{}
+	for _, d := range b.Days {
+		if dayNames[d] == "" {
+			add("budgets.days: %q is not a day; write Mon, Tue, Wed, Thu, Fri, Sat or Sun", d)
+		} else if seenDay[d] {
+			add("budgets.days lists %s twice", d)
+		}
+		seenDay[d] = true
+	}
+	if len(b.Days) == 0 {
+		add("budgets.days must list at least one day")
+	}
+	if !clockPattern.MatchString(b.Time) {
+		add("budgets.time must be HH:MM (24 hours), e.g. \"10:00\" (got %q)", b.Time)
+	}
+	if len(b.Limits) == 0 {
+		add("budgets.limits must list at least one budget")
+	}
+	seen := map[string]bool{}
+	for i, l := range b.Limits {
+		name := strings.TrimSpace(l.Name)
+		field := fmt.Sprintf("budgets.limits[%d]", i)
+		if name != "" {
+			field = fmt.Sprintf("budget %q", l.Name)
+		}
+		switch key := strings.ToLower(name); {
+		case key == "":
+			add("%s needs a name", field)
+		case seen[key]:
+			add("budget name %q is used twice", l.Name)
+		default:
+			seen[key] = true
+		}
+		targets := 0
+		if l.Organization {
+			targets++
+		}
+		for _, t := range []string{l.Folder, l.Project} {
+			if strings.TrimSpace(t) != "" {
+				targets++
+			}
+		}
+		if targets != 1 {
+			add("%s needs exactly one target: organization: true, a folder or a project", field)
+		}
+		if !(l.MonthlyEUR > 0) {
+			add("%s: monthlyEur must be more than 0", field)
+		}
+		if len(l.Thresholds) == 0 {
+			add("%s needs at least one threshold", field)
+		}
+		for j, t := range l.Thresholds {
+			if t < 1 || t > MaxThreshold {
+				add("%s: thresholds must be between 1 and %d percent (got %d)", field, MaxThreshold, t)
+			}
+			if j > 0 && t <= l.Thresholds[j-1] {
+				add("%s: thresholds must be ascending without repeats (got %v)", field, l.Thresholds)
+				break
+			}
+		}
+	}
+	return problems
 }
