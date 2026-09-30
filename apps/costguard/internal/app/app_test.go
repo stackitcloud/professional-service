@@ -174,8 +174,8 @@ func TestReportChangesNothing(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard report") ||
-		!strings.Contains(msgs[0], "Automatic deletion is off; nothing was changed. With delete on, 2 resources would be deleted, saving about €3.57 per month") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: report (") ||
+		!strings.Contains(msgs[0], "Automatic deletion is off; nothing was changed. With delete on, 2 resources would be deleted, saving about €3,57 per month") {
 		t.Errorf("messages = %v", msgs)
 	}
 	if calls := append(e.store.CallsWith("label"), e.store.CallsWith("delete")...); len(calls) != 0 {
@@ -192,8 +192,8 @@ func TestMessagesNameTheOrganization(t *testing.T) {
 	if code := e.run("report"); code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
-	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], `"text":"Acme GmbH: costguard report"`) ||
-		!strings.Contains(msgs[0], "Acme GmbH · Scope: whole organization") {
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], `"text":"costguard: report (Acme GmbH)"`) ||
+		!strings.Contains(msgs[0], `"text":"Scope: whole organization`) {
 		t.Errorf("messages = %v", msgs)
 	}
 
@@ -202,7 +202,7 @@ func TestMessagesNameTheOrganization(t *testing.T) {
 	if code := e.run("report"); code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
-	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], `"text":"`+org+`: costguard report"`) {
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], `"text":"costguard: report (`+org+`)"`) {
 		t.Errorf("messages = %v", msgs)
 	}
 	if !strings.Contains(e.logs.String(), "the organization's name could not be read") {
@@ -216,7 +216,7 @@ func TestFlagPostsThenLabels(t *testing.T) {
 	if code := e.run("flag"); code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
-	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "2 resources will be deleted Tuesday 08:00 (Europe/Berlin)") {
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "2 resources labelled delete=true are deleted Tuesday 08:00 (Europe/Berlin)") {
 		t.Errorf("messages = %v", msgs)
 	}
 	if !stackit.Requested(e.store.Find("v1").Labels) || !stackit.Requested(e.store.Find("ip1").Labels) {
@@ -298,7 +298,7 @@ func TestFlagBlockedSetsNoLabels(t *testing.T) {
 	}
 	msgs := e.hook.messages()
 	if len(msgs) != 1 || !strings.Contains(msgs[0], "Nothing is flagged or deleted until the skip list is fixed") ||
-		!strings.Contains(msgs[0], "costguard: deletions blocked") {
+		!strings.Contains(msgs[0], "Once the skip list is fixed") {
 		t.Errorf("messages = %v", msgs)
 	}
 	if calls := e.store.CallsWith("label"); len(calls) != 0 {
@@ -328,8 +328,8 @@ func TestDeleteDeletesLabelledAndPosts(t *testing.T) {
 		t.Error("labelled candidates must be deleted")
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 2 || !strings.Contains(msgs[1], "costguard: 2 resources deleted") ||
-		!strings.Contains(msgs[1], "This run deleted 2 resources, saving about €3.57 per month (€42.84 per year).") {
+	if len(msgs) != 2 || !strings.Contains(msgs[1], "costguard: deletion (") ||
+		!strings.Contains(msgs[1], "This run deleted 2 resources, saving about €3,57 per month (€42,84 per year).") {
 		t.Errorf("messages = %v", msgs)
 	}
 }
@@ -362,7 +362,7 @@ func TestCancelledRunStillPostsFailure(t *testing.T) {
 	if code := e.runCtx(ctx, "flag"); code != ExitFatal {
 		t.Fatalf("exit %d", code)
 	}
-	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "costguard flag run failed") ||
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: flag run failed") ||
 		!strings.Contains(msgs[0], "stopped from outside") || strings.Contains(msgs[0], "context canceled") {
 		t.Errorf("the failure message must go out, in words people understand: %v", msgs)
 	}
@@ -388,7 +388,7 @@ func TestFlagPostsACorrectionWhenLabelsFail(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 2 || !strings.Contains(msgs[1], "correction to today") ||
+	if len(msgs) != 2 || !strings.Contains(msgs[1], "costguard: correction (") ||
 		!strings.Contains(msgs[1], "Not marked, so NOT deleted in the next delete run: 1") || !strings.Contains(msgs[1], "data") {
 		t.Errorf("messages = %v", msgs)
 	}
@@ -424,7 +424,7 @@ func TestDeleteBlockedPostsAndFails(t *testing.T) {
 	if e.store.Find("s1") == nil {
 		t.Error("a blocked run deletes nothing")
 	}
-	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "deletions blocked") {
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "Nothing was deleted: these skip entries match nothing") {
 		t.Errorf("messages = %v", msgs)
 	}
 }
@@ -444,7 +444,7 @@ func TestScopeErrorPostsFailure(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard flag run failed") || !strings.Contains(msgs[0], "no-such-project") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: flag run failed") || !strings.Contains(msgs[0], "no-such-project") {
 		t.Errorf("messages = %v", msgs)
 	}
 }
@@ -518,7 +518,7 @@ func TestBrokenConfigIsPostedToTheChat(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard report run failed") || !strings.Contains(msgs[0], "skips") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: report run failed") || !strings.Contains(msgs[0], "skips") {
 		t.Errorf("messages = %v", msgs)
 	}
 
@@ -549,7 +549,7 @@ func TestBrokenChatSettingsOnlyLog(t *testing.T) {
 func TestBootWaitsForTheLoginAndChangesNothing(t *testing.T) {
 	e := setup(t, "")
 	e.addCandidates()
-	e.store.Add(stackit.Resource{Kind: stackit.KindImage, ID: "i1", Name: "old", ProjectID: "p1", Region: "eu01", Labels: map[string]string{"delete": "true"}})
+	e.store.Add(stackit.Resource{Kind: stackit.KindSecurityGroup, ID: "g1", Name: "old", ProjectID: "p1", Region: "eu01", Labels: map[string]string{"delete": "true"}})
 	if code := e.run("boot"); code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
@@ -557,7 +557,7 @@ func TestBootWaitsForTheLoginAndChangesNothing(t *testing.T) {
 		t.Errorf("waits = %v, want only the boot run to wait", e.login.waits)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard test is running") ||
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: test is running") ||
 		!strings.Contains(msgs[0], "1 resource labelled delete=true is deleted Tuesday 08:00 (Europe/Berlin)") ||
 		!strings.Contains(msgs[0], "2 new candidates are labelled at the next report run first") ||
 		!strings.Contains(msgs[0], "Next runs: report Monday 08:00 (Europe/Berlin) · delete Tuesday 08:00 (Europe/Berlin).") {
@@ -591,7 +591,7 @@ func TestLoginNotReadyPostsFailureAndScansNothing(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard boot run failed") || !strings.Contains(msgs[0], "costguard cannot log in to STACKIT") ||
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: boot run failed") || !strings.Contains(msgs[0], "costguard cannot log in to STACKIT") ||
 		!strings.Contains(msgs[0], "still after waiting 5 minutes") {
 		t.Errorf("messages = %v", msgs)
 	}
@@ -608,7 +608,7 @@ func TestFlagAndDeleteNeedDeleteOn(t *testing.T) {
 			t.Fatalf("%s: exit %d", sub, code)
 		}
 		msgs := e.hook.messages()
-		if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard "+sub+" run failed") || !strings.Contains(msgs[0], "deleteEnabled: false") {
+		if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: "+sub+" run failed") || !strings.Contains(msgs[0], "deleteEnabled: false") {
 			t.Errorf("%s: messages = %v", sub, msgs)
 		}
 		if len(e.store.Calls) != 0 || len(e.login.waits) != 0 {

@@ -43,7 +43,7 @@ func berlinComposer(t *testing.T) Composer {
 
 func teamA() report.BudgetStatus {
 	return report.BudgetStatus{
-		Name: "Team A", Target: "folder team-a", LimitEUR: 2500, Thresholds: []int{80, 100},
+		Name: "Team A", Target: "folder team-a", FolderID: "f1", LimitEUR: 2500, Thresholds: []int{80, 100},
 		MonthEUR: 2034.12, DayEUR: 123.45, Reached: 80, ForecastEUR: 2179.41,
 		Top: []report.ProjectSpend{{ID: "p1", Name: "shop", EUR: 1200}, {ID: "p2", Name: "api", EUR: 834.12}},
 	}
@@ -77,23 +77,31 @@ func TestComposeOneBudgetReached(t *testing.T) {
 	if !ok {
 		t.Fatal("want a message")
 	}
-	if m.Title != "costguard: budget Team A passed 80%" || m.Subtitle != "Costs up to and including 28 September 2026 (UTC) · 2026-09-29 10:00 (Europe/Berlin)" {
+	if m.Title != "costguard: budget" || m.Subtitle != "Costs up to and including 28 September 2026 (UTC) · 2026-09-29 10:00 (Europe/Berlin)" {
 		t.Errorf("title/subtitle = %q / %q", m.Title, m.Subtitle)
 	}
 	if m.Intro != "Every budgets run lists the budgets at or above a threshold, until September ends." {
 		t.Errorf("intro = %q", m.Intro)
 	}
-	if len(m.Sections) != 1 || m.Sections[0].Title != "Team A (folder team-a): passed 80%" {
-		t.Fatalf("sections = %s", titles(m))
+	if len(m.Sections) != 1 || m.Sections[0].Title != "" {
+		t.Fatalf("sections = %+v", m.Sections)
 	}
 	want := strings.Join([]string{
-		"€2034.12 of €2500.00 in September (81%) <>",
-		"Forecast for September: about €2179.41 (87%) <>",
-		"Top project shop: €1200.00 in September <https://portal.example/projects/p1>",
-		"Top project api: €834.12 in September <https://portal.example/projects/p2>",
+		"Team A: €2.034,12 of €2.500,00 in September (81%) <https://portal.example/dashboard?folder=f1>",
+		"Forecast for September: about €2.179,41 (87%) <>",
+		"Top projects in September: <>",
+		"shop: €1.200,00 <https://portal.example/dashboard?project=p1>",
+		"api: €834,12 <https://portal.example/dashboard?project=p2>",
 	}, "\n")
 	if got := lines(m.Sections[0]); got != want {
 		t.Errorf("lines =\n%s\nwant\n%s", got, want)
+	}
+	var markers []string
+	for _, l := range m.Sections[0].Lines {
+		markers = append(markers, l.Marker())
+	}
+	if got := strings.Join(markers, ""); got != "• • • 1. 2. " {
+		t.Errorf("markers = %q", got)
 	}
 	if len(m.Alerts) != 0 || m.Footer != "costguard v0.1.0" {
 		t.Errorf("alerts %v, footer %q", m.Alerts, m.Footer)
@@ -104,13 +112,13 @@ func TestComposeSeveralBudgetsAndProblems(t *testing.T) {
 	chk := september28(teamA(), sandbox())
 	chk.Problems = []string{`budget "Gone": folder "team-b" matches nothing (or it is not readable)`}
 	m, ok := composer().Budgets(chk)
-	if !ok || m.Title != "costguard: 2 budgets passed a threshold" {
+	if !ok || m.Title != "costguard: budget" {
 		t.Fatalf("title = %q", m.Title)
 	}
-	if got := titles(m); got != "Team A (folder team-a): passed 80% | Sandbox (project sandbox): passed 100% | Budgets not checked: 1" {
-		t.Errorf("sections = %s", got)
+	if len(m.Sections) != 3 || m.Sections[0].Title != "" || m.Sections[1].Title != "" || m.Sections[2].Title != "Budgets not checked: 1" {
+		t.Errorf("sections = %+v", m.Sections)
 	}
-	want := "€51.00 of €50.00 in September (102%) <https://portal.example/projects/p3>"
+	want := "Sandbox: €51,00 of €50,00 in September (102%) <https://portal.example/dashboard?project=p3>"
 	if got := lines(m.Sections[1]); got != want {
 		t.Errorf("sandbox lines =\n%s\nwant\n%s", got, want)
 	}
@@ -126,7 +134,7 @@ func TestComposeBudgetProblemsOnly(t *testing.T) {
 	chk := september28(quiet())
 	chk.Problems = []string{"a", "b"}
 	m, ok := composer().Budgets(chk)
-	if !ok || m.Title != "costguard: budgets could not all be checked" || m.Intro != "" || m.Alerts[0] != "2 budgets could not be checked; details at the end." {
+	if !ok || m.Title != "costguard: budget" || m.Intro != "" || m.Alerts[0] != "2 budgets could not be checked; details at the end." {
 		t.Errorf("message = %+v", m)
 	}
 }
@@ -148,15 +156,15 @@ func TestComposeBootWithBudgets(t *testing.T) {
 	chk := september28(teamA(), sandbox())
 	chk.Problems = []string{`budget "Gone": folder "team-b" matches nothing`}
 	m := c.Boot(fullReport(), chk, nil, checkedAt)
-	if m.Title != "costguard v0.1.0 is running" || !strings.HasSuffix(m.Intro, "Next runs: report Monday 08:00 (Europe/Berlin) · budgets Monday to Friday 10:00 (Europe/Berlin).") {
+	if m.Title != "costguard: v0.1.0 is running" || !strings.HasSuffix(m.Intro, "Next runs: report Monday 08:00 (Europe/Berlin) · budgets Monday to Friday 10:00 (Europe/Berlin).") {
 		t.Errorf("title/intro = %q / %q", m.Title, m.Intro)
 	}
 	if !strings.HasPrefix(titles(m), "Idle public IPs: 1") || !strings.HasSuffix(titles(m), "Budgets for September 2026 (UTC days): 2 | Budgets not checked: 1") {
 		t.Errorf("sections = %s", titles(m))
 	}
 	want := "Costs from the 1st up to and including 28 September; STACKIT last updated them 2026-09-29 09:41 (Europe/Berlin). <>\n" +
-		"Team A · folder team-a · €2034.12 of €2500.00 so far (81%) · alerts at 80%, 100% <>\n" +
-		"Sandbox · project sandbox · €51.00 of €50.00 so far (102%) · alerts at 100% <https://portal.example/projects/p3>"
+		"Team A · folder team-a · €2.034,12 of €2.500,00 so far (81%) · alerts at 80%, 100% <https://portal.example/dashboard?folder=f1>\n" +
+		"Sandbox · project sandbox · €51,00 of €50,00 so far (102%) · alerts at 100% <https://portal.example/dashboard?project=p3>"
 	if got := lines(m.Sections[len(m.Sections)-2]); got != want {
 		t.Errorf("lines =\n%s\nwant\n%s", got, want)
 	}
@@ -171,7 +179,7 @@ func TestComposeBootWithoutReport(t *testing.T) {
 	chk := september28(sandbox())
 	chk.LastModified = time.Time{}
 	m := c.Boot(nil, chk, nil, checkedAt)
-	if m.Title != "costguard v0.1.0 is running" || m.Subtitle != "2026-09-29 10:00 (Europe/Berlin)" || m.Footer != "costguard v0.1.0" ||
+	if m.Title != "costguard: v0.1.0 is running" || m.Subtitle != "2026-09-29 10:00 (Europe/Berlin)" || m.Footer != "costguard v0.1.0" ||
 		m.Intro != "Login and this chat work. The cleanup report is off. Next runs: budgets every day 10:00 (Europe/Berlin)." {
 		t.Errorf("message = %+v", m)
 	}
@@ -188,7 +196,7 @@ func TestComposeBootOnTheFirst(t *testing.T) {
 		Budgets: []report.BudgetStatus{{Name: "Org", Target: "organization", LimitEUR: 100, Thresholds: []int{80}}}}
 	m := composer().Boot(nil, chk, nil, checkedAt)
 	if titles(m) != "Budgets for October 2026 (UTC days): 1" || m.Sections[0].Lines[0].Text != "No costs of October are in yet." ||
-		m.Sections[0].Lines[1].Text != "Org · organization · €0.00 of €100.00 so far (0%) · alerts at 80%" {
+		m.Sections[0].Lines[1].Text != "Org · organization · €0,00 of €100,00 so far (0%) · alerts at 80%" {
 		t.Errorf("sections = %+v", m.Sections)
 	}
 }

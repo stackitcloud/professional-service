@@ -68,19 +68,18 @@ func TestRenderFollowsBlockKitRules(t *testing.T) {
 	}
 }
 
-func TestRenderOrganizationAndFoldedSections(t *testing.T) {
+func TestRenderFoldedAndUntitledSections(t *testing.T) {
 	m := sample()
-	m.Organization = "Acme"
 	m.Sections[0].Folded = true
-	p := Render(m)
-	if p["text"] != "Acme: costguard: 2 resources will be deleted Tuesday" {
-		t.Errorf("fallback text = %v", p["text"])
+	m.Sections = append(m.Sections, notifier.Section{Lines: []notifier.Line{{Text: "Org: €1.000,00 of €2.000,00"}}})
+	blocks := Render(m)["blocks"].([]block)
+	last := blocks[len(blocks)-2]["text"].(block)["text"]
+	if last != "• Org: €1.000,00 of €2.000,00" {
+		t.Errorf("untitled section = %v", last)
 	}
-	data, _ := json.Marshal(p)
-	for _, want := range []string{`Acme · Scope: a\u0026lt;b`, `• no link`} {
-		if !strings.Contains(string(data), want) {
-			t.Errorf("payload lacks %s:\n%s", want, data)
-		}
+	data, _ := json.Marshal(Render(m))
+	if !strings.Contains(string(data), "• no link") {
+		t.Errorf("folded lines must stay in Slack:\n%s", data)
 	}
 }
 

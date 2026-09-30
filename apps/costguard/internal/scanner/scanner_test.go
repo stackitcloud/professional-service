@@ -141,7 +141,6 @@ func eq(t *testing.T, what string, got, want []string) {
 	}
 }
 
-// oneProject is an org with one project p1.
 func oneProject() *fake.Store {
 	st := fake.New()
 	st.AddProject("p1", "proj-one", org, now.AddDate(0, 0, -1), nil)
@@ -179,11 +178,9 @@ func TestScanAppliesEveryRule(t *testing.T) {
 		r(stackit.KindPublicIP, "ip7", "p1", addr("192.0.2.7"), keep()),
 		r(stackit.KindPublicIP, "ip8", "p1", addr("192.0.2.8"), nic("n2")),
 
-		r(stackit.KindImage, "i1", "p1", del()),
 		r(stackit.KindSecurityGroup, "sg1", "p1", del()),
 		r(stackit.KindSecurityGroup, "sg2", "p1", del(), keep()),
 
-		// Both labels: do-not-delete wins, the leftover delete label is listed.
 		r(stackit.KindVolume, "v8", "p1", detached(30), del(), keep()),
 		r(stackit.KindPublicIP, "ip9", "p1", addr("192.0.2.9"), del(), keep()),
 	)
@@ -192,15 +189,14 @@ func TestScanAppliesEveryRule(t *testing.T) {
 	res := scan(t, st, testConfig(nil))
 	rep := res.Report
 
-	// Already marked first (all of them), then the new candidates.
 	eq(t, "idle IPs", ids(rep.IdlePublicIPs), []string{"ip3", "ip1"})
 	eq(t, "detached volumes", ids(rep.DetachedVolumes), []string{"v3", "v1"})
 	eq(t, "with snapshots", ids(rep.WithSnapshots), []string{"v2"})
 	eq(t, "back in use", sorted(ids(rep.BackInUse)), []string{"ip4", "ip6", "v4"})
-	eq(t, "requested", sorted(ids(rep.Requested)), []string{"i1", "ip5", "n3", "s1", "sg1", "sn2", "v5"})
+	eq(t, "requested", sorted(ids(rep.Requested)), []string{"ip5", "n3", "s1", "sg1", "sn2", "v5"})
 	eq(t, "flag", sorted(resIDs(res.Flag)), []string{"ip1", "v1"})
 	eq(t, "unflag", sorted(resIDs(res.Unflag)), []string{"ip4", "ip6", "v4"})
-	eq(t, "delete order", resIDs(res.Delete), []string{"s1", "ip3", "ip5", "n3", "sn2", "v3", "v5", "i1", "sg1"})
+	eq(t, "delete order", resIDs(res.Delete), []string{"s1", "ip3", "ip5", "n3", "sn2", "v3", "v5", "sg1"})
 	eq(t, "protected but marked", sorted(ids(rep.ProtectedMarked)), []string{"ip9", "s3", "sg2", "v8"})
 	eq(t, "clear stale (only volumes and IPs)", sorted(resIDs(res.ClearStale)), []string{"ip9", "v8"})
 
@@ -232,7 +228,7 @@ func TestScanAppliesEveryRule(t *testing.T) {
 	if len(rep.ScanErrors) != 0 || res.Blocked() {
 		t.Errorf("unexpected errors/block: %v %v", rep.ScanErrors, rep.Blocked)
 	}
-	if rep.ToDelete() != 11 {
+	if rep.ToDelete() != 10 {
 		t.Errorf("ToDelete = %d", rep.ToDelete())
 	}
 }
@@ -249,12 +245,9 @@ func TestScanCapsNewCandidatesButNeverMarkedOnes(t *testing.T) {
 	res := scan(t, st, testConfig(nil))
 	rep := res.Report
 
-	// All 12 marked IPs are listed and deleted; 10 new IPs are listed and
-	// flagged, 5 wait.
 	if len(rep.IdlePublicIPs) != 22 || rep.WaitingIdlePublicIPs != 5 {
 		t.Errorf("IPs listed %d, waiting %d", len(rep.IdlePublicIPs), rep.WaitingIdlePublicIPs)
 	}
-	// 10 new volumes, the biggest first; 5 wait.
 	if len(rep.DetachedVolumes) != 10 || rep.WaitingDetachedVolumes != 5 || rep.DetachedVolumes[0].SizeGB != 24 || rep.DetachedVolumes[9].SizeGB != 15 {
 		t.Errorf("volumes listed %d (first %d GB, last %d GB), waiting %d",
 			len(rep.DetachedVolumes), rep.DetachedVolumes[0].SizeGB, rep.DetachedVolumes[len(rep.DetachedVolumes)-1].SizeGB, rep.WaitingDetachedVolumes)
@@ -321,18 +314,18 @@ func TestScanErrorsAreGroupedByCause(t *testing.T) {
 	st := fake.New()
 	for _, p := range []string{"a", "b", "c", "d"} {
 		st.AddProject(p, "proj-"+p, org, now, nil)
-		st.Errs["list:image:"+p+"/eu01"] = &oapierror.GenericOpenAPIError{StatusCode: 403, Body: []byte(`{"message":"missing permission iaas.image.list"}`)}
+		st.Errs["list:snapshot:"+p+"/eu01"] = &oapierror.GenericOpenAPIError{StatusCode: 403, Body: []byte(`{"message":"missing permission iaas.snapshot.list"}`)}
 	}
 	st.Errs["list:server:a/eu01"] = fake.Status(500)
 	res := scan(t, st, testConfig(nil))
 	eq(t, "scan errors", res.Report.ScanErrors, []string{
-		"listing images: HTTP 403: missing permission iaas.image.list (in 4 places, e.g. proj-a (eu01), proj-b (eu01), proj-c (eu01))",
 		"listing servers: HTTP 500 (proj-a (eu01))",
+		"listing snapshots: HTTP 403: missing permission iaas.snapshot.list (in 4 places, e.g. proj-a (eu01), proj-b (eu01), proj-c (eu01))",
 	})
 
-	delete(st.Errs, "list:image:d/eu01")
+	delete(st.Errs, "list:snapshot:d/eu01")
 	res = scan(t, st, testConfig(nil))
-	if got := res.Report.ScanErrors[0]; !strings.HasSuffix(got, "(in 3 places: proj-a (eu01), proj-b (eu01), proj-c (eu01))") {
+	if got := res.Report.ScanErrors[1]; !strings.HasSuffix(got, "(in 3 places: proj-a (eu01), proj-b (eu01), proj-c (eu01))") {
 		t.Errorf("three places are all named: %q", got)
 	}
 }
@@ -355,7 +348,6 @@ func TestScanListFailuresLeaveThingsAlone(t *testing.T) {
 		t.Errorf("scan errors = %v", res.Report.ScanErrors)
 	}
 
-	// 404 means IaaS is not enabled in the region: empty, not an error.
 	st = oneProject()
 	for _, k := range stackit.Kinds {
 		st.Errs["list:"+string(k)+":p1/eu01"] = fake.Status(404)
@@ -366,15 +358,6 @@ func TestScanListFailuresLeaveThingsAlone(t *testing.T) {
 	}
 }
 
-// skipTree:
-//
-//	org
-//	├── Platform (fPlat)         skipped by name
-//	│   └── pa
-//	├── Teams (fTeams)
-//	│   ├── pb   do-not-delete
-//	│   └── pc
-//	└── prod-billing (pd)        skipped by name
 func skipTree() *fake.Store {
 	st := fake.New()
 	st.AddFolder(fPlat, "Platform", org, nil)
@@ -420,7 +403,6 @@ func TestScanSkipsHoldWhenListingsReturnDescendants(t *testing.T) {
 		t.Errorf("skipped %d folders, %d projects", res.Report.SkippedFolders, res.Report.SkippedProjects)
 	}
 
-	// The same with an ID-only scope.
 	st = skipTree()
 	st.ListDescendants = true
 	st.AddFolder(fParent, "Parent", org, nil)
@@ -495,8 +477,6 @@ func TestScanScopeByIDHonoursFoldersAbove(t *testing.T) {
 		t.Errorf("flag=%v skipped=%d/%d", resIDs(res.Flag), res.Report.SkippedFolders, res.Report.SkippedProjects)
 	}
 
-	// Unreadable labels above the scope are logged, not fatal; a skip entry
-	// may still name that folder.
 	delete(st.Containers[fParent].Labels, "do-not-delete")
 	st.Errs["get:"+fParent] = fake.Status(403)
 	res = scan(t, st, testConfig(func(c *config.Config) {
@@ -510,7 +490,6 @@ func TestScanScopeByIDHonoursFoldersAbove(t *testing.T) {
 
 func TestScanScopeByIDErrors(t *testing.T) {
 	st := skipTree()
-	// Both entries are IDs, so this takes the ID path (no organization walk).
 	const inactive = "00000000-0000-0000-0000-0000000000d1"
 	st.Containers[inactive] = stackit.Container{ID: inactive, Name: "old", ParentID: org, LifecycleState: "DELETING"}
 	_, err := newScanner(st, testConfig(func(c *config.Config) {
@@ -537,8 +516,6 @@ func TestScanWalkErrorsAreScanErrors(t *testing.T) {
 	if len(res.Report.ScanErrors) != 2 {
 		t.Errorf("scan errors = %v", res.Report.ScanErrors)
 	}
-	// Teams' projects were listed before its folder listing failed; pb is
-	// protected. Platform's projects could not be listed at all.
 	eq(t, "flag", sorted(resIDs(res.Flag)), sorted([]string{"vol-" + pC, "vol-pd"}))
 }
 
@@ -642,8 +619,6 @@ func TestScanDeleteRunSkipsWarnings(t *testing.T) {
 	}
 }
 
-// The delete run never flags new candidates, so it must not ask SKE: an SKE
-// error would otherwise make it post although nothing happened.
 func TestScanDeleteRunSkipsSKE(t *testing.T) {
 	st := oneProject()
 	st.Add(r(stackit.KindVolume, "v1", "p1", detached(100)))
@@ -657,7 +632,6 @@ func TestScanDeleteRunSkipsSKE(t *testing.T) {
 	if calls := st.CallsWith("ske"); len(calls) != 0 || len(res.Report.ScanErrors) != 0 || len(res.Flag) != 0 {
 		t.Errorf("ske calls %v, scan errors %v, flag %v", calls, res.Report.ScanErrors, res.Flag)
 	}
-	// A report run asks SKE for the same volume.
 	res = scan(t, st, testConfig(nil))
 	if len(st.CallsWith("ske")) != 1 || len(res.Report.ScanErrors) != 1 {
 		t.Errorf("report run: ske calls %v, scan errors %v", st.CallsWith("ske"), res.Report.ScanErrors)
@@ -668,7 +642,7 @@ func TestScanWarningsOff(t *testing.T) {
 	st := oneProject()
 	st.AddProject("empty", "empty", org, old, nil)
 	st.Areas = []stackit.NetworkArea{{ID: "a1", Name: "old-empty", CreatedAt: old}}
-	st.Errs["costs"] = fake.Status(403) // no organization-wide cost access
+	st.Errs["costs"] = fake.Status(403)
 	res := scan(t, st, testConfig(func(c *config.Config) { c.WarnEmptyAfterDays = 0 }))
 	if len(res.Report.EmptyProjects)+len(res.Report.EmptyNetworkAreas)+len(res.Report.ScanErrors) != 0 {
 		t.Errorf("warnings off: nothing may be reported, got %+v", res.Report)

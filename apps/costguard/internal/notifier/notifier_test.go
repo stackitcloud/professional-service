@@ -59,18 +59,18 @@ func titles(m Message) string {
 
 func TestComposeFlagMessage(t *testing.T) {
 	m := composer().Report(fullReport(), ModeFlag)
-	if m.Title != "costguard: 3 resources will be deleted Tuesday 08:00" {
+	if m.Title != "costguard: report" {
 		t.Errorf("title = %q", m.Title)
 	}
 	if m.Subtitle != "Scope: whole organization · regions eu01 · 2026-09-28 08:00 UTC" {
 		t.Errorf("subtitle = %q", m.Subtitle)
 	}
-	wantIntro := "Deleting these 3 resources saves about €7.92 per month (€95.04 per year). " +
-		"They are labelled delete=true. To keep a resource, open it and set the label do-not-delete=true (or remove delete=true)."
+	wantIntro := "3 resources labelled delete=true are deleted Tuesday 08:00, saving about €7,92 per month (€95,04 per year). " +
+		"To keep a resource, open it and set the label do-not-delete=true (or remove delete=true)."
 	if m.Intro != wantIntro {
 		t.Errorf("intro = %q", m.Intro)
 	}
-	want := "Idle public IPs: 1, about €4.82/month | Detached volumes: 1, 50 GB, about €3.10/month | " +
+	want := "Idle public IPs: 1, about €4,82/month | Detached volumes: 1, 50 GB, about €3,10/month | " +
 		"Other resources labelled delete=true: 1 | Detached volumes with snapshots, not flagged: 1 | " +
 		"In use again, delete label removed: 1 | Empty projects older than 30 days (warning only): 1 | " +
 		"Empty network areas older than 30 days (warning only): 1"
@@ -78,13 +78,13 @@ func TestComposeFlagMessage(t *testing.T) {
 		t.Errorf("sections =\n%s\nwant\n%s", got, want)
 	}
 	ip := m.Sections[0].Lines[0]
-	if ip.Text != "public IP 192.0.2.1 · shop (eu01) · new" || ip.Link != "https://portal.example/projects/p1" {
+	if ip.Text != "public IP 192.0.2.1 · shop (eu01) · new" || ip.Link != "https://portal.example/public-ip/public-ips/ip1/overview?project=p1" {
 		t.Errorf("ip line = %+v", ip)
 	}
 	if got := m.Sections[4].Lines[0].Text; got != "volume v3 · shop (eu01)" {
 		t.Errorf("unnamed items use their ID: %q", got)
 	}
-	if got := m.Sections[5].Lines[0]; got.Text != "project old · created 2026-01-01" || got.Link != "https://portal.example/projects/p9" {
+	if got := m.Sections[5].Lines[0]; got.Text != "project old · created 2026-01-01" || got.Link != "https://portal.example/dashboard?project=p9" {
 		t.Errorf("project line = %+v", got)
 	}
 	if got := m.Sections[6].Lines[0].Link; got != "" {
@@ -104,8 +104,8 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 	rep.ScanErrors = []string{"e1", "e2", "e3", "e4", "e5"}
 	m := composer().Report(rep, ModeReport)
 	wantIntro := "Automatic deletion is off; nothing was changed. With delete on, 3 resources would be deleted, " +
-		"saving about €7.92 per month (€95.04 per year). To keep a resource once delete is on, set the label do-not-delete=true on it."
-	if m.Title != "costguard report" || m.Intro != wantIntro {
+		"saving about €7,92 per month (€95,04 per year). To keep a resource once delete is on, set the label do-not-delete=true on it."
+	if m.Title != "costguard: report" || m.Intro != wantIntro {
 		t.Errorf("title/intro = %q / %q", m.Title, m.Intro)
 	}
 	if len(m.Alerts) != 2 || !strings.Contains(m.Alerts[0], "would block all deletions once delete is on") ||
@@ -128,8 +128,8 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 	if !strings.Contains(m.Alerts[0], "Nothing is flagged or deleted until the skip list is fixed") {
 		t.Errorf("alert = %q", m.Alerts[0])
 	}
-	if m.Title != "costguard: deletions blocked" ||
-		m.Intro != "Once the skip list is fixed, 3 resources would be deleted, saving about €7.92 per month (€95.04 per year)." {
+	if m.Title != "costguard: report" ||
+		m.Intro != "Once the skip list is fixed, 3 resources would be deleted, saving about €7,92 per month (€95,04 per year)." {
 		t.Errorf("blocked title/intro = %q / %q", m.Title, m.Intro)
 	}
 	rep.IdlePublicIPs, rep.DetachedVolumes = nil, nil
@@ -141,7 +141,7 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 func TestComposeNothingFound(t *testing.T) {
 	rep := &report.Report{GeneratedAt: at, Scope: "Teams"}
 	m := composer().Report(rep, ModeFlag)
-	if m.Title != "costguard: nothing to delete" || m.Intro != "Nothing to clean up." || len(m.Sections) != 0 {
+	if m.Title != "costguard: report" || m.Intro != "Nothing to delete." || len(m.Sections) != 0 {
 		t.Errorf("message = %+v", m)
 	}
 	m = composer().Report(rep, ModeReport)
@@ -159,11 +159,11 @@ func TestComposeBootMessage(t *testing.T) {
 	c := composer()
 	c.ReportRunAt, c.DeleteRunAt = "Monday 08:00 (Europe/Berlin)", ""
 	m := c.Report(fullReport(), ModeBoot)
-	if m.Title != "costguard v0.1.0 is running" {
+	if m.Title != "costguard: v0.1.0 is running" {
 		t.Errorf("title = %q", m.Title)
 	}
 	wantIntro := "Login and this chat work. Automatic deletion is off; nothing was changed. With delete on, 3 resources would be deleted, " +
-		"saving about €7.92 per month (€95.04 per year). To keep a resource once delete is on, set the label do-not-delete=true on it. " +
+		"saving about €7,92 per month (€95,04 per year). To keep a resource once delete is on, set the label do-not-delete=true on it. " +
 		"Next runs: report Monday 08:00 (Europe/Berlin)."
 	if m.Intro != wantIntro {
 		t.Errorf("intro =\n%s\nwant\n%s", m.Intro, wantIntro)
@@ -184,13 +184,13 @@ func TestComposeReadOnlyWithDeleteOn(t *testing.T) {
 	rep.Blocked = []string{`skip.projects: "gone"`}
 	m := c.Report(rep, ModeBoot)
 	wantIntro := "Login and this chat work. This run changed nothing. 2 resources labelled delete=true are deleted Tuesday 08:00 (Europe/Berlin), " +
-		"saving about €3.10 per month (€37.20 per year). 3 new candidates are labelled at the next report run first. " +
+		"saving about €3,10 per month (€37,20 per year). 3 new candidates are labelled at the next report run first. " +
 		"To keep a resource, open it and set the label do-not-delete=true (or remove delete=true). " +
 		"Next runs: report Monday 08:00 (Europe/Berlin) · delete Tuesday 08:00 (Europe/Berlin)."
 	if m.Intro != wantIntro {
 		t.Errorf("intro =\n%s\nwant\n%s", m.Intro, wantIntro)
 	}
-	want := "Labelled delete=true, deleted Tuesday 08:00 (Europe/Berlin), about €3.10/month: 2 | New candidates, labelled at the next report run: 3 | " +
+	want := "Labelled delete=true, deleted Tuesday 08:00 (Europe/Berlin), about €3,10/month: 2 | New candidates, labelled at the next report run: 3 | " +
 		"Detached volumes with snapshots, not flagged: 1 | In use again, the delete label is removed at the next run: 1 | " +
 		"Empty projects older than 30 days (warning only): 1 | Empty network areas older than 30 days (warning only): 1"
 	if got := titles(m); got != want {
@@ -209,12 +209,12 @@ func TestComposeReadOnlyWithDeleteOn(t *testing.T) {
 		t.Error("composing must not change the report")
 	}
 
-	only := &report.Report{GeneratedAt: at, Requested: []report.Item{{Kind: "image", ID: "i1"}}}
+	only := &report.Report{GeneratedAt: at, Requested: []report.Item{{Kind: "securitygroup", ID: "g1"}}}
 	if got := c.Report(only, ModeReport).Intro; got != "This run changed nothing. 1 resource labelled delete=true is deleted Tuesday 08:00 (Europe/Berlin). "+keepHint {
 		t.Errorf("intro = %q", got)
 	}
 	fresh := &report.Report{GeneratedAt: at, IdlePublicIPs: []report.Item{{Kind: "publicip", ID: "ip1", New: true}}}
-	if got := c.Report(fresh, ModeReport); got.Title != "costguard report" ||
+	if got := c.Report(fresh, ModeReport); got.Title != "costguard: report" ||
 		got.Intro != "This run changed nothing. 1 new candidate is labelled at the next report run first. "+keepHint {
 		t.Errorf("message = %q / %q", got.Title, got.Intro)
 	}
@@ -236,21 +236,20 @@ func TestComposeShowsTimesInTheConfiguredZone(t *testing.T) {
 	}
 }
 
-func TestSummaryTitleSaysWhatHappened(t *testing.T) {
+func TestSummaryIntroSaysWhatHappened(t *testing.T) {
 	res := func(st report.Status) report.Result {
 		return report.Result{Item: report.Item{Kind: "volume", ID: "v"}, Status: st}
 	}
 	for want, sum := range map[string]*report.DeletionSummary{
-		"costguard: 2 resources deleted":                  {Results: []report.Result{res(report.StatusDeleted), res(report.StatusDeleted), res(report.StatusFailed)}},
-		"costguard: delete run interrupted":               {Interrupted: true, Results: []report.Result{res(report.StatusFailed)}},
-		"costguard: 1 deletion failed":                    {Results: []report.Result{res(report.StatusFailed), res(report.StatusUnflagged)}},
-		"costguard: delete label removed from 1 resource": {Results: []report.Result{res(report.StatusUnflagged)}},
-		"costguard: nothing deleted":                      {Results: []report.Result{res(report.StatusDeferred)}},
-		"costguard: deletions blocked":                    {Blocked: []string{"x"}, Results: []report.Result{res(report.StatusDeleted)}},
+		"This run deleted 2 resources.":                                                           {Results: []report.Result{res(report.StatusDeleted), res(report.StatusDeleted), res(report.StatusFailed)}},
+		"1 deletion failed; they are tried again in the next run.":                                {Interrupted: true, Results: []report.Result{res(report.StatusFailed), res(report.StatusUnflagged)}},
+		"Nothing was deleted. The delete label was removed from 1 resource that is in use again.": {Results: []report.Result{res(report.StatusUnflagged)}},
+		"Nothing was deleted.":                                                                    {Results: []report.Result{res(report.StatusDeferred)}},
+		"":                                                                                        {Blocked: []string{"x"}, Results: []report.Result{res(report.StatusSkipped)}},
 	} {
 		sum.GeneratedAt = at
-		if got := composer().Summary(sum).Title; got != want {
-			t.Errorf("title = %q, want %q", got, want)
+		if m := composer().Summary(sum); m.Title != "costguard: deletion" || m.Intro != want {
+			t.Errorf("title/intro = %q / %q, want %q", m.Title, m.Intro, want)
 		}
 	}
 }
@@ -258,7 +257,7 @@ func TestSummaryTitleSaysWhatHappened(t *testing.T) {
 func TestComposeListsEverythingActedOn(t *testing.T) {
 	rep := &report.Report{GeneratedAt: at, WaitingIdlePublicIPs: 5}
 	for i := 0; i < 27; i++ {
-		rep.Requested = append(rep.Requested, report.Item{Kind: "image", ID: fmt.Sprint(i)})
+		rep.Requested = append(rep.Requested, report.Item{Kind: "securitygroup", ID: fmt.Sprint(i)})
 		rep.BackInUse = append(rep.BackInUse, report.Item{Kind: "volume", ID: fmt.Sprint(i)})
 	}
 	for i := 0; i < 15; i++ {
@@ -298,10 +297,10 @@ func TestComposeSummary(t *testing.T) {
 		{Item: report.Item{Kind: "securitygroup", ID: "g1", Name: "default", ProjectName: "shop", Region: "eu01"}, Status: report.StatusFailed, Reason: "still in use"},
 		{Item: report.Item{Kind: "volume", ID: "v1", Name: "data"}, Status: report.StatusUnflagged, Reason: "attached to a server again"},
 		{Item: report.Item{Kind: "volume", ID: "v2", Name: "logs"}, Status: report.StatusDeferred, Reason: "next run"},
-		{Item: report.Item{Kind: "image", ID: "i1", Name: "old"}, Status: report.StatusSkipped, Reason: "do-not-delete is set"},
+		{Item: report.Item{Kind: "securitygroup", ID: "g1", Name: "old"}, Status: report.StatusSkipped, Reason: "do-not-delete is set"},
 	}}
 	m := composer().Summary(sum)
-	if m.Title != "costguard: 1 resource deleted" || m.Subtitle != "Scope: whole organization · 2026-09-28 08:00 UTC" {
+	if m.Title != "costguard: deletion" || m.Subtitle != "Scope: whole organization · 2026-09-28 08:00 UTC" {
 		t.Errorf("title/subtitle = %q / %q", m.Title, m.Subtitle)
 	}
 	want := "Deleted: 1 | Failed, will be tried again in the next run: 1 | In use again, delete label removed: 1 | Left for the next run: 1 | Skipped: 1"
@@ -321,7 +320,7 @@ func TestComposeSummary(t *testing.T) {
 		report.Result{Item: report.Item{Kind: "volume", ID: "v8", SizeGB: 500}, Status: report.StatusDeleted, Reason: "already gone", AlreadyGone: true},
 		report.Result{Item: report.Item{Kind: "volume", ID: "v7", SizeGB: 500}, Status: report.StatusFailed},
 	)
-	if got := composer().Summary(sum).Intro; got != "This run deleted 3 resources, saving about €11.02 per month (€132.24 per year)." {
+	if got := composer().Summary(sum).Intro; got != "This run deleted 3 resources, saving about €11,02 per month (€132,24 per year)." {
 		t.Errorf("saving = %q", got)
 	}
 
@@ -331,10 +330,10 @@ func TestComposeSummary(t *testing.T) {
 	}
 
 	blocked := composer().Summary(&report.DeletionSummary{GeneratedAt: at, Blocked: []string{"x"}, ScanErrors: []string{"e"}})
-	if blocked.Title != "costguard: deletions blocked" || len(blocked.Alerts) != 2 || blocked.Intro != "" {
+	if blocked.Title != "costguard: deletion" || len(blocked.Alerts) != 2 || blocked.Intro != "" {
 		t.Errorf("blocked = %+v", blocked)
 	}
-	if empty := composer().Summary(&report.DeletionSummary{GeneratedAt: at}); empty.Intro != "Nothing happened." {
+	if empty := composer().Summary(&report.DeletionSummary{GeneratedAt: at}); empty.Intro != "Nothing was deleted." {
 		t.Errorf("empty = %+v", empty)
 	}
 }
@@ -376,7 +375,7 @@ func TestComposeFlagProblems(t *testing.T) {
 		[]report.Item{{Kind: "volume", ID: "v1", Name: "data", ProjectID: "p1", ProjectName: "shop", Region: "eu01", Detail: "HTTP 500"}},
 		[]report.Item{{Kind: "publicip", ID: "ip1", Name: "192.0.2.1", ProjectID: "p1", ProjectName: "shop", Region: "eu01", Detail: "HTTP 403"}},
 	)
-	if m.Title != "costguard: correction to today's message" || !strings.Contains(m.Intro, "tries again at the next report run") {
+	if m.Title != "costguard: correction" || !strings.Contains(m.Intro, "tries again at the next report run") {
 		t.Errorf("header = %q / %q", m.Title, m.Intro)
 	}
 	if got := titles(m); got != "Not marked, so NOT deleted in the next delete run: 1 | delete label could not be removed (they are not deleted either way): 1" {
@@ -392,7 +391,7 @@ func TestComposeFlagProblems(t *testing.T) {
 
 func TestComposeFailure(t *testing.T) {
 	m := composer().Failure(ModeDelete, errors.New("the scope cannot be resolved"))
-	if m.Title != "costguard delete run failed" || m.Alerts[0] != "the scope cannot be resolved" || !strings.Contains(m.Intro, "before changing anything") {
+	if m.Title != "costguard: delete run failed" || m.Alerts[0] != "the scope cannot be resolved" || !strings.Contains(m.Intro, "before changing anything") {
 		t.Errorf("failure = %+v", m)
 	}
 	if len(m.Sections) != 0 {
@@ -427,10 +426,24 @@ func TestOrganizationAndFolding(t *testing.T) {
 		"failure": c.Failure(ModeReport, errors.New("invalid configuration:\n- output is required")),
 		"budgets": budgets,
 	}
+	wantTitles := map[string]string{
+		"report":  "costguard: report (Acme)",
+		"boot":    "costguard: v0.1.0 is running (Acme)",
+		"summary": "costguard: deletion (Acme)",
+		"flag":    "costguard: correction (Acme)",
+		"failure": "costguard: report run failed (Acme)",
+		"budgets": "costguard: budget (Acme)",
+	}
 	for name, m := range messages {
-		if m.Organization != "Acme" {
-			t.Errorf("%s: organization = %q", name, m.Organization)
+		if m.Title != wantTitles[name] {
+			t.Errorf("%s: title = %q", name, m.Title)
 		}
+	}
+	if got := messages["report"].Subtitle; got != "Scope: whole organization · regions eu01 · 2026-09-28 08:00 UTC" {
+		t.Errorf("subtitle = %q", got)
+	}
+	if got := composer().Failure(ModeDelete, errors.New("x")).Title; got != "costguard: delete run failed" {
+		t.Errorf("title without organization = %q", got)
 	}
 
 	for _, sec := range messages["report"].Sections {
@@ -452,32 +465,45 @@ func TestOrganizationAndFolding(t *testing.T) {
 	if sec := messages["failure"].Sections[0]; sec.Folded {
 		t.Errorf("failure details must stay open: %+v", sec)
 	}
-	if got := budgets.Sections; len(got) != 2 || got[0].Folded || !got[1].Folded || got[1].Title != "Budgets not checked: 1" {
+	c.OrganizationID = "o-1"
+	orgBudget := report.BudgetStatus{Name: "Org", Organization: true, LimitEUR: 10}
+	if got := c.budgetLink(orgBudget); got != "https://portal.example/dashboard?organization=o-1" {
+		t.Errorf("organization budget link = %q", got)
+	}
+	if got := c.budgetLink(report.BudgetStatus{Name: "x"}); got != "" {
+		t.Errorf("unknown target link = %q", got)
+	}
+	if got := budgets.Sections; len(got) != 2 || got[0].Folded || got[0].Title != "" || !got[1].Folded || got[1].Title != "Budgets not checked: 1" {
 		t.Errorf("budget sections = %+v", got)
-	}
-
-	m := messages["report"]
-	if got := m.HeaderSubtitle(); got != "Acme · Scope: whole organization · regions eu01 · 2026-09-28 08:00 UTC" {
-		t.Errorf("header subtitle = %q", got)
-	}
-	if got := m.Notification(); got != "Acme: costguard report" {
-		t.Errorf("notification = %q", got)
-	}
-	if got := (Message{Title: "t", Organization: "Acme"}).HeaderSubtitle(); got != "Acme" {
-		t.Errorf("organization alone = %q", got)
-	}
-	if got := (Message{Title: "t", Subtitle: "s"}); got.HeaderSubtitle() != "s" || got.Notification() != "t" {
-		t.Errorf("without organization = %q / %q", got.HeaderSubtitle(), got.Notification())
 	}
 }
 
 func TestPortalLink(t *testing.T) {
-	it := report.Item{Kind: "nic", ID: "n1", ProjectID: "p 1", NetworkID: "net1", Region: "eu01"}
-	if got := PortalLink("https://p/", it); got != "https://p/projects/p%201" {
-		t.Errorf("link = %q", got)
+	const org = "o-1"
+	item := func(kind, id string) report.Item {
+		return report.Item{Kind: kind, ID: id, ProjectID: "p 1", Region: "eu01", NetworkID: "net1", VolumeID: "v1"}
 	}
-	if PortalLink("https://p", report.Item{Kind: report.KindNetworkArea, ID: "a1"}) != "" {
-		t.Error("items without a project have no link")
+	for want, it := range map[string]report.Item{
+		"https://p/server/servers/s1/overview?project=p+1":                  item("server", "s1"),
+		"https://p/disk-volumes/volumes/v2/overview?project=p+1":            item("volume", "v2"),
+		"https://p/public-ip/public-ips/ip1/overview?project=p+1":           item("publicip", "ip1"),
+		"https://p/disk-volumes/volumes/v1/snapshots/sn1?project=p+1":       item("snapshot", "sn1"),
+		"https://p/nic/nics/n1/overview?project=p+1":                        item("nic", "n1"),
+		"https://p/security-group/groups/g1/overview?project=p+1":           item("securitygroup", "g1"),
+		"https://p/dashboard?project=p+1":                                   item(report.KindProject, "p 1"),
+		"https://p/network-area/network-areas/a1/overview?organization=o-1": {Kind: report.KindNetworkArea, ID: "a1"},
+	} {
+		if got := PortalLink("https://p/", org, it); got != want {
+			t.Errorf("%s: link = %q, want %q", it.Kind, got, want)
+		}
+	}
+	noVolume := item("snapshot", "sn1")
+	noVolume.VolumeID = ""
+	if got := PortalLink("https://p", org, noVolume); got != "https://p/dashboard?project=p+1" {
+		t.Errorf("snapshot without its volume = %q", got)
+	}
+	if PortalLink("https://p", "", report.Item{Kind: report.KindNetworkArea, ID: "a1"}) != "" || PortalLink("https://p", org, report.Item{Kind: "volume", ID: "v"}) != "" {
+		t.Error("without the organization or project there is no link")
 	}
 }
 
@@ -566,5 +592,22 @@ func TestPosterNetworkErrorsAndLimits(t *testing.T) {
 	start := time.Now()
 	if err := NewPoster(ts.URL, "Teams").Post(ctx, 1); err == nil || time.Since(start) > 5*time.Second {
 		t.Errorf("err=%v after %v", err, time.Since(start))
+	}
+}
+
+func TestEuroFormat(t *testing.T) {
+	for v, want := range map[float64]string{
+		0:          "€0,00",
+		0.004:      "€0,00",
+		7.5:        "€7,50",
+		999.999:    "€1.000,00",
+		200000:     "€200.000,00",
+		1234567.89: "€1.234.567,89",
+		-2034.12:   "-€2.034,12",
+		-0.001:     "€0,00",
+	} {
+		if got := eur(v); got != want {
+			t.Errorf("eur(%v) = %q, want %q", v, got, want)
+		}
 	}
 }

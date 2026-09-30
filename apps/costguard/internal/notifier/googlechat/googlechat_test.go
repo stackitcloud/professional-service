@@ -92,29 +92,30 @@ func TestRenderIsCardsV2(t *testing.T) {
 	}
 }
 
-func TestRenderOrganizationAndFoldedSections(t *testing.T) {
+func TestRenderFoldedAndUntitledSections(t *testing.T) {
 	m := sample()
-	m.Organization = "Acme"
 	m.Sections[0].Folded = true
-	m.Sections = append(m.Sections, notifier.Section{Title: "Details", Lines: []notifier.Line{{Text: "why"}}})
+	m.Sections = append(m.Sections, notifier.Section{Lines: []notifier.Line{{Text: "Org: €1.000,00 of €2.000,00"}, {Text: "shop: €900,00", Number: 1}}})
 	p := Render(m)
 	if _, ok := p["text"]; ok {
 		t.Error("text must be empty: Google Chat shows it as a line of its own above the card")
 	}
-	if p["fallbackText"] != "Acme: costguard report" {
+	if p["fallbackText"] != "costguard report" {
 		t.Errorf("fallbackText = %v", p["fallbackText"])
 	}
-	card := p["cardsV2"].([]obj)[0]["card"].(obj)
-	if sub := card["header"].(obj)["subtitle"]; sub != "Acme · Scope: Teams" {
-		t.Errorf("subtitle = %v", sub)
-	}
-	sections := card["sections"].([]obj)
-	folded, open := sections[1], sections[2]
+	sections := p["cardsV2"].([]obj)[0]["card"].(obj)["sections"].([]obj)
+	folded, untitled := sections[1], sections[2]
 	if folded["header"] != "Idle public IPs: 1" || folded["collapsible"] != true || folded["uncollapsibleWidgetsCount"] != 0 {
 		t.Errorf("folded section = %v", folded)
 	}
-	if _, ok := open["collapsible"]; ok || open["header"] != "Details" {
-		t.Errorf("open section = %v", open)
+	if _, ok := untitled["header"]; ok {
+		t.Errorf("untitled section = %v", untitled)
+	}
+	if text := untitled["widgets"].([]obj)[0]["textParagraph"].(obj)["text"]; text != "• Org: €1.000,00 of €2.000,00<br>1. shop: €900,00" {
+		t.Errorf("untitled lines = %v", text)
+	}
+	if _, ok := untitled["collapsible"]; ok {
+		t.Errorf("untitled section = %v", untitled)
 	}
 }
 

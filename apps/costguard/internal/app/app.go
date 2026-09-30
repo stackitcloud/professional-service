@@ -12,20 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package app runs one costguard subcommand:
-//
-//	report  the report run while delete is off: scan and post; never
-//	        writes.
-//	flag    the report run while delete is on: scan, post, then label new
-//	        candidates. No message, no labels.
-//	delete  the delete run: scan, delete what is labelled, post when
-//	        something happened.
-//	budgets the budgets run: post the budgets at or above a threshold
-//	        this month; nothing when none is. Never writes.
-//	boot    once after the server was (re)created: wait for the login,
-//	        then post the cleanup report (report on) and where every
-//	        budget stands (budgets on); never writes.
-
 package app
 
 import (
@@ -112,6 +98,7 @@ func Run(ctx context.Context, opts Options) int {
 		notify: buildNotifier(*cfg),
 		compose: notifier.Composer{
 			Organization:       cfg.OrganizationID,
+			OrganizationID:     cfg.OrganizationID,
 			PortalURL:          cfg.PortalURL,
 			DeleteEnabled:      cfg.DeleteEnabled,
 			DeleteRunAt:        cfg.DeleteRunAt,
@@ -190,7 +177,6 @@ func (r *run) execute(ctx context.Context) int {
 		r.logger.Info("flag run complete", "flagged", fr.Flagged, "unflagged", fr.Unflagged, "cleared", fr.Cleared,
 			"not_flagged", len(fr.NotFlagged), "not_cleared", len(fr.NotCleared))
 		if fr.Failed() {
-			// The message already went out: correct it in the chat.
 			if err := r.send(ctx, r.compose.FlagProblems(fr.NotFlagged, fr.NotCleared)); err != nil {
 				r.logger.Error("sending the correction failed", "error", err)
 			}

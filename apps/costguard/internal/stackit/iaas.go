@@ -24,37 +24,28 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
 )
 
-// Kind is one of the "IaaS basics" resource types costguard handles.
 type Kind string
 
-// The IaaS kinds.
 const (
 	KindServer        Kind = "server"
 	KindPublicIP      Kind = "publicip"
 	KindNIC           Kind = "nic"
 	KindSnapshot      Kind = "snapshot"
 	KindVolume        Kind = "volume"
-	KindImage         Kind = "image"
 	KindSecurityGroup Kind = "securitygroup"
 )
 
-// Name is the kind's name for people, e.g. "public IP".
 func (k Kind) Name() string {
 	return report.KindName(string(k))
 }
 
-// Kinds lists every kind in deletion order: servers first (their NICs and
-// volumes are released with them), security groups last (NICs use them).
-var Kinds = []Kind{KindServer, KindPublicIP, KindNIC, KindSnapshot, KindVolume, KindImage, KindSecurityGroup}
+var Kinds = []Kind{KindServer, KindPublicIP, KindNIC, KindSnapshot, KindVolume, KindSecurityGroup}
 
-// Server and volume states costguard looks at.
 const (
 	VolumeStatusAvailable = "AVAILABLE"
 	ServerStatusDeleting  = "DELETING"
 )
 
-// Resource is one IaaS resource. Fields that do not apply to a kind are
-// empty.
 type Resource struct {
 	Kind      Kind
 	ID        string
@@ -65,21 +56,14 @@ type Resource struct {
 	Status    string
 	CreatedAt time.Time
 
-	// ServerID is the server a volume is attached to, or a NIC's device.
-	ServerID string
-	// NetworkID is a NIC's network (needed to get or delete it).
+	ServerID  string
 	NetworkID string
-	// NICID is the NIC a public IP is attached to.
-	NICID string
-	// Address is a public IP's address.
-	Address string
-	// VolumeID is a snapshot's source volume.
-	VolumeID string
-	// SizeGB is a volume's size.
-	SizeGB int64
+	NICID     string
+	Address   string
+	VolumeID  string
+	SizeGB    int64
 }
 
-// NetworkArea is an organization-level network area (SNA).
 type NetworkArea struct {
 	ID           string
 	Name         string
@@ -88,20 +72,11 @@ type NetworkArea struct {
 	CreatedAt    time.Time
 }
 
-// IaaS is the IaaS surface costguard needs.
 type IaaS interface {
-	// List returns all resources of a kind in one project and region.
 	List(ctx context.Context, kind Kind, projectID, region string) ([]Resource, error)
-	// Get re-reads a resource (Kind, ID, ProjectID, Region and, for NICs,
-	// NetworkID must be set).
 	Get(ctx context.Context, ref Resource) (*Resource, error)
-	// Delete deletes a resource.
 	Delete(ctx context.Context, ref Resource) error
-	// SetLabel sets (value non-nil) or removes (value nil) one label. Only
-	// volumes and public IPs are supported: they are the only kinds
-	// costguard labels.
 	SetLabel(ctx context.Context, ref Resource, key string, value *string) error
-	// ListNetworkAreas lists the organization's network areas.
 	ListNetworkAreas(ctx context.Context, organizationID string) ([]NetworkArea, error)
 }
 
@@ -156,20 +131,6 @@ func (a *iaas) list(ctx context.Context, kind Kind, p, r string) ([]Resource, er
 		for i := range resp.Items {
 			out = append(out, fromSnapshot(&resp.Items[i], p, r))
 		}
-	case KindImage:
-		resp, err := a.api.ListImages(ctx, p, r).Execute()
-		if err != nil {
-			return nil, err
-		}
-		for i := range resp.Items {
-			img := &resp.Items[i]
-			// Only the project's own images; public or shared images are
-			// never costguard's business.
-			if owner := img.GetOwner(); owner != "" && owner != p {
-				continue
-			}
-			out = append(out, fromImage(img, p, r))
-		}
 	case KindNIC:
 		resp, err := a.api.ListProjectNICs(ctx, p, r).Execute()
 		if err != nil {
@@ -220,12 +181,6 @@ func (a *iaas) Get(ctx context.Context, ref Resource) (*Resource, error) {
 			return nil, getErr(ref, err)
 		}
 		res = fromSnapshot(v, p, r)
-	case KindImage:
-		v, err := a.api.GetImage(ctx, p, r, ref.ID).Execute()
-		if err != nil {
-			return nil, getErr(ref, err)
-		}
-		res = fromImage(v, p, r)
 	case KindNIC:
 		v, err := a.api.GetNic(ctx, p, r, ref.NetworkID, ref.ID).Execute()
 		if err != nil {
@@ -260,8 +215,6 @@ func (a *iaas) Delete(ctx context.Context, ref Resource) error {
 		err = a.api.DeletePublicIP(ctx, p, r, ref.ID).Execute()
 	case KindSnapshot:
 		err = a.api.DeleteSnapshot(ctx, p, r, ref.ID).Execute()
-	case KindImage:
-		err = a.api.DeleteImage(ctx, p, r, ref.ID).Execute()
 	case KindNIC:
 		err = a.api.DeleteNic(ctx, p, r, ref.NetworkID, ref.ID).Execute()
 	case KindSecurityGroup:
@@ -276,8 +229,6 @@ func (a *iaas) Delete(ctx context.Context, ref Resource) error {
 }
 
 func (a *iaas) SetLabel(ctx context.Context, ref Resource, key string, value *string) error {
-	// A null value removes the key; other labels are left alone (the API
-	// merges the patch).
 	patch := map[string]interface{}{key: nil}
 	if value != nil {
 		patch[key] = *value
@@ -317,8 +268,6 @@ func (a *iaas) ListNetworkAreas(ctx context.Context, organizationID string) ([]N
 	return out, nil
 }
 
-// ---- SDK model mapping ----
-
 func fromServer(v *iaasv2.Server, p, r string) Resource {
 	return Resource{Kind: KindServer, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
 		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt()}
@@ -343,11 +292,6 @@ func fromSnapshot(v *iaasv2.Snapshot, p, r string) Resource {
 	return Resource{Kind: KindSnapshot, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
 		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt(),
 		VolumeID: v.GetVolumeId(), SizeGB: v.GetSize()}
-}
-
-func fromImage(v *iaasv2.Image, p, r string) Resource {
-	return Resource{Kind: KindImage, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
-		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt()}
 }
 
 func fromNIC(v *iaasv2.NIC, p, r string) Resource {

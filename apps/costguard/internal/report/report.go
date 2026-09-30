@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package report holds what a run found and did, in the shape the
-// notifiers render. It has no behaviour beyond small helpers.
 package report
 
 import (
@@ -22,27 +20,22 @@ import (
 	"time"
 )
 
-// Kinds of items that are not IaaS resources.
 const (
 	KindProject     = "project"
 	KindNetworkArea = "networkarea"
 )
 
-// kindNames are the display names of item kinds.
 var kindNames = map[string]string{
 	"server":        "server",
 	"volume":        "volume",
 	"publicip":      "public IP",
 	"snapshot":      "snapshot",
-	"image":         "image",
 	"nic":           "network interface",
 	"securitygroup": "security group",
 	KindProject:     "project",
 	KindNetworkArea: "network area",
 }
 
-// KindName is a kind's name for people, e.g. "public IP"; unknown kinds
-// stay as they are.
 func KindName(kind string) string {
 	if n, ok := kindNames[kind]; ok {
 		return n
@@ -50,8 +43,6 @@ func KindName(kind string) string {
 	return kind
 }
 
-// Count renders "1 resource" or "3 resources". All nouns costguard counts
-// take a plain "s".
 func Count(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
@@ -59,40 +50,27 @@ func Count(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-// ListLimit caps the new cleanup candidates one run flags per category, and
-// the entries of the report-only lists. Everything already marked
-// delete=true is always listed in full: nothing is deleted that was not in
-// a message.
 const ListLimit = 10
 
-// Item is one resource, project or network area in a message.
 type Item struct {
-	// Kind is a stackit.Kind value or KindProject / KindNetworkArea.
 	Kind        string
 	ID          string
 	Name        string
 	ProjectID   string
 	ProjectName string
 	Region      string
-	// Detail is a short extra, such as "50 GB" or "3 snapshots".
-	Detail string
-	// New marks cleanup candidates that this run flags for the first time.
-	New bool
-	// NetworkID is set for NICs (their portal page needs it).
-	NetworkID string
-	// SizeGB is set for volumes and snapshots.
-	SizeGB int64
+	Detail      string
+	New         bool
+	NetworkID   string
+	VolumeID    string
+	SizeGB      int64
 }
 
-// Prices are the monthly prices behind the savings estimate.
 type Prices struct {
 	PublicIPMonthlyEUR float64
 	VolumeGBMonthlyEUR float64
 }
 
-// Savings estimates what a set of resources costs per month, and so what
-// deleting them saves. Only public IPs and volumes have a price; other kinds
-// are left out of the estimate.
 type Savings struct {
 	IdleIPs    int
 	IdleIPsEUR float64
@@ -101,12 +79,10 @@ type Savings struct {
 	VolumesEUR float64
 }
 
-// TotalEUR is the combined monthly estimate.
 func (s Savings) TotalEUR() float64 {
 	return round2(s.IdleIPsEUR + s.VolumesEUR)
 }
 
-// Estimate prices the public IPs and volumes among the items.
 func Estimate(items []Item, p Prices) Savings {
 	var s Savings
 	for _, it := range items {
@@ -127,101 +103,62 @@ func round2(v float64) float64 {
 	return math.Round(v*100) / 100
 }
 
-// Report is the result of a scan.
 type Report struct {
 	GeneratedAt    time.Time
 	OrganizationID string
-	// Scope describes what was scanned, e.g. "whole organization".
-	Scope   string
-	Regions []string
+	Scope          string
+	Regions        []string
 
-	// Blocked lists skip entries that match nothing. While it is not
-	// empty, nothing is flagged or deleted.
-	Blocked []string
-	// ScanErrors lists everything that could not be read. The report may
-	// be incomplete, but nothing unreadable is ever flagged or deleted.
+	Blocked    []string
 	ScanErrors []string
 
 	SkippedFolders  int
 	SkippedProjects int
 
-	// IdlePublicIPs and DetachedVolumes are the cleanup categories: unused
-	// ones already labelled delete=true (all of them), then the new
-	// candidates this run flags (at most ListLimit).
-	IdlePublicIPs   []Item
-	DetachedVolumes []Item
-	// WaitingIdlePublicIPs and WaitingDetachedVolumes count the new
-	// candidates beyond ListLimit. They are not flagged in this run and come
-	// up in the next runs.
+	IdlePublicIPs          []Item
+	DetachedVolumes        []Item
 	WaitingIdlePublicIPs   int
 	WaitingDetachedVolumes int
-	// Requested lists every other resource labelled delete=true.
-	Requested []Item
-	// WithSnapshots lists detached volumes that are not flagged because
-	// they have snapshots.
-	WithSnapshots []Item
-	// BackInUse lists volumes and public IPs labelled delete=true that are
-	// in use again; their label is removed.
-	BackInUse []Item
+	Requested              []Item
+	WithSnapshots          []Item
+	BackInUse              []Item
 
-	// ProtectedMarked lists resources that carry both do-not-delete and
-	// delete=true. do-not-delete wins; the stale delete label would turn
-	// into a deletion the moment the protection is lifted. The flag run
-	// removes it from volumes and public IPs; other kinds need a person.
 	ProtectedMarked []Item
 
 	EmptyProjects     []Item
 	EmptyNetworkAreas []Item
 }
 
-// ToDelete counts the resources the next delete run would delete.
 func (r *Report) ToDelete() int {
 	return len(r.IdlePublicIPs) + len(r.DetachedVolumes) + len(r.Requested)
 }
 
-// Status is the outcome for one resource in a delete run.
 type Status string
 
-// Outcomes of a delete run.
 const (
-	// StatusDeleted: gone (also when it was already gone).
-	StatusDeleted Status = "deleted"
-	// StatusFailed: the delete call failed; the label stays and the next
-	// run tries again.
-	StatusFailed Status = "failed"
-	// StatusUnflagged: a volume or public IP is in use again, so its
-	// delete label was removed.
+	StatusDeleted   Status = "deleted"
+	StatusFailed    Status = "failed"
 	StatusUnflagged Status = "unflagged"
-	// StatusDeferred: not deleted in this run, the label stays (e.g. still
-	// attached to a server that is being deleted).
-	StatusDeferred Status = "deferred"
-	// StatusSkipped: protected or no longer labelled when re-checked.
-	StatusSkipped Status = "skipped"
+	StatusDeferred  Status = "deferred"
+	StatusSkipped   Status = "skipped"
 )
 
-// Result is what happened to one resource.
 type Result struct {
-	Item   Item
-	Status Status
-	Reason string
-	// AlreadyGone marks a StatusDeleted resource that was gone before this
-	// run touched it; it does not count towards the run's savings.
+	Item        Item
+	Status      Status
+	Reason      string
 	AlreadyGone bool
 }
 
-// DeletionSummary is the result of a delete run.
 type DeletionSummary struct {
 	GeneratedAt time.Time
 	Scope       string
 	Blocked     []string
 	ScanErrors  []string
 	Results     []Result
-	// Interrupted means the run was stopped (timeout or SIGTERM) before it
-	// went through everything; the rest waits for the next run.
 	Interrupted bool
 }
 
-// DeletedByThisRun returns the items this run deleted itself.
 func (s *DeletionSummary) DeletedByThisRun() []Item {
 	var out []Item
 	for _, r := range s.Results {
@@ -232,7 +169,6 @@ func (s *DeletionSummary) DeletedByThisRun() []Item {
 	return out
 }
 
-// Count returns the number of results with the status.
 func (s *DeletionSummary) Count(status Status) int {
 	n := 0
 	for _, r := range s.Results {
@@ -243,7 +179,6 @@ func (s *DeletionSummary) Count(status Status) int {
 	return n
 }
 
-// ByStatus returns the results with the status, in run order.
 func (s *DeletionSummary) ByStatus(status Status) []Result {
 	var out []Result
 	for _, r := range s.Results {
@@ -254,8 +189,6 @@ func (s *DeletionSummary) ByStatus(status Status) []Result {
 	return out
 }
 
-// HasNews reports whether the delete run has anything to tell: it only
-// posts when something happened or went wrong.
 func (s *DeletionSummary) HasNews() bool {
 	return len(s.Results) > 0 || len(s.Blocked) > 0 || len(s.ScanErrors) > 0 || s.Interrupted
 }

@@ -50,8 +50,8 @@ func Render(msg notifier.Message) map[string]any {
 	blocks := []block{
 		{"type": "header", "text": block{"type": "plain_text", "text": truncate(msg.Title, maxHeaderChars)}},
 	}
-	if sub := msg.HeaderSubtitle(); sub != "" {
-		blocks = append(blocks, contextBlock(escape(sub)))
+	if msg.Subtitle != "" {
+		blocks = append(blocks, contextBlock(escape(msg.Subtitle)))
 	}
 	for _, a := range msg.Alerts {
 		blocks = append(blocks, section(truncate(":warning: *"+escape(a)+"*", maxTextChars)))
@@ -60,9 +60,12 @@ func Render(msg notifier.Message) map[string]any {
 		blocks = append(blocks, section(truncate(escape(msg.Intro), maxTextChars)))
 	}
 	for _, s := range msg.Sections {
-		lines := []string{"*" + escape(s.Title) + "*"}
+		var lines []string
+		if s.Title != "" {
+			lines = append(lines, "*"+escape(s.Title)+"*")
+		}
 		for _, l := range s.Lines {
-			line := "• " + escape(l.Text)
+			line := l.Marker() + escape(l.Text)
 			if l.Link != "" {
 				line += " <" + l.Link + "|open>"
 			}
@@ -78,7 +81,7 @@ func Render(msg notifier.Message) map[string]any {
 	if msg.Footer != "" {
 		blocks = append(blocks, contextBlock(escape(msg.Footer)))
 	}
-	return map[string]any{"text": msg.Notification(), "blocks": blocks}
+	return map[string]any{"text": msg.Title, "blocks": blocks}
 }
 
 func chunks(lines []string, max int) []string {

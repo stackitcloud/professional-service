@@ -40,16 +40,18 @@ func (c *BudgetCheck) Reached() []BudgetStatus {
 }
 
 type BudgetStatus struct {
-	Name        string
-	Target      string
-	ProjectID   string
-	LimitEUR    float64
-	Thresholds  []int
-	MonthEUR    float64
-	DayEUR      float64
-	Reached     int
-	ForecastEUR float64
-	Top         []ProjectSpend
+	Name         string
+	Target       string
+	Organization bool
+	FolderID     string
+	ProjectID    string
+	LimitEUR     float64
+	Thresholds   []int
+	MonthEUR     float64
+	DayEUR       float64
+	Reached      int
+	ForecastEUR  float64
+	Top          []ProjectSpend
 }
 
 type ProjectSpend struct {

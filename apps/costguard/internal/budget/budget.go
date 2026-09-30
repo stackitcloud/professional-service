@@ -12,14 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package budget checks the monthly budgets: where each budget stands in
-// the current month and which threshold it has reached. A run makes one
-// Cost API call (daily charges from the 1st of the month up to yesterday)
-// and, when a budget names a folder or project, reads the organization's
-// folders and projects. It never writes and keeps no state: every run
-// compares the month to date with the thresholds, so a budget above a
-// threshold is listed by every run until the month ends, and late or
-// corrected cost data only delays it.
 package budget
 
 import (
@@ -36,17 +28,12 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// dateLayout is how the Cost API names days.
 const dateLayout = "2006-01-02"
 
-// forecastFromDay is the first day of the month with a forecast; before
-// it a straight line from a few days is mostly noise.
 const forecastFromDay = 7
 
-// topProjects is how many projects an organization or folder budget lists.
-const topProjects = 3
+const topProjects = 5
 
-// Checker checks the configured budgets.
 type Checker struct {
 	Clients *stackit.Set
 	Config  config.Config
@@ -55,7 +42,6 @@ type Checker struct {
 	Now     func() time.Time
 }
 
-// New builds a Checker with production defaults.
 func New(clients *stackit.Set, cfg config.Config, logger *slog.Logger) *Checker {
 	return &Checker{
 		Clients: clients,
@@ -66,10 +52,6 @@ func New(clients *stackit.Set, cfg config.Config, logger *slog.Logger) *Checker 
 	}
 }
 
-// Check reads the costs of the month up to yesterday (UTC) and evaluates
-// every budget. On the 1st no cost of the month exists yet, so the Cost
-// API is not asked. Budgets whose target cannot be found are Problems; an
-// error means nothing could be checked.
 func (c *Checker) Check(ctx context.Context) (*report.BudgetCheck, error) {
 	if c.Config.Budgets == nil {
 		return nil, fmt.Errorf("no budgets are configured")
@@ -98,7 +80,6 @@ func (c *Checker) Check(ctx context.Context) (*report.BudgetCheck, error) {
 		case costs.LastModified.IsZero():
 			c.Logger.Warn("the Cost API did not say when it last updated the costs; using them as they are")
 		case costs.LastModified.Before(today):
-			// The days before the day of the last update are in.
 			res.Checked = utcDay(costs.LastModified).AddDate(0, 0, -1)
 		}
 	}
@@ -123,14 +104,10 @@ func (c *Checker) dailyCosts(ctx context.Context, from, to time.Time) (*stackit.
 	return costs, nil
 }
 
-// evaluate sums a target's charges of the month up to the checked day and
-// finds the highest threshold reached. Sums run in a fixed order and are
-// rounded to cents, so the same answer always gives the same result, also
-// right at a threshold.
 func evaluate(t target, costs *stackit.DailyCosts, month, checked time.Time) report.BudgetStatus {
 	b := t.budget
 	st := report.BudgetStatus{
-		Name: b.Name, Target: t.describe, ProjectID: t.projectID,
+		Name: b.Name, Target: t.describe, Organization: t.wholeOrg, FolderID: t.folderID, ProjectID: t.projectID,
 		LimitEUR: b.MonthlyEUR, Thresholds: append([]int(nil), b.Thresholds...),
 	}
 	if checked.Before(month) {
@@ -167,11 +144,9 @@ func evaluate(t target, costs *stackit.DailyCosts, month, checked time.Time) rep
 
 	for _, th := range b.Thresholds {
 		if st.MonthEUR >= report.ThresholdEUR(b.MonthlyEUR, th) {
-			st.Reached = th // ascending: the highest one wins
+			st.Reached = th
 		}
 	}
-	// The checked day lies before today, in the same month: the month is
-	// never complete here.
 	if checked.Day() >= forecastFromDay {
 		daysInMonth := month.AddDate(0, 1, -1).Day()
 		st.ForecastEUR = cents(st.MonthEUR / float64(checked.Day()) * float64(daysInMonth))

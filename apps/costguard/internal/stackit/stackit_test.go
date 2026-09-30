@@ -251,10 +251,6 @@ func iaasFixtures(rt *router) {
 	rt.json("GET", iaasBase+"snapshots", 200, map[string]any{"items": []any{
 		map[string]any{"id": "sn1", "name": "snap", "volumeId": "v1", "size": 50},
 	}})
-	rt.json("GET", iaasBase+"images", 200, map[string]any{"items": []any{
-		map[string]any{"id": "i1", "name": "mine", "diskFormat": "qcow2", "owner": pID},
-		map[string]any{"id": "i2", "name": "public", "diskFormat": "qcow2", "owner": "ffffffff-0000-0000-0000-000000000000"},
-	}})
 	rt.json("GET", iaasBase+"nics", 200, map[string]any{"items": []any{
 		map[string]any{"id": "n1", "name": "eth0", "networkId": "net1", "device": "s1", "status": "ACTIVE"},
 	}})
@@ -292,8 +288,8 @@ func TestIaaSListMapsEveryKind(t *testing.T) {
 	if s := list(KindSnapshot); len(s) != 1 || s[0].VolumeID != "v1" {
 		t.Errorf("snapshots = %+v", s)
 	}
-	if i := list(KindImage); len(i) != 1 || i[0].ID != "i1" {
-		t.Errorf("images must be the project's own: %+v", i)
+	if _, err := iaas.List(ctx, Kind("image"), pID, "eu01"); err == nil || !strings.Contains(err.Error(), "unsupported kind") {
+		t.Errorf("images are not costguard's business: %v", err)
 	}
 	if n := list(KindNIC); len(n) != 1 || n[0].NetworkID != "net1" || n[0].ServerID != "s1" {
 		t.Errorf("nics = %+v", n)
@@ -323,7 +319,6 @@ func TestIaaSGetAndDeleteEveryKind(t *testing.T) {
 		KindVolume:        iaasBase + "volumes/" + xID,
 		KindPublicIP:      iaasBase + "public-ips/" + xID,
 		KindSnapshot:      iaasBase + "snapshots/" + xID,
-		KindImage:         iaasBase + "images/" + xID,
 		KindNIC:           iaasBase + "networks/" + netID + "/nics/" + xID,
 		KindSecurityGroup: iaasBase + "security-groups/" + xID,
 	}
@@ -332,7 +327,6 @@ func TestIaaSGetAndDeleteEveryKind(t *testing.T) {
 		KindVolume:        map[string]any{"id": xID, "availabilityZone": "z", "status": "AVAILABLE"},
 		KindPublicIP:      map[string]any{"id": xID, "ip": "192.0.2.9"},
 		KindSnapshot:      map[string]any{"id": xID, "volumeId": "v"},
-		KindImage:         map[string]any{"id": xID, "name": "i", "diskFormat": "raw"},
 		KindNIC:           map[string]any{"id": xID, "networkId": netID},
 		KindSecurityGroup: map[string]any{"id": xID, "name": "g"},
 	}

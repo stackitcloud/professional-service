@@ -45,8 +45,8 @@ func textBlock(text string, props obj) obj {
 
 func Render(msg notifier.Message) map[string]any {
 	body := []obj{textBlock(msg.Title, obj{"size": "Large", "weight": "Bolder"})}
-	if sub := msg.HeaderSubtitle(); sub != "" {
-		body = append(body, textBlock(sub, obj{"isSubtle": true, "spacing": "None"}))
+	if msg.Subtitle != "" {
+		body = append(body, textBlock(msg.Subtitle, obj{"isSubtle": true, "spacing": "None"}))
 	}
 	for _, a := range msg.Alerts {
 		body = append(body, textBlock("⚠ "+a, obj{"color": "Attention", "weight": "Bolder"}))
@@ -55,10 +55,12 @@ func Render(msg notifier.Message) map[string]any {
 		body = append(body, textBlock(msg.Intro, nil))
 	}
 	for i, s := range msg.Sections {
-		body = append(body, textBlock(s.Title, obj{"weight": "Bolder", "spacing": "Medium"}))
+		if s.Title != "" {
+			body = append(body, textBlock(s.Title, obj{"weight": "Bolder", "spacing": "Medium"}))
+		}
 		var lines []obj
 		for _, l := range s.Lines {
-			line := "• " + l.Text
+			line := l.Marker() + l.Text
 			if l.Link != "" {
 				line += " [open](" + l.Link + ")"
 			}
@@ -68,6 +70,9 @@ func Render(msg notifier.Message) map[string]any {
 			lines = append(lines, textBlock(notifier.OmittedText(s.Omitted), obj{"isSubtle": true, "spacing": "None"}))
 		}
 		if !s.Folded {
+			if s.Title == "" && len(lines) > 0 {
+				lines[0]["spacing"] = "Medium"
+			}
 			body = append(body, lines...)
 			continue
 		}

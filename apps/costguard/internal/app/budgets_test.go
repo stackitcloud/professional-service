@@ -24,9 +24,6 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// budgetsOn is what Terraform writes for an organization budget of 100 €,
-// checked Monday to Friday. The runs happen on Tuesday 29 September
-// (now()), so they see September up to Monday the 28th.
 const budgetsOn = `budgets:
   days: [Mon, Tue, Wed, Thu, Fri]
   time: "10:00"
@@ -37,8 +34,6 @@ const budgetsOn = `budgets:
       thresholds: [80, 100]
 `
 
-// setupBudgets is an install with report and budgets on; the costs were
-// updated on the morning of the run.
 func setupBudgets(t *testing.T, yaml string) *env {
 	t.Helper()
 	e := setupReportOnly(t, budgetsOn+yaml)
@@ -58,7 +53,7 @@ func TestBudgetsRunPostsReachedBudgets(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: budget Org passed 80%") || !strings.Contains(msgs[0], "€85.00 of €100.00 in September (85%)") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: budget (") || !strings.Contains(msgs[0], "Org: €85,00 of €100,00 in September (85%)") {
 		t.Errorf("messages = %v", msgs)
 	}
 	if len(e.login.waits) != 1 || e.login.waits[0] != 0 {
@@ -73,7 +68,6 @@ func TestBudgetsRunPostsReachedBudgets(t *testing.T) {
 	if !strings.Contains(e.logs.String(), `"msg":"budget","name":"Org"`) || !strings.Contains(e.logs.String(), `"reached":80`) {
 		t.Errorf("budgets must be logged:\n%s", e.logs)
 	}
-	// The next run lists it again: no state.
 	if code := e.run("budgets"); code != ExitOK || len(e.hook.messages()) != 2 {
 		t.Errorf("second run: exit %d, messages %d", code, len(e.hook.messages()))
 	}
@@ -81,7 +75,7 @@ func TestBudgetsRunPostsReachedBudgets(t *testing.T) {
 
 func TestBudgetsRunWithoutNewsStaysQuiet(t *testing.T) {
 	e := setupBudgets(t, "")
-	e.spend("2026-09-28", 5) // 75 %
+	e.spend("2026-09-28", 5)
 	if code := e.run("budgets"); code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
@@ -92,19 +86,18 @@ func TestBudgetsRunWithoutNewsStaysQuiet(t *testing.T) {
 
 func TestBudgetsRunWithLateCostsUsesTheDaysIn(t *testing.T) {
 	e := setupBudgets(t, "")
-	e.store.LastModified = time.Date(2026, 9, 28, 7, 41, 0, 0, time.UTC) // the 28th is not in yet
+	e.store.LastModified = time.Date(2026, 9, 28, 7, 41, 0, 0, time.UTC)
 	e.spend("2026-09-27", 15)
 	if code := e.run("budgets"); code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "Costs up to and including 27 September 2026 (UTC)") || !strings.Contains(msgs[0], "passed 80%") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "Costs up to and including 27 September 2026 (UTC)") || !strings.Contains(msgs[0], "Org: €85,00 of €100,00 in September (85%)") {
 		t.Errorf("messages = %v", msgs)
 	}
 }
 
 func TestBudgetsRunOnTheFirstPostsNothing(t *testing.T) {
-	// Nothing of October is in yet; a budget problem waits for the 2nd.
 	e := setupBudgets(t, "    - name: Team B\n      folder: team-b\n      monthlyEur: 10\n      thresholds: [100]\n")
 	now = func() time.Time { return time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC) }
 	e.spend("2026-09-30", 500)
@@ -128,7 +121,7 @@ func TestBudgetsRunWithProblemsPostsAndFails(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "budgets could not all be checked") || !strings.Contains(msgs[0], `folder \"team-b\" matches nothing`) {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "1 budget could not be checked; details at the end.") || !strings.Contains(msgs[0], `folder \"team-b\" matches nothing`) {
 		t.Errorf("messages = %v", msgs)
 	}
 }
@@ -139,7 +132,7 @@ func TestBudgetsRunNeedsBudgets(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard budgets run failed") || !strings.Contains(msgs[0], "only works with budgets on") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: budgets run failed") || !strings.Contains(msgs[0], "only works with budgets on") {
 		t.Errorf("messages = %v", msgs)
 	}
 	if len(e.store.Calls) != 0 || len(e.login.waits) != 0 {
@@ -154,7 +147,7 @@ func TestBudgetsRunCostErrorPostsFailure(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard budgets run failed") || !strings.Contains(msgs[0], "costguard.reader") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: budgets run failed") || !strings.Contains(msgs[0], "costguard.reader") {
 		t.Errorf("messages = %v", msgs)
 	}
 }
@@ -175,8 +168,8 @@ func TestBootShowsTheBudgets(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, e.logs)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard test is running") || !strings.Contains(msgs[0], "Detached volumes: 1") ||
-		!strings.Contains(msgs[0], "Budgets for September 2026 (UTC days): 1") || !strings.Contains(msgs[0], "Org · organization · €70.00 of €100.00 so far (70%)") ||
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: test is running") || !strings.Contains(msgs[0], "Detached volumes: 1") ||
+		!strings.Contains(msgs[0], "Budgets for September 2026 (UTC days): 1") || !strings.Contains(msgs[0], "Org · organization · €70,00 of €100,00 so far (70%)") ||
 		!strings.Contains(msgs[0], "Next runs: report Monday 08:00 (Europe/Berlin) · budgets Monday to Friday 10:00 (Europe/Berlin).") {
 		t.Errorf("messages = %v", msgs)
 	}
@@ -206,10 +199,9 @@ func TestBootPostsWhenTheBudgetsFail(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	msgs := e.hook.messages()
-	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard test is running") || !strings.Contains(msgs[0], "The budgets could not be checked: costguard cannot read the costs") {
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: test is running") || !strings.Contains(msgs[0], "The budgets could not be checked: costguard cannot read the costs") {
 		t.Errorf("messages = %v", msgs)
 	}
-	// A target that matches nothing also fails the boot run, after posting.
 	e = setupBudgets(t, "    - name: Team B\n      folder: team-b\n      monthlyEur: 10\n      thresholds: [100]\n")
 	if code := e.run("boot"); code != ExitFatal {
 		t.Fatalf("exit %d", code)
@@ -225,7 +217,7 @@ func TestBootScanFailureStillFails(t *testing.T) {
 	if code := e.run("boot"); code != ExitFatal {
 		t.Fatalf("exit %d", code)
 	}
-	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "costguard boot run failed") {
+	if msgs := e.hook.messages(); len(msgs) != 1 || !strings.Contains(msgs[0], "costguard: boot run failed") {
 		t.Errorf("messages = %v", msgs)
 	}
 }

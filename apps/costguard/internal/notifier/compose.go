@@ -16,6 +16,7 @@ package notifier
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ const (
 
 type Composer struct {
 	Organization       string
+	OrganizationID     string
 	PortalURL          string
 	DeleteEnabled      bool
 	DeleteRunAt        string
@@ -55,31 +57,27 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	saving := savingPhrase(report.Estimate(toDelete(rep), c.Prices))
 	readOnly := mode == ModeReport || mode == ModeBoot
 
-	m := Message{Organization: c.Organization, Subtitle: c.subtitle(rep.Scope, rep.Regions, rep.GeneratedAt)}
+	m := Message{Title: c.title("report"), Subtitle: c.subtitle(rep.Scope, rep.Regions, rep.GeneratedAt)}
 	switch {
 	case readOnly:
-		m.Title = "costguard report"
 		if mode == ModeBoot {
-			m.Title = "costguard " + c.Version + " is running"
+			m.Title = c.title(c.Version + " is running")
 		}
 		m.Intro = c.readOnlyIntro(rep, mode, n, saving)
+	case n == 0:
+		m.Intro = "Nothing to delete."
 	case len(rep.Blocked) > 0:
-		m.Title = "costguard: deletions blocked"
 		m.Intro = fmt.Sprintf("Once the skip list is fixed, %s would be deleted", report.Count(n, "resource"))
 		if saving != "" {
 			m.Intro += ", saving " + saving
 		}
 		m.Intro += "."
-	case n == 0:
-		m.Title = "costguard: nothing to delete"
 	default:
-		m.Title = fmt.Sprintf("costguard: %s will be deleted %s", report.Count(n, "resource"), c.DeleteRunAt)
+		m.Intro = fmt.Sprintf("%s labelled delete=true %s deleted %s", report.Count(n, "resource"), isAre(n), c.DeleteRunAt)
 		if saving != "" {
-			m.Intro = fmt.Sprintf("Deleting these %s saves %s. They are labelled delete=true. ", report.Count(n, "resource"), saving)
-		} else {
-			m.Intro = fmt.Sprintf("These %s are labelled delete=true. ", report.Count(n, "resource"))
+			m.Intro += ", saving " + saving
 		}
-		m.Intro += keepHint
+		m.Intro += ". " + keepHint
 	}
 
 	if len(rep.Blocked) > 0 {
@@ -118,9 +116,6 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	c.add(&m, fmt.Sprintf("Empty projects older than %d days (warning only): %d", c.WarnEmptyAfterDays, len(rep.EmptyProjects)), rep.EmptyProjects, report.ListLimit, 0)
 	c.add(&m, fmt.Sprintf("Empty network areas older than %d days (warning only): %d", c.WarnEmptyAfterDays, len(rep.EmptyNetworkAreas)), rep.EmptyNetworkAreas, report.ListLimit, 0)
 
-	if !readOnly && len(m.Sections) == 0 {
-		m.Intro = strings.TrimSpace(m.Intro + " Nothing to clean up.")
-	}
 	if mode == ModeBoot {
 		if next := c.nextRuns(); next != "" {
 			m.Intro += " " + next
@@ -140,11 +135,10 @@ func (c Composer) Boot(rep *report.Report, chk *report.BudgetCheck, budgetErr er
 		m = c.Report(rep, ModeBoot)
 	} else {
 		m = Message{
-			Title:        "costguard " + c.Version + " is running",
-			Organization: c.Organization,
-			Subtitle:     c.clock(at),
-			Intro:        "Login and this chat work. The cleanup report is off.",
-			Footer:       "costguard " + c.Version,
+			Title:    c.title(c.Version + " is running"),
+			Subtitle: c.clock(at),
+			Intro:    "Login and this chat work. The cleanup report is off.",
+			Footer:   "costguard " + c.Version,
 		}
 		if next := c.nextRuns(); next != "" {
 			m.Intro += " " + next
@@ -261,10 +255,9 @@ func isAre(n int) string {
 
 func (c Composer) Summary(sum *report.DeletionSummary) Message {
 	m := Message{
-		Title:        summaryTitle(sum),
-		Organization: c.Organization,
-		Subtitle:     c.subtitle(sum.Scope, nil, sum.GeneratedAt),
-		Footer:       "costguard " + c.Version,
+		Title:    c.title("deletion"),
+		Subtitle: c.subtitle(sum.Scope, nil, sum.GeneratedAt),
+		Footer:   "costguard " + c.Version,
 	}
 	if len(sum.Blocked) > 0 {
 		m.Alerts = append(m.Alerts, "Nothing was deleted: these skip entries match nothing inside the scope (or it could not be read): "+
@@ -296,35 +289,40 @@ func (c Composer) Summary(sum *report.DeletionSummary) Message {
 		}
 		c.add(&m, fmt.Sprintf("%s: %d", g.title, len(items)), items, 0, 0)
 	}
-	if byRun := sum.DeletedByThisRun(); len(byRun) > 0 {
-		m.Intro = fmt.Sprintf("This run deleted %s", report.Count(len(byRun), "resource"))
-		if saving := savingPhrase(report.Estimate(byRun, c.Prices)); saving != "" {
-			m.Intro += ", saving " + saving
-		}
-		m.Intro += "."
-	}
-	if len(m.Sections) == 0 && len(m.Alerts) == 0 {
-		m.Intro = "Nothing happened."
-	}
+	m.Intro = c.summaryIntro(sum)
 	addScanErrors(&m, sum.ScanErrors)
 	return m
 }
 
-func summaryTitle(sum *report.DeletionSummary) string {
-	deleted, failed, unflagged := sum.Count(report.StatusDeleted), sum.Count(report.StatusFailed), sum.Count(report.StatusUnflagged)
+func (c Composer) summaryIntro(sum *report.DeletionSummary) string {
+	byRun := sum.DeletedByThisRun()
+	failed, unflagged := sum.Count(report.StatusFailed), sum.Count(report.StatusUnflagged)
 	switch {
+	case len(byRun) > 0:
+		intro := "This run deleted " + report.Count(len(byRun), "resource")
+		if saving := savingPhrase(report.Estimate(byRun, c.Prices)); saving != "" {
+			intro += ", saving " + saving
+		}
+		return intro + "."
 	case len(sum.Blocked) > 0:
-		return "costguard: deletions blocked"
-	case deleted > 0:
-		return "costguard: " + report.Count(deleted, "resource") + " deleted"
-	case sum.Interrupted:
-		return "costguard: delete run interrupted"
+		return ""
 	case failed > 0:
-		return "costguard: " + report.Count(failed, "deletion") + " failed"
+		return report.Count(failed, "deletion") + " failed; they are tried again in the next run."
 	case unflagged > 0:
-		return "costguard: delete label removed from " + report.Count(unflagged, "resource")
+		return fmt.Sprintf("Nothing was deleted. The delete label was removed from %s that %s in use again.", report.Count(unflagged, "resource"), isAre(unflagged))
 	}
-	return "costguard: nothing deleted"
+	return "Nothing was deleted."
+}
+
+func (c Composer) link(it report.Item) string {
+	return PortalLink(c.PortalURL, c.OrganizationID, it)
+}
+
+func (c Composer) title(kind string) string {
+	if c.Organization == "" {
+		return "costguard: " + kind
+	}
+	return "costguard: " + kind + " (" + c.Organization + ")"
 }
 
 func savingPhrase(s report.Savings) string {
@@ -337,10 +335,9 @@ func savingPhrase(s report.Savings) string {
 
 func (c Composer) FlagProblems(notFlagged, notCleared []report.Item) Message {
 	m := Message{
-		Title:        "costguard: correction to today's message",
-		Organization: c.Organization,
-		Intro:        "Some labels could not be written after the message went out. costguard tries again at the next report run.",
-		Footer:       "costguard " + c.Version,
+		Title:  c.title("correction"),
+		Intro:  "Some labels could not be written after today's message went out. costguard tries again at the next report run.",
+		Footer: "costguard " + c.Version,
 	}
 	c.add(&m, fmt.Sprintf("Not marked, so NOT deleted in the next delete run: %d", len(notFlagged)), notFlagged, 0, 0)
 	c.add(&m, fmt.Sprintf("delete label could not be removed (they are not deleted either way): %d", len(notCleared)), notCleared, 0, 0)
@@ -350,11 +347,10 @@ func (c Composer) FlagProblems(notFlagged, notCleared []report.Item) Message {
 func (c Composer) Failure(mode Mode, err error) Message {
 	lines := strings.Split(strings.TrimSpace(err.Error()), "\n")
 	m := Message{
-		Title:        fmt.Sprintf("costguard %s run failed", mode),
-		Organization: c.Organization,
-		Alerts:       []string{strings.TrimSuffix(strings.TrimSpace(lines[0]), ":")},
-		Intro:        "The run stopped before changing anything.",
-		Footer:       "costguard " + c.Version,
+		Title:  c.title(string(mode) + " run failed"),
+		Alerts: []string{strings.TrimSuffix(strings.TrimSpace(lines[0]), ":")},
+		Intro:  "The run stopped before changing anything.",
+		Footer: "costguard " + c.Version,
 	}
 	if len(lines) > 1 {
 		sec := Section{Title: "Details"}
@@ -378,7 +374,7 @@ func (c Composer) add(m *Message, title string, items []report.Item, limit, wait
 			sec.Omitted += len(items) - limit
 			break
 		}
-		sec.Lines = append(sec.Lines, Line{Text: lineText(it), Link: PortalLink(c.PortalURL, it)})
+		sec.Lines = append(sec.Lines, Line{Text: lineText(it), Link: c.link(it)})
 	}
 	m.Sections = append(m.Sections, sec)
 }
@@ -451,5 +447,18 @@ func addScanErrors(m *Message, errs []string) {
 }
 
 func eur(v float64) string {
-	return fmt.Sprintf("€%.2f", v)
+	s := fmt.Sprintf("%.2f", math.Abs(v))
+	whole, cents := s[:len(s)-3], s[len(s)-2:]
+	var b strings.Builder
+	for i := range whole {
+		if i > 0 && (len(whole)-i)%3 == 0 {
+			b.WriteByte('.')
+		}
+		b.WriteByte(whole[i])
+	}
+	sign := ""
+	if v < 0 && s != "0.00" {
+		sign = "-"
+	}
+	return sign + "€" + b.String() + "," + cents
 }

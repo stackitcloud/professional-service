@@ -22,7 +22,6 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// kindOrder is each kind's position in the deletion order.
 var kindOrder = func() map[stackit.Kind]int {
 	m := map[stackit.Kind]int{}
 	for i, k := range stackit.Kinds {
@@ -31,21 +30,6 @@ var kindOrder = func() map[stackit.Kind]int {
 	return m
 }()
 
-// classify applies the rules to every inventory. It makes no API calls.
-//
-//   - do-not-delete always wins: such resources are never deleted. If one
-//     also carries a leftover delete=true, it is listed, and the flag run
-//     removes that label from volumes and public IPs.
-//   - delete=true on a server, NIC, snapshot, image or security group:
-//     deleted, even when in use.
-//   - delete=true on a volume or public IP: deleted only when unused. In
-//     use again: the label is removed. Attached to a server that is being
-//     deleted: deleted after the server.
-//   - Unlabelled, unused public IPs that no load balancer uses, and
-//     unlabelled detached volumes without snapshots outside SKE projects,
-//     are new cleanup candidates: at most report.ListLimit per category per
-//     run, the biggest savings first.
-//   - Anything whose facts could not be read is left alone.
 func classify(invs []*inventory, rep *report.Report, errs *errorLog) *Result {
 	sort.Slice(invs, func(i, j int) bool {
 		if invs[i].projectName != invs[j].projectName {
@@ -67,8 +51,6 @@ func classify(invs []*inventory, rep *report.Report, errs *errorLog) *Result {
 		newVolumes = append(newVolumes, vols...)
 	}
 
-	// New candidates: at most ListLimit per category, the biggest savings
-	// first. Only these are listed and flagged; the rest waits.
 	sort.SliceStable(newVolumes, func(i, j int) bool { return newVolumes[i].item.SizeGB > newVolumes[j].item.SizeGB })
 	rep.WaitingIdlePublicIPs = takeNew(newIPs, &rep.IdlePublicIPs, res)
 	rep.WaitingDetachedVolumes = takeNew(newVolumes, &rep.DetachedVolumes, res)
@@ -79,15 +61,11 @@ func classify(invs []*inventory, rep *report.Report, errs *errorLog) *Result {
 	return res
 }
 
-// candidate is a new cleanup candidate: listed and flagged only if it is
-// within the ListLimit of its category.
 type candidate struct {
 	item report.Item
 	res  stackit.Resource
 }
 
-// takeNew lists and flags the first ListLimit candidates and returns how
-// many are left for the next runs.
 func takeNew(cands []candidate, list *[]report.Item, res *Result) int {
 	for i, c := range cands {
 		if i == report.ListLimit {
@@ -99,9 +77,6 @@ func takeNew(cands []candidate, list *[]report.Item, res *Result) int {
 	return 0
 }
 
-// classifyOne sorts one inventory's resources into the report and the
-// result, and returns its new cleanup candidates (IPs, volumes) for
-// classify to cap.
 func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog) (newIPs, newVolumes []candidate) {
 	if inv.lbAddresses != nil {
 		res.Context.LoadBalancerAddresses[inv.key()] = inv.lbAddresses
@@ -122,7 +97,7 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 	item := func(r stackit.Resource, detail string, isNew bool) report.Item {
 		return report.Item{
 			Kind: string(r.Kind), ID: r.ID, Name: r.Name, ProjectID: inv.projectID, ProjectName: inv.projectName,
-			Region: inv.region, Detail: detail, New: isNew, NetworkID: r.NetworkID, SizeGB: r.SizeGB,
+			Region: inv.region, Detail: detail, New: isNew, NetworkID: r.NetworkID, VolumeID: r.VolumeID, SizeGB: r.SizeGB,
 		}
 	}
 	request := func(r stackit.Resource, detail string) {
@@ -133,8 +108,6 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 		rep.BackInUse = append(rep.BackInUse, item(r, detail, false))
 		res.Unflag = append(res.Unflag, r)
 	}
-	// protectedMarked records a resource with both labels. costguard can
-	// remove the stale delete label from volumes and public IPs itself.
 	protectedMarked := func(r stackit.Resource) {
 		rep.ProtectedMarked = append(rep.ProtectedMarked, item(r, "", false))
 		if r.Kind == stackit.KindVolume || r.Kind == stackit.KindPublicIP {
@@ -142,7 +115,7 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 		}
 	}
 
-	for _, kind := range []stackit.Kind{stackit.KindServer, stackit.KindNIC, stackit.KindSnapshot, stackit.KindImage, stackit.KindSecurityGroup} {
+	for _, kind := range []stackit.Kind{stackit.KindServer, stackit.KindNIC, stackit.KindSnapshot, stackit.KindSecurityGroup} {
 		for _, r := range inv.res[kind] {
 			switch {
 			case stackit.Requested(r.Labels) && stackit.Protected(r.Labels):
@@ -177,8 +150,6 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 			rep.WithSnapshots = append(rep.WithSnapshots, item(v, size+", "+report.Count(snapshots[v.ID], "snapshot"), false))
 		case !inv.skeChecked || inv.skeFailed:
 		case len(inv.skeClusters) > 0:
-			// SKE's CSI driver leaves detached volumes behind on purpose
-			// (scaled-down StatefulSets, Retain policies).
 		default:
 			newVolumes = append(newVolumes, candidate{item(v, size, true), v})
 		}

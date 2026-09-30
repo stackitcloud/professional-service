@@ -107,7 +107,6 @@ func TestDeleteWaitsForServersSoTheirVolumesAndIPsGoToo(t *testing.T) {
 		res(stackit.KindPublicIP, "ip1", del, func(r *stackit.Resource) { r.NICID, r.Address = "n1", "192.0.2.1" }),
 		res(stackit.KindPublicIP, "ip2", del, func(r *stackit.Resource) { r.Address = "192.0.2.2" }),
 		res(stackit.KindSnapshot, "sn1", del),
-		res(stackit.KindImage, "i1", del),
 		res(stackit.KindSecurityGroup, "sg1", del),
 	)
 	result := scanStore(t, st, nil)
@@ -115,7 +114,7 @@ func TestDeleteWaitsForServersSoTheirVolumesAndIPsGoToo(t *testing.T) {
 
 	want := map[string]report.Status{
 		"s1": report.StatusDeleted, "v1": report.StatusDeleted, "ip1": report.StatusDeleted, "ip2": report.StatusDeleted,
-		"sn1": report.StatusDeleted, "i1": report.StatusDeleted, "sg1": report.StatusDeleted,
+		"sn1": report.StatusDeleted, "sg1": report.StatusDeleted,
 	}
 	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
 		t.Errorf("outcomes = %v", got)
@@ -173,7 +172,6 @@ func TestDeleteKeepsLabelsWhenTheServerDeleteFails(t *testing.T) {
 		t.Error("the disk and IP must keep their labels and go together with the server next run")
 	}
 
-	// Next run: the server goes, and so do the disk and IP.
 	delete(st.Errs, "delete:s1")
 	sum = testDeleter(st).Delete(ctx, scanStore(t, st, nil), now)
 	want = map[string]report.Status{"s1": report.StatusDeleted, "v1": report.StatusDeleted, "ip1": report.StatusDeleted}
@@ -192,24 +190,20 @@ func TestDeleteSurvivesReadHiccups(t *testing.T) {
 		res(stackit.KindVolume, "v-server-unreadable", del, detached),
 	)
 	result := scanStore(t, st, nil)
-	// Both volumes were unused at the scan and are attached before the
-	// delete run reaches them, so it has to check their servers.
 	on("s2")(st.Find("v-hiccup"))
 	on("s3")(st.Find("v-server-unreadable"))
-	st.ErrsOnce["get:s1"] = fake.Status(503) // the re-read before deleting
-	st.ErrsOnce["get:s2"] = fake.Status(429) // the check of an attached volume's server
-	st.Errs["get:s3"] = fake.Status(500)     // a server that stays unreadable
+	st.ErrsOnce["get:s1"] = fake.Status(503)
+	st.ErrsOnce["get:s2"] = fake.Status(429)
+	st.Errs["get:s3"] = fake.Status(500)
 
 	sum := testDeleter(st).Delete(ctx, result, now)
 	got := outcomes(sum)
 	if got["s1"] != report.StatusDeleted {
 		t.Errorf("one 503 on the re-read must not cost a week: %v", got)
 	}
-	// v-hiccup: its server stays (read on the second try), so the label goes.
 	if got["v-hiccup"] != report.StatusUnflagged {
 		t.Errorf("v-hiccup = %v", got["v-hiccup"])
 	}
-	// v-server-unreadable: nothing is known about the server, so the label stays.
 	if got["v-server-unreadable"] != report.StatusDeferred || !stackit.Requested(st.Find("v-server-unreadable").Labels) {
 		t.Errorf("an unreadable server must keep the volume's label: %v", got)
 	}
@@ -233,7 +227,6 @@ func TestDeleteRechecksBeforeDeleting(t *testing.T) {
 	)
 	result := scanStore(t, st, nil)
 
-	// Things change between the scan and the delete run.
 	delete(st.Find("unlabelled").Labels, "delete")
 	st.Find("protected").Labels["do-not-delete"] = "true"
 	st.Resources = removeID(st.Resources, "gone")
@@ -280,7 +273,6 @@ func TestDeleteUnflagsIPsUsedByLoadBalancers(t *testing.T) {
 	st := store()
 	st.Add(res(stackit.KindPublicIP, "ip1", del, func(r *stackit.Resource) { r.Address = "192.0.2.1" }))
 	result := scanStore(t, st, nil)
-	// A load balancer took the address after the scan listed them.
 	result.Context.LoadBalancerAddresses["p1/eu01"] = map[string]string{"192.0.2.1": "network load balancer web"}
 	sum := testDeleter(st).Delete(ctx, result, now)
 	if len(sum.Results) != 1 || sum.Results[0].Status != report.StatusUnflagged || sum.Results[0].Reason != "used by network load balancer web" {
@@ -330,29 +322,29 @@ func TestDeleteErrors(t *testing.T) {
 	st := store()
 	st.Add(
 		res(stackit.KindSecurityGroup, "sg-in-use", del),
-		res(stackit.KindImage, "i-flaky", del),
+		res(stackit.KindPublicIP, "ip-flaky", del, func(r *stackit.Resource) { r.Address = "192.0.2.9" }),
 		res(stackit.KindSnapshot, "sn-forbidden", del),
 		res(stackit.KindServer, "s-vanished", del),
 	)
 	result := scanStore(t, st, nil)
 	st.Errs["delete:sg-in-use"] = fake.Status(409)
-	st.Errs["delete:i-flaky"] = fake.Status(503)
+	st.Errs["delete:ip-flaky"] = fake.Status(503)
 	st.Errs["delete:sn-forbidden"] = fake.Status(403)
 	st.Errs["delete:s-vanished"] = fake.Status(404)
 
 	d := testDeleter(st)
-	d.ServerWait = 10 * time.Millisecond // s-vanished never really goes away in the fake
+	d.ServerWait = 10 * time.Millisecond
 	sum := d.Delete(ctx, result, now)
 	want := map[string]report.Status{
 		"sg-in-use":    report.StatusFailed,
-		"i-flaky":      report.StatusFailed,
+		"ip-flaky":     report.StatusFailed,
 		"sn-forbidden": report.StatusFailed,
 		"s-vanished":   report.StatusDeleted,
 	}
 	if got := outcomes(sum); !reflect.DeepEqual(got, want) {
 		t.Errorf("outcomes = %v", got)
 	}
-	if n := len(st.CallsWith("delete image i-flaky")); n != 3 {
+	if n := len(st.CallsWith("delete publicip ip-flaky")); n != 3 {
 		t.Errorf("transient errors are retried: %d attempts", n)
 	}
 	if n := len(st.CallsWith("delete securitygroup")); n != 1 {

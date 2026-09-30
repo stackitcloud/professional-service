@@ -391,8 +391,14 @@ func TestTopListsOnlyProjectsWithSpend(t *testing.T) {
 	e.spend(webID, "web", 1, 5)
 	e.spend(deletedID, "old", 1, 1)
 	e.spend("00000000-0000-0000-0000-0000000000a4", "fourth", 1, 0.5)
+	e.spend("00000000-0000-0000-0000-0000000000a5", "fifth", 1, 0.4)
+	e.spend("00000000-0000-0000-0000-0000000000a6", "sixth", 1, 0.3)
 	top := e.check(t).Budgets[0].Top
-	if len(top) != 3 || top[0].ID != shopID || top[1].ID != webID || top[2].ID != deletedID {
+	var names []string
+	for _, p := range top {
+		names = append(names, p.Name)
+	}
+	if strings.Join(names, ",") != "shop,web,old,fourth,fifth" || top[0].ID != shopID || top[1].ID != webID {
 		t.Errorf("top = %+v", top)
 	}
 }

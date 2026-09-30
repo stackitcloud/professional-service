@@ -25,13 +25,12 @@ import (
 )
 
 type Message struct {
-	Title        string
-	Organization string
-	Subtitle     string
-	Alerts       []string
-	Intro        string
-	Sections     []Section
-	Footer       string
+	Title    string
+	Subtitle string
+	Alerts   []string
+	Intro    string
+	Sections []Section
+	Footer   string
 }
 
 type Section struct {
@@ -41,26 +40,17 @@ type Section struct {
 	Folded  bool
 }
 
-func (m Message) HeaderSubtitle() string {
-	switch {
-	case m.Organization == "":
-		return m.Subtitle
-	case m.Subtitle == "":
-		return m.Organization
-	}
-	return m.Organization + " · " + m.Subtitle
-}
-
-func (m Message) Notification() string {
-	if m.Organization == "" {
-		return m.Title
-	}
-	return m.Organization + ": " + m.Title
-}
-
 type Line struct {
-	Text string
-	Link string
+	Text   string
+	Link   string
+	Number int
+}
+
+func (l Line) Marker() string {
+	if l.Number > 0 {
+		return fmt.Sprintf("%d. ", l.Number)
+	}
+	return "• "
 }
 
 func OmittedText(n int) string {

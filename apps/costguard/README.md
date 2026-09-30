@@ -63,10 +63,10 @@ resources, such as servers, are counted but not priced.
 
 A **label** is a small name tag on a resource in STACKIT, written as `name=value`. costguard understands exactly two:
 
-| Label                | Meaning                                                                                                                                                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `do-not-delete=true` | **Keep this.** costguard never deletes it. On a folder or project, costguard ignores everything inside. It always wins.                                                                                                |
-| `delete=true`        | **Delete this at the next delete run.** costguard sets it on the things it found. You can also set it yourself on a server, disk, IP address, snapshot, image, network interface or security group to have it removed. |
+| Label                | Meaning                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `do-not-delete=true` | **Keep this.** costguard never deletes it. On a folder or project, costguard ignores everything inside. It always wins.                                                                                         |
+| `delete=true`        | **Delete this at the next delete run.** costguard sets it on the things it found. You can also set it yourself on a server, disk, IP address, snapshot, network interface or security group to have it removed. |
 
 That is all your colleagues need to remember: **if costguard lists something you still need, add
 `do-not-delete=true` to it** (or remove `delete=true`). Labels can be set in the STACKIT portal, in Terraform, or with
@@ -78,7 +78,7 @@ stackit public-ip update <IP ID> --project-id <project ID> --labels do-not-delet
 stackit project update --project-id <project ID> --label do-not-delete=true
 ```
 
-The same `--labels` flag exists for `server`, `image`, `security-group` and `network-interface` (which also needs
+The same `--labels` flag exists for `server`, `security-group` and `network-interface` (which also needs
 `--network-id`).
 
 ## What you need before you start
@@ -163,7 +163,7 @@ customers often have such an admin project already.
    The plan shows about 11 resources to add and one warning: the role assignments use the provider's `iam`
    experiment (see [Security](#security)). The apply takes about 5 minutes.
 
-4. **Wait for the first message** (a few minutes after the apply). It is titled _"costguard vX.Y.Z is running"_ and
+4. **Wait for the first message** (a few minutes after the apply). It is titled _"costguard: vX.Y.Z is running (<your organization>)"_ and
    proves that the login, the roles and the chat work. It contains the first report, where every budget stands, and
    when the next runs are. Nothing is changed by it.
 
@@ -171,9 +171,10 @@ Every time the server is created or replaced (every settings change replaces it)
 
 ## Reading the messages
 
-- The **header** names your organization, what was looked at (the scope), the regions and the time.
-- Each **list** shows one line such as _"Idle public IPs: 3, about €8.76/month"_. In Google Chat and Teams, _Show
-  more_ unfolds the entries; each entry names the resource, its project and region, and links into the STACKIT
+- The **title** says what the message is (_report_, _deletion_, _budget_, …) and names your organization, for example
+  _"costguard: report (Acme GmbH)"_; the line below it says what was looked at (the scope), the regions and the time.
+- Each **list** shows one line such as _"Idle public IPs: 3, about €8,76/month"_. In Google Chat and Teams, _Show
+  more_ unfolds the entries; each entry names the resource, its project and region, and links to its page in the STACKIT
   portal. Slack shows the entries right away.
 - **Everything that the next delete run deletes is always listed**, including everything someone labelled
   `delete=true`.
@@ -246,8 +247,8 @@ features = {
 - Each limit has exactly one target: the whole organization, a folder (every project below it) or a project, by ID
   or exact name.
 - Each budgets run posts **every budget whose spending this month is at or above one of its thresholds**: the
-  amount so far against the limit, a forecast for the month (from the 7th on), and for organization and folder
-  budgets the three projects that spent the most. It posts again at every run until the month ends; with nothing at
+  amount so far against the limit (_"Team A: €2.034,12 of €2.500,00 in September (81%)"_), a forecast for the month
+  (from the 7th on), and for organization and folder budgets the five projects that spent the most, numbered. It posts again at every run until the month ends; with nothing at
   or above a threshold, it posts nothing.
 - The amounts are the ones the STACKIT cost dashboard shows. Months are calendar months in UTC. STACKIT has a day's
   costs after 07:30 UTC the next day, so an earlier run sees them a day later.
@@ -319,6 +320,7 @@ first message with the new version.
 - **`delete=true` means "delete", no matter who set it or when.** If someone adds it after the report run, the item
   is deleted at the next delete run without having been listed.
 - **Anyone who can change labels on a resource can have costguard delete it.** Keep permissions tidy.
+- **Images are not handled.** costguard neither lists nor deletes images; a `delete=true` on an image does nothing.
 - **There is no limit on how much one delete run deletes.** Read the report, especially the first one with delete
   on.
 - **IP addresses held by other STACKIT services.** An IP address that is attached to no network interface and used
@@ -341,8 +343,8 @@ first message with the new version.
   deployer as its only owner. Whoever is owner, editor or service account user on that project, or on a folder above
   it, can act as costguard's service account, so keep it that way (Terraform warns if you choose a folder as parent).
 - **Rights on the whole organization.** costguard's service account has the custom role `costguard.reader` (read
-  resources and costs, 26 permissions) and, only while `delete` is on, `costguard.cleaner` (change labels, delete
-  seven resource types, 9 permissions), both on the organization. `scope` and `skip` limit what costguard _does_,
+  resources and costs, 24 permissions) and, only while `delete` is on, `costguard.cleaner` (change labels, delete
+  six resource types, 8 permissions), both on the organization. `scope` and `skip` limit what costguard _does_,
   not what its service account _may_ do. The permissions are listed in
   [`terraform/060-identity.tf`](terraform/060-identity.tf).
 - **The webhook URL is stored in the Terraform state and in the server's user data.** The user data can be read by

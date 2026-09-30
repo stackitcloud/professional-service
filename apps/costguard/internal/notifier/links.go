@@ -21,20 +21,43 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/report"
 )
 
-// projectPath is the portal page of a project.
-//
-// ❓ Open: every link points to the resource's project page for now,
-// because the portal's URL format is not verified yet. Once it is checked
-// on the test org, add per-kind deep links here (server, volume, public
-// IP, snapshot, image, NIC, security group, network area) and verify this
-// path too. See TODO.md, phase 3.
-const projectPath = "/projects/{project}"
-
-// PortalLink returns the portal page for an item, or "" when there is none.
-// Network areas belong to the organization and have no link yet.
-func PortalLink(portalURL string, it report.Item) string {
+func PortalLink(portalURL, organizationID string, it report.Item) string {
+	base := strings.TrimRight(portalURL, "/")
+	id := url.PathEscape(it.ID)
+	if it.Kind == report.KindNetworkArea {
+		if organizationID == "" {
+			return ""
+		}
+		return base + "/network-area/network-areas/" + id + "/overview?organization=" + url.QueryEscape(organizationID)
+	}
 	if it.ProjectID == "" {
 		return ""
 	}
-	return strings.TrimRight(portalURL, "/") + strings.ReplaceAll(projectPath, "{project}", url.PathEscape(it.ProjectID))
+	inProject := func(path string) string {
+		return base + path + "?project=" + url.QueryEscape(it.ProjectID)
+	}
+	switch it.Kind {
+	case "server":
+		return inProject("/server/servers/" + id + "/overview")
+	case "volume":
+		return inProject("/disk-volumes/volumes/" + id + "/overview")
+	case "publicip":
+		return inProject("/public-ip/public-ips/" + id + "/overview")
+	case "snapshot":
+		if it.VolumeID != "" {
+			return inProject("/disk-volumes/volumes/" + url.PathEscape(it.VolumeID) + "/snapshots/" + id)
+		}
+	case "nic":
+		return inProject("/nic/nics/" + id + "/overview")
+	case "securitygroup":
+		return inProject("/security-group/groups/" + id + "/overview")
+	}
+	return dashboard(portalURL, "project", it.ProjectID)
+}
+
+func dashboard(portalURL, container, id string) string {
+	if id == "" {
+		return ""
+	}
+	return strings.TrimRight(portalURL, "/") + "/dashboard?" + container + "=" + url.QueryEscape(id)
 }

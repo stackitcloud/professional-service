@@ -29,32 +29,27 @@ func (c Composer) Budgets(chk *report.BudgetCheck) (m Message, ok bool) {
 	}
 	month := chk.Month.Format("January")
 	m = Message{
-		Organization: c.Organization,
-		Subtitle:     fmt.Sprintf("Costs up to and including %s (UTC) · %s", chk.Checked.Format("2 January 2006"), c.clock(chk.GeneratedAt)),
-		Footer:       "costguard " + c.Version,
-	}
-	switch len(reached) {
-	case 0:
-		m.Title = "costguard: budgets could not all be checked"
-	case 1:
-		m.Title = fmt.Sprintf("costguard: budget %s passed %d%%", reached[0].Name, reached[0].Reached)
-	default:
-		m.Title = fmt.Sprintf("costguard: %s passed a threshold", report.Count(len(reached), "budget"))
+		Title:    c.title("budget"),
+		Subtitle: fmt.Sprintf("Costs up to and including %s (UTC) · %s", chk.Checked.Format("2 January 2006"), c.clock(chk.GeneratedAt)),
+		Footer:   "costguard " + c.Version,
 	}
 	if len(reached) > 0 {
 		m.Intro = fmt.Sprintf("Every budgets run lists the budgets at or above a threshold, until %s ends.", month)
 	}
 	for _, b := range reached {
-		sec := Section{Title: fmt.Sprintf("%s (%s): passed %d%%", b.Name, b.Target, b.Reached)}
-		sec.Lines = append(sec.Lines,
-			Line{Text: fmt.Sprintf("%s of %s in %s (%s)", eur(b.MonthEUR), eur(b.LimitEUR), month, percent(b.Percent())), Link: c.projectLink(b.ProjectID)},
-		)
+		sec := Section{Lines: []Line{{
+			Text: fmt.Sprintf("%s: %s of %s in %s (%s)", b.Name, eur(b.MonthEUR), eur(b.LimitEUR), month, percent(b.Percent())),
+			Link: c.budgetLink(b),
+		}}}
 		if b.ForecastEUR > 0 {
 			sec.Lines = append(sec.Lines, Line{Text: fmt.Sprintf("Forecast for %s: about %s (%s)",
 				month, eur(b.ForecastEUR), percent(b.ForecastEUR/b.LimitEUR*100))})
 		}
-		for _, p := range b.Top {
-			sec.Lines = append(sec.Lines, Line{Text: fmt.Sprintf("Top project %s: %s in %s", p.Name, eur(p.EUR), month), Link: c.projectLink(p.ID)})
+		if len(b.Top) > 0 {
+			sec.Lines = append(sec.Lines, Line{Text: "Top projects in " + month + ":"})
+		}
+		for i, p := range b.Top {
+			sec.Lines = append(sec.Lines, Line{Text: fmt.Sprintf("%s: %s", p.Name, eur(p.EUR)), Link: dashboard(c.PortalURL, "project", p.ID), Number: i + 1})
 		}
 		m.Sections = append(m.Sections, sec)
 	}
@@ -73,7 +68,7 @@ func (c Composer) addBudgets(m *Message, chk *report.BudgetCheck) {
 		sec.Lines = append(sec.Lines, Line{
 			Text: fmt.Sprintf("%s · %s · %s of %s so far (%s) · alerts at %s",
 				b.Name, b.Target, eur(b.MonthEUR), eur(b.LimitEUR), percent(b.Percent()), strings.Join(thresholds, ", ")),
-			Link: c.projectLink(b.ProjectID),
+			Link: c.budgetLink(b),
 		})
 	}
 	m.Sections = append(m.Sections, sec)
@@ -103,8 +98,16 @@ func addBudgetProblems(m *Message, problems []string) {
 	m.Sections = append(m.Sections, sec)
 }
 
-func (c Composer) projectLink(projectID string) string {
-	return PortalLink(c.PortalURL, report.Item{Kind: report.KindProject, ProjectID: projectID})
+func (c Composer) budgetLink(b report.BudgetStatus) string {
+	switch {
+	case b.ProjectID != "":
+		return dashboard(c.PortalURL, "project", b.ProjectID)
+	case b.FolderID != "":
+		return dashboard(c.PortalURL, "folder", b.FolderID)
+	case b.Organization:
+		return dashboard(c.PortalURL, "organization", c.OrganizationID)
+	}
+	return ""
 }
 
 func (c Composer) clock(t time.Time) string {

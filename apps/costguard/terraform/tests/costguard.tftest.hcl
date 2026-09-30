@@ -12,12 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-# Offline tests of the root config: terraform test (no STACKIT access, no
-# download; the providers are mocked). Covers the variable checks, the rules
-# across settings, what the server gets (config, units, environment) and
-# which resources each option creates.
-
 mock_provider "http" {
   mock_data "http" {
     defaults = {
@@ -89,8 +83,6 @@ variables {
   download_url = "https://downloads.example/{version}/"
 }
 
-# ---- Defaults: report only ----
-
 run "report_only_by_default" {
   command = apply
 
@@ -115,8 +107,8 @@ run "report_only_by_default" {
     error_message = "costguard.reader must be assigned on the organization (the binary's hint names it)."
   }
   assert {
-    condition     = length(stackit_authorization_organization_custom_role.reader.permissions) == 26
-    error_message = "costguard.reader has ${length(stackit_authorization_organization_custom_role.reader.permissions)} permissions, expected 26."
+    condition     = length(stackit_authorization_organization_custom_role.reader.permissions) == 24
+    error_message = "costguard.reader has ${length(stackit_authorization_organization_custom_role.reader.permissions)} permissions, expected 24."
   }
   assert {
     condition     = length(stackit_resourcemanager_project.costguard) == 1 && stackit_resourcemanager_project.costguard[0].parent_container_id == var.organization_id
@@ -182,8 +174,6 @@ run "user_data_contents" {
   }
 }
 
-# ---- delete on ----
-
 run "delete_on" {
   command = apply
 
@@ -200,8 +190,8 @@ run "delete_on" {
     error_message = "With delete on, the report timer runs flag, plus a delete timer."
   }
   assert {
-    condition     = stackit_authorization_organization_role_assignment.cleaner[0].role == "costguard.cleaner" && length(stackit_authorization_organization_custom_role.cleaner[0].permissions) == 9
-    error_message = "With delete on, costguard.cleaner (9 permissions) must be assigned."
+    condition     = stackit_authorization_organization_role_assignment.cleaner[0].role == "costguard.cleaner" && length(stackit_authorization_organization_custom_role.cleaner[0].permissions) == 8
+    error_message = "With delete on, costguard.cleaner (8 permissions) must be assigned."
   }
 }
 
@@ -256,8 +246,6 @@ run "every_day" {
   }
 }
 
-# ---- budgets ----
-
 run "budgets_on" {
   command = apply
 
@@ -295,7 +283,7 @@ run "budgets_on" {
     error_message = "reportEnabled must be true and budgets run Monday to Friday by default: ${module.cloud_init.schedule.budgets}"
   }
   assert {
-    condition     = length(stackit_authorization_organization_custom_role.reader.permissions) == 26 && contains(stackit_authorization_organization_custom_role.reader.permissions, "cost-management.billing.get") && length(stackit_authorization_organization_custom_role.cleaner) == 0
+    condition     = length(stackit_authorization_organization_custom_role.reader.permissions) == 24 && contains(stackit_authorization_organization_custom_role.reader.permissions, "cost-management.billing.get") && length(stackit_authorization_organization_custom_role.cleaner) == 0
     error_message = "Budgets need no new rights: costguard.reader already reads costs."
   }
 }
@@ -536,8 +524,6 @@ run "budget_thresholds_empty" {
   expect_failures = [var.features]
 }
 
-# ---- Rules across settings ----
-
 run "delete_needs_report" {
   command = plan
   variables {
@@ -658,8 +644,6 @@ run "test_build_reads_no_release" {
   }
 }
 
-# ---- Typos and wrong values fail ----
-
 run "typo_feature_name" {
   command = plan
   variables {
@@ -763,8 +747,6 @@ run "binary_override_hash" {
   expect_failures = [var.binary_override]
 }
 
-# ---- Warnings ----
-
 run "webhook_of_another_chat" {
   command = plan
   variables {
@@ -796,8 +778,6 @@ run "run_during_reboot_window" {
   }
   expect_failures = [check.reboot_window]
 }
-
-# ---- Options ----
 
 run "existing_project_and_network" {
   command = apply

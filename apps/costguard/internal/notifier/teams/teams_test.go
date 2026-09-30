@@ -85,15 +85,12 @@ func TestRenderIsAnAdaptiveCardMessage(t *testing.T) {
 	}
 }
 
-func TestRenderOrganizationAndFoldedSections(t *testing.T) {
+func TestRenderFoldedAndUntitledSections(t *testing.T) {
 	m := sample()
-	m.Organization = "Acme"
 	m.Sections[0].Folded = true
+	m.Sections = append(m.Sections, notifier.Section{Lines: []notifier.Line{{Text: "Org: €1.000,00 of €2.000,00"}}})
 	body := Render(m)["attachments"].([]obj)[0]["content"].(obj)["body"].([]obj)
-	if body[1]["text"] != "Acme · Scope: Teams" {
-		t.Errorf("subtitle = %v", body[1])
-	}
-	if len(body) != 9 || body[4]["text"] != "Deleted: 1" {
+	if len(body) != 10 || body[4]["text"] != "Deleted: 1" {
 		t.Fatalf("body = %v", body)
 	}
 	more, lines, less := body[5], body[6], body[7]
@@ -115,8 +112,11 @@ func TestRenderOrganizationAndFoldedSections(t *testing.T) {
 	if items := lines["items"].([]obj); len(items) != 3 || items[0]["text"] != "• server web [open](https://portal/s)" {
 		t.Errorf("lines = %v", items)
 	}
-	if body[8]["text"] != "costguard v0.1.0" {
-		t.Errorf("footer = %v", body[8])
+	if body[8]["text"] != "• Org: €1.000,00 of €2.000,00" || body[8]["spacing"] != "Medium" {
+		t.Errorf("untitled section = %v", body[8])
+	}
+	if body[9]["text"] != "costguard v0.1.0" {
+		t.Errorf("footer = %v", body[9])
 	}
 }
 

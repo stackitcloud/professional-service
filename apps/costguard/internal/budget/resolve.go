@@ -23,41 +23,28 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// maxDepth bounds walking up or down the folder tree against loops.
 const maxDepth = 100
 
-// target is a budget with what it covers.
 type target struct {
-	budget   config.Budget
-	describe string
-	// wholeOrg: every project the Cost API lists, deleted ones included.
-	wholeOrg bool
-	// projects are the projects of a folder or project budget.
-	projects map[string]bool
-	// projectID is set for project budgets.
+	budget    config.Budget
+	describe  string
+	wholeOrg  bool
+	projects  map[string]bool
 	projectID string
+	folderID  string
 }
 
 func (t target) covers(projectID string) bool {
 	return t.wholeOrg || t.projects[projectID]
 }
 
-// orgTree is every folder and project of the organization, linked by the
-// parents the API reports (not by the nesting of the walk, in case a
-// listing ever returns more than direct children).
 type orgTree struct {
-	folders  []stackit.Container
-	projects []stackit.Container
-	parent   map[string]string
-	// incomplete is the first listing error below the organization.
+	folders    []stackit.Container
+	projects   []stackit.Container
+	parent     map[string]string
 	incomplete error
 }
 
-// resolve finds each budget's target. The tree is read only when a
-// budget names a folder or project. A budget whose target matches nothing
-// or several containers is a problem, and so is every folder or project
-// budget when part of the tree could not be read (a missing project could
-// hide spend or make a name look unique).
 func (c *Checker) resolve(ctx context.Context) ([]target, []string, error) {
 	var tree *orgTree
 	for _, b := range c.Config.Budgets.Limits {
@@ -104,6 +91,7 @@ func (c *Checker) resolve(ctx context.Context) ([]target, []string, error) {
 			t.projectID = m[0].ID
 			t.projects[m[0].ID] = true
 		} else {
+			t.folderID = m[0].ID
 			for _, p := range tree.projects {
 				if tree.below(p.ID, m[0].ID) {
 					t.projects[p.ID] = true
@@ -115,9 +103,6 @@ func (c *Checker) resolve(ctx context.Context) ([]target, []string, error) {
 	return targets, problems, nil
 }
 
-// readTree lists every folder and project of the organization. When the
-// organization itself cannot be listed nothing can be checked, which
-// usually means the service account's role is missing.
 func (c *Checker) readTree(ctx context.Context) (*orgTree, error) {
 	t := &orgTree{parent: map[string]string{}}
 	seen := map[string]bool{}
@@ -173,7 +158,6 @@ func (c *Checker) readTree(ctx context.Context) (*orgTree, error) {
 	return t, nil
 }
 
-// below reports whether the container lies anywhere below the folder.
 func (t *orgTree) below(id, folderID string) bool {
 	p := t.parent[id]
 	for i := 0; i < maxDepth && p != ""; i++ {
@@ -185,8 +169,6 @@ func (t *orgTree) below(id, folderID string) bool {
 	return false
 }
 
-// active returns the projects in the ACTIVE state: a name should not
-// become ambiguous because of a project that is being deleted.
 func active(projects []stackit.Container) []stackit.Container {
 	var out []stackit.Container
 	for _, p := range projects {
@@ -197,8 +179,6 @@ func active(projects []stackit.Container) []stackit.Container {
 	return out
 }
 
-// matches returns the containers an entry names: by ID, or by name
-// ignoring case (the rule of scope entries).
 func matches(containers []stackit.Container, entry string) []stackit.Container {
 	entry = strings.TrimSpace(entry)
 	var out []stackit.Container

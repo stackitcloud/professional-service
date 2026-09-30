@@ -60,7 +60,7 @@ func Render(msg notifier.Message) map[string]any {
 	for _, s := range msg.Sections {
 		var lines []string
 		for _, l := range s.Lines {
-			line := "• " + html.EscapeString(l.Text)
+			line := l.Marker() + html.EscapeString(l.Text)
 			if l.Link != "" {
 				line += ` <a href="` + html.EscapeString(l.Link) + `">open</a>`
 			}
@@ -69,9 +69,9 @@ func Render(msg notifier.Message) map[string]any {
 		if s.Omitted > 0 {
 			lines = append(lines, `<font color="`+mutedColor+`">`+html.EscapeString(notifier.OmittedText(s.Omitted))+`</font>`)
 		}
-		sec := obj{
-			"header":  html.EscapeString(s.Title),
-			"widgets": []obj{paragraph(strings.Join(lines, "<br>"))},
+		sec := obj{"widgets": []obj{paragraph(strings.Join(lines, "<br>"))}}
+		if s.Title != "" {
+			sec["header"] = html.EscapeString(s.Title)
 		}
 		if s.Folded {
 			sec["collapsible"] = true
@@ -84,9 +84,9 @@ func Render(msg notifier.Message) map[string]any {
 			paragraph(`<font color="` + mutedColor + `">` + html.EscapeString(msg.Footer) + `</font>`),
 		}})
 	}
-	card := obj{"header": obj{"title": msg.Title, "subtitle": msg.HeaderSubtitle()}, "sections": sections}
+	card := obj{"header": obj{"title": msg.Title, "subtitle": msg.Subtitle}, "sections": sections}
 	return map[string]any{
-		"fallbackText": msg.Notification(),
+		"fallbackText": msg.Title,
 		"cardsV2":      []obj{{"cardId": "costguard", "card": card}},
 	}
 }
