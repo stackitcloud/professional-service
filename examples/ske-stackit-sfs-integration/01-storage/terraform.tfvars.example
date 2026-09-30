@@ -3,8 +3,9 @@
 # stackit_region defaults to "eu01".
 # stackit_parent_container_id must be the organization: SKE rejects a cluster in
 # a folder-nested project.
-# stackit_service_account_key_path is optional; unset lets the provider resolve
-# credentials via STACKIT_SERVICE_ACCOUNT_KEY_PATH or $HOME/.stackit/credentials.json.
+# stackit_service_account_key_path is optional; unset lets the provider read the
+# STACKIT_SERVICE_ACCOUNT_KEY_PATH environment variable, then that entry in the
+# credentials file ($HOME/.stackit/credentials.json, or STACKIT_CREDENTIALS_PATH).
 
 stackit_org_id              = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 stackit_parent_container_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"

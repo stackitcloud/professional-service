@@ -34,5 +34,5 @@ output "ske_cluster_name" {
 
 output "kubeconfig_command" {
   description = "Fetch a kubeconfig for kubectl. This stage keeps its own kubeconfig ephemeral, so there is no output holding one."
-  value       = "stackit ske kubeconfig create ${stackit_ske_cluster.sfs.name} --project-id ${local.stackit_project_id} --expiration 8h"
+  value       = "stackit ske kubeconfig create ${stackit_ske_cluster.sfs.name} --project-id ${local.stackit_project_id} --region ${stackit_ske_cluster.sfs.region} --expiration 8h"
 }

@@ -46,7 +46,7 @@ variable "stackit_region" {
 
 variable "stackit_service_account_key_path" {
   type        = string
-  description = "Path to the service account key file. Unset falls back to STACKIT_SERVICE_ACCOUNT_KEY_PATH, then $HOME/.stackit/credentials.json."
+  description = "Path to the service account key file. Unset falls back to the STACKIT_SERVICE_ACCOUNT_KEY_PATH environment variable, then to that entry in the credentials file ($HOME/.stackit/credentials.json, or STACKIT_CREDENTIALS_PATH)."
   default     = null
 }
 
@@ -84,8 +84,8 @@ variable "ske_cluster_name" {
 
 variable "kubernetes_version_min" {
   type        = string
-  description = "Minimum Kubernetes version of the SKE cluster"
-  default     = "1.34"
+  description = "Minimum Kubernetes version of the SKE cluster. Unset creates the cluster on the latest version SKE supports. Cluster creation fails once SKE no longer offers the pinned version."
+  default     = null
 }
 
 variable "ske_machine_type" {
