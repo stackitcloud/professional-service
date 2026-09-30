@@ -14,7 +14,7 @@
 
 locals {
   release = {
-    version      = "v0.2.1"
+    version      = "v0.2.2"
     download_url = "https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases/download/apps%2Fcostguard%2F{version}/"
   }
 }
