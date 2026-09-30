@@ -1,0 +1,15 @@
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_region                   = "eu01"
+stackit_service_account_key_path = "/path/to/sa-key.json"
+
+alert_email = "you@example.com"
+
+cluster_name = "example"
+
+# Must be a free subnet inside the network range of the SNA this project belongs to.
+network_ipv4_prefix = "10.0.208.0/24"
+
+observability_plan_name = "Observability-Large-EU01"
+
+# SKE audit logging is in private preview. Set to false if your organization is not enabled for it
+audit_logs_enabled = true

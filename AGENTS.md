@@ -46,8 +46,9 @@ When a user asks about STACKIT infrastructure, follow these steps:
 
 ## How to find relevant content
 
-**Start with the index below.** Each entry lists the directory name, tags, and a
-one-line description. Match these against the task before making any network requests.
+**Start with the index below.** Each entry lists the directory path below `examples/`,
+tags, and a one-line description. Some folders group related examples; their entries
+read `<group>/<example>`. Match these against the task before making any network requests.
 
 If the task does not match anything in the index (e.g. a new example was added after
 this file was last generated), fall back to the GitHub API:
@@ -150,8 +151,6 @@ Fetch only the files relevant to the task. A typical example contains
   This example demonstrates how to deploy a SKE cluster with an NVIDIA H100 node pool and install the GPU Operator
 - **`ske-gpu-storage`** `[ske, juicefs, csi-driver, s3, object-storage, rwx, read-write-many, redis, kubernetes]`  
   This note describes several data storage options to support single node foundation model training on STACKIT Kubernetes Engine (SKE) with a focus on NVIDIA H100 nodes for computer vision and automotive applications. This includes **data hydration** (making data available for GPUs to achieve optimal GPU-utilization) and **checkpoint persistence** (writing and loading of training checkpoints for recovery) using STACKIT Object Storage
-- **`ske-kubeapi-audit-log`** `[ske, kubernetes, audit-log, kube-apiserver, observability, otel, telemetry-router, telemetry-link]`  
-  This example enables Kubernetes API server audit logging on an SKE cluster and ships the records through the **STACKIT Telemetry Router** into an **Observability instance**, where they can be analysed with LogQL in Grafana
 - **`ske-kubernetes-ephemeral-kubernetes-provider`** `[ske, kubernetes, terraform, provider, kubeconfig, ephemeral]`  
   Deploy an SKE cluster and use an ephemeral kubeconfig to configure the Kubernetes provider without writing credentials to state
 - **`ske-kubernetes-terraform-provider`** `[ske, kubernetes, terraform, provider, kubeconfig]`  
@@ -160,10 +159,16 @@ Fetch only the files relevant to the task. A typical example contains
   Deploys three node pools and runs a KVM smoke test on each to show which STACKIT flavors expose `/dev/kvm`
 - **`ske-nginx-rate-limit`** `[ske, nginx, rate-limit, kubernetes, ingress, proxy-protocol]`  
   When your application is accessed through a Load Balancer, the original client IP may not be visible to your pods unless the **TCP Proxy Protocol** is enabled and properly configured. STACKIT supports Proxy Protocol version 2. Please follow the steps below to ensure your application and ingress-nginx controller can correctly receive and log the original client IP
-- **`ske-observability-alerting-kube-state-metrics`** `[ske, observability, alerting, prometheus, kube-state-metrics, kubernetes]`  
+- **`ske-observability`** `[ske, observability, otel, telemetry, metrics, alerting, log-alerts, kubernetes]`  
+  There is more than one way to observe an SKE cluster with STACKIT. The overview shows the options, who operates what, and where each signal ends up. The subfolders are deployable examples, one per approach
+- **`ske-observability/ske-kubeapi-audit-log`** `[ske, kubernetes, audit-log, kube-apiserver, observability, otel, telemetry-router, telemetry-link]`  
+  This example enables Kubernetes API server audit logging on an SKE cluster and ships the records through the **STACKIT Telemetry Router** into an **Observability instance**, where they can be analysed with LogQL in Grafana
+- **`ske-observability/ske-observability-alerting-kube-state-metrics`** `[ske, observability, alerting, prometheus, kube-state-metrics, kubernetes]`  
   This guide explains how to configure the STACKIT Observability product to send alerts using metrics gathered from kube-state-metrics
-- **`ske-observability-log-alerts`** `[ske, observability, logging, alerting, alloy, kubernetes]`  
+- **`ske-observability/ske-observability-log-alerts`** `[ske, observability, logging, alerting, alloy, kubernetes]`  
   This guide walks you through setting up log-based alerting in STACKIT Observability using Grafana Alloy to ship Kubernetes logs
+- **`ske-observability/ske-observability-otel-end-to-end`** `[ske, observability, otel, telemetry, metrics, logging, traces, alerting, auto-instrumentation, audit-log, telemetry-router, kubernetes]`  
+  Every signal an SKE cluster produces, in one STACKIT Observability instance, with an alert on each of them: control plane and node metrics from the SKE observability extension, container logs, Kubernetes metrics and events from the OpenTelemetry Collector, application traces injected by the OpenTelemetry Operator, and kube-apiserver audit logs through the STACKIT Telemetry Router
 - **`ske-s3-csi-juicefs`** `[ske, juicefs, csi-driver, s3, object-storage, rwx, read-write-many, key-value-store, valkey, kubernetes]`  
   Mounts STACKIT Object Storage as a `ReadWriteMany` Kubernetes volume on SKE using the [JuiceFS CSI driver](https://github.com/juicedata/juicefs-csi-driver)
 - **`ske-stackit-sfs-integration`** `[ske, nfs, sfs, storage, kubernetes, rwx, file-storage, csi, ephemeral]`  

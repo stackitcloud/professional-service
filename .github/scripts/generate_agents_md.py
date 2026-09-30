@@ -231,21 +231,40 @@ def _parse_scripts_table(readme: str) -> dict[str, tuple[str, list[str]]]:
 # ---------------------------------------------------------------------------
 
 
+_TAG_COMMENT = re.compile(r"<!--\s*tags:\s*.+?\s*-->")
+
+
+def _example_readmes() -> list[tuple[str, Path]]:
+    """Return (path relative to examples/, README) for every example.
+
+    Every top-level folder with a README is an example. A README deeper down is
+    only an example of its own if it carries a tag comment on line 1; this lets
+    a folder group several examples, while stage or phase READMEs of a single
+    example stay out of the index.
+    """
+    entries: list[tuple[str, Path]] = []
+    for readme in sorted(EXAMPLES_DIR.rglob("README.md")):
+        rel = readme.parent.relative_to(EXAMPLES_DIR)
+        if not rel.parts or any(p.startswith(".") for p in rel.parts):
+            continue
+        if len(rel.parts) > 1:
+            first_line = readme.read_text(encoding="utf-8").split("\n", 1)[0]
+            if not _TAG_COMMENT.match(first_line.strip()):
+                continue
+        entries.append((rel.as_posix(), readme))
+    return entries
+
+
 def _build_examples_index() -> list[str]:
     lines = ["## Examples", ""]
     found = False
-    for d in sorted(EXAMPLES_DIR.iterdir()):
-        if not d.is_dir() or d.name.startswith("."):
-            continue
-        readme_path = d / "README.md"
-        if not readme_path.exists():
-            continue
+    for name, readme_path in _example_readmes():
         readme = readme_path.read_text(encoding="utf-8")
-        tags = _read_tags(readme, d.name)
+        tags = _read_tags(readme, readme_path.parent.name)
         desc = _extract_description(readme)
         tag_str = ", ".join(tags) if tags else "—"
         desc_str = desc.rstrip(".") if desc else "—"
-        lines.append(f"- **`{d.name}`** `[{tag_str}]`  ")
+        lines.append(f"- **`{name}`** `[{tag_str}]`  ")
         lines.append(f"  {desc_str}")
         found = True
     if not found:
@@ -353,8 +372,9 @@ When a user asks about STACKIT infrastructure, follow these steps:
 
 ## How to find relevant content
 
-**Start with the index below.** Each entry lists the directory name, tags, and a
-one-line description. Match these against the task before making any network requests.
+**Start with the index below.** Each entry lists the directory path below `examples/`,
+tags, and a one-line description. Some folders group related examples; their entries
+read `<group>/<example>`. Match these against the task before making any network requests.
 
 If the task does not match anything in the index (e.g. a new example was added after
 this file was last generated), fall back to the GitHub API:

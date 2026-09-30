@@ -1,0 +1,100 @@
+# Agent role: one Pod per node. Tails container logs and reads kubelet metrics.
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+extraEnvs:
+  - name: OBSERVABILITY_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: ${secret_name}
+        key: username
+  - name: OBSERVABILITY_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: ${secret_name}
+        key: password
+
+# The agent only reads from the node, nothing connects to it.
+ports:
+  otlp:
+    enabled: false
+  otlp-http:
+    enabled: false
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+presets:
+  # filelog receiver on /var/log/pods
+  logsCollection:
+    enabled: true
+    includeCollectorLogs: false
+  # container and node metrics from the kubelet
+  kubeletMetrics:
+    enabled: true
+  # enriches every signal with namespace, pod, node and deployment
+  kubernetesAttributes:
+    enabled: true
+
+config:
+  processors:
+    k8sattributes:
+      extract:
+        metadata:
+          - k8s.namespace.name
+          - k8s.pod.name
+          - k8s.pod.uid
+          - k8s.node.name
+          - k8s.deployment.name
+          - k8s.container.name
+        labels:
+          - tag_name: service.name
+            key: app
+            from: pod
+
+  receivers:
+    # The gateway is the OTLP entry point, the agent only reads the node.
+    otlp: null
+    jaeger: null
+    zipkin: null
+    kubeletstats:
+      insecure_skip_verify: true
+
+  extensions:
+    basicauth/observability:
+      client_auth:
+        username: $${env:OBSERVABILITY_USERNAME}
+        password: $${env:OBSERVABILITY_PASSWORD}
+
+  exporters:
+    otlphttp/observability:
+      # endpoint is /otlp/v1/logs,
+      logs_endpoint: ${otlp_logs_endpoint}
+      auth:
+        authenticator: basicauth/observability
+    prometheusremotewrite/observability:
+      endpoint: ${metrics_push_url}
+      resource_to_telemetry_conversion:
+        enabled: true
+      auth:
+        authenticator: basicauth/observability
+
+  service:
+    extensions:
+      - health_check
+      - basicauth/observability
+    pipelines:
+      logs:
+        receivers: [filelog]
+        exporters: [otlphttp/observability]
+      metrics:
+        receivers: [kubeletstats]
+        exporters: [prometheusremotewrite/observability]
+      traces: null

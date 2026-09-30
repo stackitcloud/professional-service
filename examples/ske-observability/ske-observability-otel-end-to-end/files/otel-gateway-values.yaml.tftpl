@@ -1,0 +1,124 @@
+# Gateway role: exactly one Pod. Reads cluster-wide state and accepts OTLP
+# from applications. Must not run per node, or every metric arrives n times.
+mode: deployment
+replicaCount: 1
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+extraEnvs:
+  - name: OBSERVABILITY_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: ${secret_name}
+        key: username
+  - name: OBSERVABILITY_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: ${secret_name}
+        key: password
+
+presets:
+  # k8s_cluster receiver: the metrics kube-state-metrics would otherwise provide
+  clusterMetrics:
+    enabled: true
+  # Kubernetes events as log records
+  kubernetesEvents:
+    enabled: true
+  kubernetesAttributes:
+    enabled: true
+
+# The Service should not advertise ports whose receivers are disabled below.
+ports:
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+config:
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus/coredns:
+      config:
+        scrape_configs:
+          - job_name: coredns
+            scrape_interval: 30s
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names: [kube-system]
+                selectors:
+                  - role: pod
+                    label: k8s-app=kube-dns
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_container_port_number]
+                regex: "9153"
+                action: keep
+            metric_relabel_configs:
+              - source_labels: [__name__]
+                regex: coredns_dns_requests_total|coredns_dns_responses_total|coredns_dns_request_duration_seconds_.*|coredns_forward_requests_total|coredns_forward_responses_total
+                action: keep
+
+  extensions:
+    basicauth/observability:
+      client_auth:
+        username: $${env:OBSERVABILITY_USERNAME}
+        password: $${env:OBSERVABILITY_PASSWORD}
+
+  processors:
+    # k8sobjects records carry no service.name, so Loki would file them under
+    # unknown_service. A fixed name gives the events their own stream.
+    transform/events:
+      log_statements:
+        - context: resource
+          statements:
+            - set(attributes["service.name"], "kubernetes-events") where attributes["service.name"] == nil
+
+  connectors:
+    # Turns every span into request, error and duration metrics.
+    spanmetrics: {}
+
+  exporters:
+    otlphttp/observability:
+      # otlp_http_logs_url already ends in /otlp/v1/logs, so it is used as is.
+      logs_endpoint: ${otlp_logs_endpoint}
+      auth:
+        authenticator: basicauth/observability
+    prometheusremotewrite/observability:
+      endpoint: ${metrics_push_url}
+      resource_to_telemetry_conversion:
+        enabled: true
+      auth:
+        authenticator: basicauth/observability
+    otlphttp/traces:
+      # otlp_http_traces_url is a base URL without a path, so the exporter has
+      # to append /v1/traces itself. Hence endpoint, not traces_endpoint.
+      endpoint: ${otlp_traces_endpoint}
+      auth:
+        authenticator: basicauth/observability
+
+  service:
+    extensions:
+      - health_check
+      - basicauth/observability
+    pipelines:
+      # otlp: application logs
+      # k8sobjects: "Kubernetes events"
+      logs:
+        receivers: [otlp, k8sobjects]
+        processors: [memory_limiter, transform/events, batch]
+        exporters: [otlphttp/observability]
+      # k8s_cluster: cluster state, otlp: application metrics,
+      # spanmetrics: not saving spans but count them
+      # prometheus/coredns: cluster DNS
+      metrics:
+        receivers: [otlp, k8s_cluster, spanmetrics, prometheus/coredns]
+        exporters: [prometheusremotewrite/observability]
+      traces:
+        receivers: [otlp]
+        exporters: [otlphttp/traces, spanmetrics]

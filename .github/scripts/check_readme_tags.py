@@ -17,6 +17,8 @@
 
 Checks:
   examples/*/README.md  — line 1 must contain <!-- tags: ... -->
+                          (deeper READMEs with a tag comment count as
+                          examples of their own and are checked too)
   modules/*/README.md   — line 1 must contain <!-- tags: ... -->
   scripts/README.md     — every .sh row in the overview table must have
                           at least one tag in the Tags column
@@ -71,25 +73,35 @@ def _malformed_tags(tags: list[str]) -> list[str]:
     return [t for t in tags if not _VALID_TAG.match(t)]
 
 
+def _example_readmes() -> list[tuple[str, Path]]:
+    """Same selection as generate_agents_md.py: every top-level README, plus
+    deeper READMEs that carry a tag comment (examples inside a group folder).
+    Examples without a README are skipped by the generator too — not an error.
+    """
+    entries: list[tuple[str, Path]] = []
+    for readme in sorted(EXAMPLES_DIR.rglob("README.md")):
+        rel = readme.parent.relative_to(EXAMPLES_DIR)
+        if not rel.parts or any(p.startswith(".") for p in rel.parts):
+            continue
+        if len(rel.parts) > 1 and not _parse_tag_comment(readme)[0]:
+            continue
+        entries.append((rel.as_posix(), readme))
+    return entries
+
+
 def check_examples() -> list[str]:
     errors: list[str] = []
-    for d in sorted(EXAMPLES_DIR.iterdir()):
-        if not d.is_dir() or d.name.startswith("."):
-            continue
-        readme = d / "README.md"
-        if not readme.exists():
-            # Examples without a README are skipped by the generator too — not an error here.
-            continue
+    for name, readme in _example_readmes():
         has_comment, tags = _parse_tag_comment(readme)
         if not has_comment:
             errors.append(
-                f"  examples/{d.name}/README.md — missing <!-- tags: ... --> on line 1"
+                f"  examples/{name}/README.md — missing <!-- tags: ... --> on line 1"
             )
             continue
         bad = _malformed_tags(tags)
         if bad:
             errors.append(
-                f"  examples/{d.name}/README.md — tag(s) must be lowercase and hyphen-separated: {bad}"
+                f"  examples/{name}/README.md — tag(s) must be lowercase and hyphen-separated: {bad}"
             )
     return errors
 
@@ -217,11 +229,7 @@ def main() -> None:
         sys.exit(1)
 
     counts = (
-        sum(
-            1
-            for d in EXAMPLES_DIR.iterdir()
-            if d.is_dir() and not d.name.startswith(".") and (d / "README.md").exists()
-        ),
+        len(_example_readmes()),
         sum(
             1
             for d in MODULES_DIR.iterdir()
