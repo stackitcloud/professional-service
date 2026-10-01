@@ -1,0 +1,41 @@
+[Unit]
+Description=Download and verify the costguard binary
+Documentation=https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/src/branch/main/apps/costguard
+ConditionPathExists=!/usr/local/bin/costguard
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/costguard/costguard.env
+ExecStart=/usr/bin/python3 /usr/local/lib/costguard/costguard_install.py
+TimeoutStartSec=30min
+StandardOutput=journal+console
+StandardError=journal+console
+
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+InaccessiblePaths=-/var/lib/cloud
+UMask=0022

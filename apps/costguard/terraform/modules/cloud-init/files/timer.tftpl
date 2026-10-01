@@ -1,0 +1,11 @@
+[Unit]
+Description=${description}
+
+[Timer]
+OnCalendar=${on_calendar}
+Persistent=false
+AccuracySec=1s
+Unit=${unit}
+
+[Install]
+WantedBy=timers.target

@@ -99,6 +99,7 @@ To keep things organized for everyone, please place your contributions in the co
 - `modules/`: Reusable Infrastructure-as-Code modules.
 - `examples/`: Working reference architectures.
 - `scripts/`: Helper tools and automation scripts (Python, Bash, Go).
+- `apps/`: Ready-to-run applications.
 
 ### Adding a new Example
 

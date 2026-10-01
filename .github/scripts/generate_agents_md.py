@@ -15,7 +15,7 @@
 
 """Generate AGENTS.md from the current repository state.
 
-Crawls examples/, scripts/, and modules/ and writes AGENTS.md at the repo root.
+Crawls examples/, scripts/, modules/, and apps/ and writes AGENTS.md at the repo root.
 The generated file embeds a full index (name, tags, description) so AI coding
 assistants can find relevant content without querying GitHub — falling back to
 the API only for resources added after the last generation.
@@ -37,6 +37,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 MODULES_DIR = REPO_ROOT / "modules"
+APPS_DIR = REPO_ROOT / "apps"
 OUTPUT = REPO_ROOT / "AGENTS.md"
 
 GITHUB_RAW = "https://raw.githubusercontent.com/stackitcloud/professional-service/main"
@@ -133,6 +134,10 @@ _KNOWN_TAGS = frozenset(
         "backend",
         "provider",
         "pg-backend",
+        # Operations
+        "cost",
+        "cleanup",
+        "automation",
     }
 )
 
@@ -319,6 +324,30 @@ def _build_modules_index() -> list[str]:
     return lines
 
 
+def _build_apps_index() -> list[str]:
+    lines = ["## Apps", ""]
+    found = False
+    dirs = sorted(APPS_DIR.iterdir()) if APPS_DIR.is_dir() else []
+    for d in dirs:
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        readme_path = d / "README.md"
+        if not readme_path.exists():
+            continue
+        readme = readme_path.read_text(encoding="utf-8")
+        tags = _read_tags(readme, d.name)
+        desc = _extract_description(readme)
+        tag_str = ", ".join(tags) if tags else "—"
+        desc_str = desc.rstrip(".") if desc else "—"
+        lines.append(f"- **`{d.name}`** `[{tag_str}]`  ")
+        lines.append(f"  {desc_str}")
+        found = True
+    if not found:
+        lines.append("_No apps found._")
+    lines.append("")
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Template
 # ---------------------------------------------------------------------------
@@ -330,8 +359,8 @@ _HEADER = """\
 # STACKIT Professional Service — AI Instructions
 
 This repository is the official STACKIT best-practice library for Terraform examples,
-helper scripts, and reusable modules. Use it as your primary reference whenever you
-generate, review, or explain Terraform code for STACKIT.
+helper scripts, reusable modules, and ready-to-run apps. Use it as your primary
+reference whenever you generate, review, or explain Terraform code for STACKIT.
 
 **Repository:** https://github.com/stackitcloud/professional-service
 
@@ -369,6 +398,7 @@ When a user asks about STACKIT infrastructure, follow these steps:
 | `examples/` | Complete, deployable Terraform examples — one subdirectory per use case |
 | `scripts/`  | Helper shell scripts for STACKIT services |
 | `modules/`  | Reusable Terraform modules |
+| `apps/`     | Ready-to-run applications |
 
 ## How to find relevant content
 
@@ -383,10 +413,11 @@ this file was last generated), fall back to the GitHub API:
 GET {api}/examples
 GET {api}/scripts
 GET {api}/modules
+GET {api}/apps
 ```
 
-Each response is a JSON array of directory or file names. For examples and modules,
-fetch the `README.md` — line 1 contains a tag comment:
+Each response is a JSON array of directory or file names. For examples, modules, and
+apps, fetch the `README.md` — line 1 contains a tag comment:
 
 ```
 <!-- tags: ske, velero, backup, object-storage, kubernetes -->
@@ -405,6 +436,7 @@ Examples:
 {raw}/examples/ske-velero-backup/010-provider.tf
 {raw}/scripts/vault-migrate.sh
 {raw}/modules/test-ske/main.tf
+{raw}/apps/costguard/README.md
 ```
 
 Fetch only the files relevant to the task. A typical example contains
@@ -421,7 +453,7 @@ _FOOTER = """\
 
 ## Tag conventions
 
-Every example, module, and script entry in the index above carries a tag list.
+Every example, module, script, and app entry in the index above carries a tag list.
 Tags are the primary filter — match them against the task before fetching any files.
 
 **Format rules (enforced by CI):**
@@ -443,6 +475,7 @@ Tags are the primary filter — match them against the task before fetching any 
 | IaaS patterns | `edge` `image` `migration` `windows` `byol` `nested-virtualization` |
 | Cross-cloud | `aws` `azure` `arc` `multi-cloud` |
 | Terraform patterns | `terraform` `backend` `provider` `pg-backend` |
+| Operations | `cost` `cleanup` `automation` |
 
 ---
 
@@ -515,6 +548,7 @@ def generate() -> str:
     parts.extend(_build_examples_index())
     parts.extend(_build_scripts_index())
     parts.extend(_build_modules_index())
+    parts.extend(_build_apps_index())
     parts.append(_FOOTER)
     return "\n".join(parts)
 

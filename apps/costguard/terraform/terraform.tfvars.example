@@ -1,0 +1,64 @@
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars: it holds the webhook URL.
+
+# ---- Required ----
+
+service_account_key_path = "~/.stackit/deployer-key.json" # the deployer's key file
+project_owner_email      = "deployer@sa.stackit.cloud"    # the deployer's email; owner of costguard's project
+organization_id          = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+output                   = "googlechat" # teams | slack | googlechat
+webhook_url              = "https://..."
+
+
+# ---- Features to en-/disable ----
+
+features = {
+  report = { enabled = true, days = ["Mon"], time = "08:00" } # with delete enabled this also tags resources with delete=true
+  delete = { enabled = false, days = ["Tue"], time = "08:00" } # at least 20 h after the report run
+  budgets = {
+    enabled    = false
+    days       = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    time       = "10:00"
+    thresholds = [80, 100] # percent of the limit, for every limit without its own
+    limits = [             # one target each: organization, folder or project (ID or exact name)
+      { name = "Whole organization", organization = true, monthly_eur = 20000 },
+      { name = "Team A", folder = "team-a", monthly_eur = 2500 },
+      { name = "Sandbox X", project = "<project ID>", monthly_eur = 50, thresholds = [50, 100] },
+    ]
+  }
+}
+
+# can also report empty projects or networks
+warn_empty_after_days = 30 # 0: no warnings about empty projects
+
+
+# ---- Where it looks ----
+# Folders and projects by ID or exact name.
+
+scope                 = { folders = [], projects = [] } # empty: the whole organization
+skip                  = { folders = [], projects = [] }
+regions               = ["eu01"] # list every region you use
+
+
+# ---- Where it runs ----
+# Default: a new project "costguard" with a new network, directly under the organization.
+
+# project_id                    = "<existing project ID>"
+# network_id                    = "<existing network ID>"
+# parent_container_id           = "<folder ID>" # Terraform warns: the folder's admins could act as costguard
+# network_ipv4_prefix           = "10.64.0.0/28"
+# dns_nameservers               = ["9.9.9.9"]
+# region                        = "eu01"
+# availability_zone             = "eu01-1"
+# machine_type                  = "t2i.1"
+# image_name                    = "Debian 13"
+# boot_volume_gb                = 10
+# boot_volume_performance_class = "storage_premium_perf0"
+# time_zone                     = "Europe/Berlin" # schedules, messages and server
+# log_level                     = "info"          # debug | info | warn | error
+
+
+# ---- Your own binary ----
+# Only for a binary you host yourself or a test build; a release checkout pins its own.
+
+# download_url    = "https://<host>/<path>/{version}/"
+# binary_override = { version = "v1.2.3", sha256 = { amd64 = "<64 hex>", arm64 = "<64 hex>" } }

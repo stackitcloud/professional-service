@@ -76,19 +76,19 @@ repos:
 
       - id: check-readme-tags
         name: Check README Tags
-        description: Ensures every example, module, and script has tags defined (see AGENTS.md).
+        description: Ensures every example, module, app and script has tags defined (see AGENTS.md).
         entry: python3 .github/scripts/check_readme_tags.py
         language: system
         pass_filenames: false
-        files: ^(examples|modules|scripts)/
+        files: ^(examples|modules|scripts|apps)/
 
       - id: generate-agents-md
         name: Regenerate AGENTS.md
-        description: Keeps AGENTS.md in sync with the current examples, scripts, and modules.
+        description: Keeps AGENTS.md in sync with the current examples, scripts, apps and modules.
         entry: python3 .github/scripts/generate_agents_md.py
         language: system
         pass_filenames: false
-        files: ^(examples|scripts|modules)/
+        files: ^(examples|scripts|modules|apps)/
 
       - id: terraform-numbered-files
         name: Terraform Files Must Have Number Prefix

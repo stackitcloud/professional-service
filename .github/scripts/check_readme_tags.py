@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Verify that every example, module, and script has tags defined.
+"""Verify that every example, module, app, and script has tags defined.
 
 Checks:
   examples/*/README.md  — line 1 must contain <!-- tags: ... -->
                           (deeper READMEs with a tag comment count as
                           examples of their own and are checked too)
   modules/*/README.md   — line 1 must contain <!-- tags: ... -->
+  apps/*/README.md      — line 1 must contain <!-- tags: ... -->
   scripts/README.md     — every .sh row in the overview table must have
                           at least one tag in the Tags column
 
@@ -37,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
 MODULES_DIR = REPO_ROOT / "modules"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
+APPS_DIR = REPO_ROOT / "apps"
 
 _TAG_COMMENT = re.compile(r"<!--\s*tags:\s*(.+?)\s*-->")
 
@@ -129,6 +131,31 @@ def check_modules() -> list[str]:
     return errors
 
 
+def check_apps() -> list[str]:
+    errors: list[str] = []
+    if not APPS_DIR.is_dir():
+        return errors
+    for d in sorted(APPS_DIR.iterdir()):
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        readme = d / "README.md"
+        if not readme.exists():
+            errors.append(f"  apps/{d.name}/README.md — file does not exist")
+            continue
+        has_comment, tags = _parse_tag_comment(readme)
+        if not has_comment:
+            errors.append(
+                f"  apps/{d.name}/README.md — missing <!-- tags: ... --> on line 1"
+            )
+            continue
+        bad = _malformed_tags(tags)
+        if bad:
+            errors.append(
+                f"  apps/{d.name}/README.md — tag(s) must be lowercase and hyphen-separated: {bad}"
+            )
+    return errors
+
+
 def check_scripts() -> list[str]:
     """Verify every .sh file is listed in the overview table with at least one tag."""
     errors: list[str] = []
@@ -181,6 +208,7 @@ def main() -> None:
 
     example_errors = check_examples()
     module_errors = check_modules()
+    app_errors = check_apps()
     script_errors = check_scripts()
 
     if example_errors:
@@ -192,6 +220,11 @@ def main() -> None:
         print("Modules missing tags:")
         print("\n".join(module_errors))
         all_errors.extend(module_errors)
+
+    if app_errors:
+        print("Apps missing tags:")
+        print("\n".join(app_errors))
+        all_errors.extend(app_errors)
 
     if script_errors:
         print("Scripts missing tags:")
@@ -209,7 +242,7 @@ def main() -> None:
         )
         print()
         print(
-            "Examples and modules: add a tag comment as the very first line of README.md:"
+            "Examples, modules, and apps: add a tag comment as the very first line of README.md:"
         )
         print("  <!-- tags: ske, velero, backup, object-storage, kubernetes -->")
         print()
@@ -236,9 +269,18 @@ def main() -> None:
             if d.is_dir() and not d.name.startswith(".")
         ),
         len(list(SCRIPTS_DIR.glob("*.sh"))),
+        (
+            sum(
+                1
+                for d in APPS_DIR.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            )
+            if APPS_DIR.is_dir()
+            else 0
+        ),
     )
     print(
-        f"All tags present: {counts[0]} examples, {counts[1]} modules, {counts[2]} scripts. ✓"
+        f"All tags present: {counts[0]} examples, {counts[1]} modules, {counts[2]} scripts, {counts[3]} apps. ✓"
     )
 
 
