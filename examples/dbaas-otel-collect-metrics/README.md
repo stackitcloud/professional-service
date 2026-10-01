@@ -61,7 +61,7 @@ flowchart LR
 
 ## Prerequisites
 
-- A service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`, with rights to create a project in the parent container. The example creates the project, and in it a service account and a role assignment.
+- A service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`. The service account needs a role on the parent container that includes `resource-manager.project.create` and applies to the new project, for example `owner`: the example creates the project, and in it a service account and a role assignment.
 - Terraform 1.10 or later and STACKIT provider 0.117.0 or later.
 - An authenticated `stackit` CLI (`stackit auth login` or `stackit auth activate-service-account`) and `kubectl` for debugging.
 
