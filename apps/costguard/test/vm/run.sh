@@ -13,26 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-# Boots costguard's real cloud-init in a local QEMU VM before it reaches
-# STACKIT: the official Debian 13 cloud image, 1 vCPU / 1 GB like t2i.1, the
-# user data rendered by the same Terraform module as the real apply, the
-# binary from `make dist`, and fakes for STACKIT's metadata service, the
-# download server and the chat webhook. A second cloud-config part adds only
-# the test CA and a collector that reports over the serial console.
+# Boots costguard's real cloud-init in a local QEMU VM (Debian 13 cloud image).
 #
 #   test/vm/run.sh [happy|mismatch|all]      (default: all)
 #
-# happy:    the binary installs, the boot run starts (the fake token gets 401
-#           from the real STACKIT API, so it posts a failure: that proves
-#           the whole chain up to the API) and the sandbox, timers, lock
-#           and hardening are checked.
-# mismatch: a wrong pinned hash; the install must refuse the binary and post
-#           the failure to the webhook at once.
+# happy:    the binary installs, the boot run posts, sandbox, timers and hardening are checked.
+# mismatch: a wrong pinned hash; the install must refuse the binary and post the failure.
 #
-# Needs: KVM, qemu-system-x86_64 + qemu-img, OVMF (UEFI like STACKIT),
-# socat, openssl, python3, terraform, go. Settings via environment: QEMU,
-# QEMU_IMG, OVMF_CODE, TERRAFORM, VMTEST_DIR, DEBIAN_IMAGE.
+# Needs: KVM, qemu-system-x86_64 + qemu-img, OVMF, socat, openssl, python3, terraform, go.
+# Settings via environment: QEMU, QEMU_IMG, OVMF_CODE, TERRAFORM, VMTEST_DIR, DEBIAN_IMAGE.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -44,13 +33,11 @@ TERRAFORM=${TERRAFORM:-terraform}
 IMAGE_BASE=https://cloud.debian.org/images/cloud/trixie/latest
 IMAGE_NAME=debian-13-genericcloud-amd64.qcow2
 VERSION=vmtest
-# The guest reaches the host at 169.254.0.2 (QEMU user networking).
 HOST_IP=169.254.0.2
 SEED_PORT=18080
 METADATA_PORT=18081
 WEBHOOK_PORT=18443
 DOWNLOAD_PORT=18444
-# A secret-looking path: check.py makes sure it never reaches the console.
 WEBHOOK_SECRET=vmtest-webhook-secret-5f1c
 
 die() {
@@ -74,7 +61,6 @@ prepare() {
 	mkdir -p "$WORK/tls" "$WORK/downloads/$VERSION"
 	[ -e /dev/kvm ] || die "/dev/kvm is missing"
 
-	# The image: DEBIAN_IMAGE, or downloaded once and checked against SHA512SUMS.
 	IMAGE=${DEBIAN_IMAGE:-$WORK/$IMAGE_NAME}
 	if [ ! -f "$IMAGE" ]; then
 		echo "run.sh: downloading $IMAGE_NAME"
@@ -84,15 +70,11 @@ prepare() {
 		mv "$IMAGE.part" "$IMAGE"
 	fi
 
-	# The binary, exactly as a release builds it.
 	make -s -C "$APP" dist VERSION="$VERSION" >/dev/null
 	cp "$APP/dist/costguard_${VERSION}_linux_amd64" "$WORK/downloads/$VERSION/"
 	SHA=$(sha256sum "$APP/dist/costguard_${VERSION}_linux_amd64" | cut -d' ' -f1)
 
-	# A throwaway CA and a certificate for the host address the guest sees.
 	if [ ! -f "$WORK/tls/server.pem" ]; then
-		# Python 3.13+ verifies strictly: the CA needs keyUsage, the server
-		# certificate key identifiers.
 		openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=costguard vmtest CA" \
 			-addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
 			-keyout "$WORK/tls/ca.key" -out "$WORK/tls/ca.pem" 2>/dev/null
@@ -106,7 +88,6 @@ prepare() {
 	"$TERRAFORM" -chdir="$HERE/render" init -backend=false -input=false >/dev/null
 }
 
-# render <dir> <sha256>: the real user data plus the test part, as a NoCloud seed.
 render() {
 	local dir=$1 sha=$2
 	mkdir -p "$dir/seed"

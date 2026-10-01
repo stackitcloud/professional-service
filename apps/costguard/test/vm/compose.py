@@ -13,11 +13,6 @@
 # limitations under the License.
 
 
-"""Builds the QEMU test's user data: the real cloud-config (unchanged) plus a
-second part with only what the test needs, merged by cloud-init: the test
-CA (the fake webhook and download server use HTTPS) and the collector.
-"""
-
 import argparse
 import json
 from email.mime.multipart import MIMEMultipart
@@ -40,7 +35,6 @@ def main():
         collector = f.read()
 
     test = {
-        # Append lists (write_files, runcmd) instead of replacing them.
         "merge_how": [
             {"name": "list", "settings": ["append"]},
             {"name": "dict", "settings": ["no_replace", "recurse_list"]},
@@ -53,7 +47,6 @@ def main():
                 "content": collector,
             }
         ],
-        # After cloud-final, so `cloud-init status` is final when it reports.
         "runcmd": [
             [
                 "systemd-run",
@@ -68,7 +61,6 @@ def main():
 
     msg = MIMEMultipart()
     msg.attach(MIMEText(real, "cloud-config"))
-    # JSON is YAML.
     msg.attach(
         MIMEText("#cloud-config\n" + json.dumps(test, indent=1) + "\n", "cloud-config")
     )

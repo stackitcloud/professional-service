@@ -13,9 +13,6 @@
 # limitations under the License.
 
 
-# A small network of its own; the server reaches the internet through the
-# network's router (SNAT), so it needs no public IP. The first network of a
-# project gets a router IP, billed like a public IP.
 resource "stackit_network" "costguard" {
   count = local.create_network ? 1 : 0
 

@@ -21,20 +21,14 @@ import (
 	"time"
 )
 
-// newLogin leaves the login to the SDK's default order (workload identity,
-// then a key file or a token from the environment), so a developer can run
-// costguard locally with a service account key:
+// Usage:
 //
-//	go run -tags dev ./cmd/costguard --config test.yaml report
-//
-// Release binaries are built without this tag and use the server's
-// attached service account only.
+//	STACKIT_SERVICE_ACCOUNT_KEY_PATH=key.json COSTGUARD_WEBHOOK_URL=https://... \
+//	  go run -tags dev ./cmd/costguard --config config.yaml report
 func newLogin(func(string) string) (Login, []ConfigurationOption, error) {
 	return sdkLogin{}, nil, nil
 }
 
-// sdkLogin has nothing to check up front: the SDK reports a missing
-// credential when the clients are built.
 type sdkLogin struct{}
 
 func (sdkLogin) Ready(context.Context, time.Duration) error { return nil }

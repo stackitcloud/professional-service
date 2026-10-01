@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for costguard_install.py. Run: python3 -m unittest discover -s <this dir>"""
+"""Run: python3 -m unittest discover -s <this dir>"""
 
 import contextlib
 import hashlib
@@ -74,9 +74,7 @@ class InstallTest(unittest.TestCase):
         cfg = config(
             version="apps/costguard/v0.1.0", url="https://dl.example/{version}"
         )
-        with self.assertRaises(
-            ci.InstallError
-        ):  # the fake hash doesn't match; only the URL matters here
+        with self.assertRaises(ci.InstallError):
             self.run_install(cfg, lambda url: urls.append(url) or b"x")
         self.assertTrue(
             urls[0].startswith("https://dl.example/apps%2Fcostguard%2Fv0.1.0/")
@@ -135,7 +133,6 @@ class InstallTest(unittest.TestCase):
             self.run_install(
                 config(url="http://dl.example/{version}"), lambda url: BINARY
             )
-        # http on the local machine is allowed (tests).
         self.run_install(
             config(url="http://127.0.0.1:8080/{version}"), lambda url: BINARY
         )

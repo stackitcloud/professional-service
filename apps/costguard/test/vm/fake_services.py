@@ -13,18 +13,6 @@
 # limitations under the License.
 
 
-"""Fake services for the local QEMU boot of costguard (run.sh starts it).
-
-- metadata: STACKIT's metadata service as the spike recorded it (plain HTTP;
-  QEMU forwards the guest's 169.254.169.254:80 here with guestfwd);
-- seed: the NoCloud seed (user-data, meta-data, vendor-data), plain HTTP;
-- downloads: HTTPS, serves dist/ under /<version>/<file>;
-- webhook: HTTPS, appends every POSTed JSON body to webhook.jsonl.
-
-The HTTPS servers use the test CA's certificate for the host's address as
-the guest sees it (169.254.0.2). Standard library only.
-"""
-
 import argparse
 import base64
 import json
@@ -81,7 +69,6 @@ class Metadata(BaseHTTPRequestHandler):
             return self.send(
                 200, {"token": fake_token(), "validUntil": until.replace("+00:00", "Z")}
             )
-        # The real service answers unknown accounts and paths like OpenStack.
         return self.send(
             404,
             {

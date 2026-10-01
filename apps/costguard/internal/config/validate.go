@@ -28,11 +28,8 @@ var (
 	clockPattern  = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 )
 
-// MaxThreshold caps budget thresholds (percent of the limit).
 const MaxThreshold = 1000
 
-// Validate checks every field and returns one error that lists all
-// problems. It runs before any API call.
 func (c *Config) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) {
@@ -102,9 +99,6 @@ func (c *Config) Validate() error {
 	if _, err := time.LoadLocation(c.TimeZone); err != nil || strings.TrimSpace(c.TimeZone) == "" || c.TimeZone == "Local" {
 		add("timeZone must be an IANA time zone such as Europe/Berlin (got %q)", c.TimeZone)
 	}
-	if c.Prices.PublicIPMonthlyEUR < 0 || c.Prices.VolumeGBMonthlyEUR < 0 {
-		add("prices must not be negative")
-	}
 	if !absoluteHTTP(c.PortalURL) {
 		add("portalUrl must be an absolute http(s) URL (got %q)", c.PortalURL)
 	}
@@ -118,9 +112,6 @@ func (c *Config) Validate() error {
 	return errors.New("invalid configuration:\n  - " + strings.Join(problems, "\n  - "))
 }
 
-// secureURL accepts https URLs, and http only on the local machine (tests).
-// Messages carry resource names and portal links, so they are never sent
-// unencrypted over the network.
 func secureURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
@@ -141,9 +132,6 @@ func absoluteHTTP(raw string) bool {
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
-// validate checks the budgets section. Any time of day works: before 07:30
-// UTC STACKIT's costs of the day before are not in yet, so the run sees
-// them a day later.
 func (b *Budgets) validate() []string {
 	var problems []string
 	add := func(format string, args ...any) {

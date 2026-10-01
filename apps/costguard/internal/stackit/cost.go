@@ -25,36 +25,21 @@ import (
 	costv3 "github.com/stackitcloud/stackit-sdk-go/services/cost/v3api"
 )
 
-// dateLayout is the granularity of the Cost API's from/to parameters.
 const dateLayout = "2006-01-02"
 
-// Cost is the billing data source.
 type Cost interface {
-	// ProjectCosts returns each project's total charge in EUR for the
-	// inclusive date range. Projects without charges may be missing.
 	ProjectCosts(ctx context.Context, organizationID string, from, to time.Time) (map[string]float64, error)
-	// DailyCosts returns each project's charge per UTC day for the
-	// inclusive date range (at most 92 days). Days and projects without
-	// charges may be missing.
 	DailyCosts(ctx context.Context, organizationID string, from, to time.Time) (*DailyCosts, error)
 }
 
-// DailyCosts is one Cost API answer with a charge per project and day.
 type DailyCosts struct {
-	// Projects maps project IDs to their charges. Deleted projects are
-	// included as long as they had charges in the range.
-	Projects map[string]ProjectDays
-	// LastModified is when STACKIT last updated its cost data (the
-	// Last-Modified header); zero when the answer did not say.
+	Projects     map[string]ProjectDays
 	LastModified time.Time
 }
 
-// ProjectDays is one project's charges.
 type ProjectDays struct {
 	Name string
-	// EUR maps a UTC day (2006-01-02) to the charge in EUR, discounts
-	// included.
-	EUR map[string]float64
+	EUR  map[string]float64
 }
 
 type cost struct {
@@ -65,8 +50,6 @@ func newCost(client *costv3.APIClient) Cost {
 	return &cost{api: client.DefaultAPI}
 }
 
-// ProjectCosts makes one call for the whole range: the API returns range
-// totals per project. The organization ID is the customer account ID.
 func (c *cost) ProjectCosts(ctx context.Context, organizationID string, from, to time.Time) (map[string]float64, error) {
 	resp, err := c.api.ListCostsForCustomer(ctx, organizationID).
 		From(from.Format(dateLayout)).
@@ -90,16 +73,12 @@ func (c *cost) ProjectCosts(ctx context.Context, organizationID string, from, to
 			continue
 		}
 		if projectID != "" {
-			// TotalCharge is in cents.
 			out[projectID] += cents / 100
 		}
 	}
 	return out, nil
 }
 
-// DailyCosts makes one call with daily granularity. STACKIT updates the
-// data once a day (the previous day is in after 07:30 UTC) and may still
-// correct it during the month.
 func (c *cost) DailyCosts(ctx context.Context, organizationID string, from, to time.Time) (*DailyCosts, error) {
 	var httpResp *http.Response
 	resp, err := c.api.ListCostsForCustomer(runtime.WithCaptureHTTPResponse(ctx, &httpResp), organizationID).
@@ -137,7 +116,6 @@ func (c *cost) DailyCosts(ctx context.Context, organizationID string, from, to t
 			if _, err := time.Parse(dateLayout, day); err != nil {
 				return nil, fmt.Errorf("the Cost API returned the day %q for project %s, expected YYYY-MM-DD", day, pc.id)
 			}
-			// Charges are in cents.
 			days.EUR[day] += d.Charge / 100
 		}
 		out.Projects[pc.id] = days
@@ -145,19 +123,12 @@ func (c *cost) DailyCosts(ctx context.Context, organizationID string, from, to t
 	return out, nil
 }
 
-// projectCost is the part of a ProjectCost that DailyCosts needs.
 type projectCost struct {
 	id, name   string
 	totalCents float64
 	days       []costv3.ReportData
 }
 
-// reportData extracts a project's daily charges. The SDK decodes the
-// answer's anyOf into the first variant whose required fields are present,
-// and all four share them, so ProjectCostWithDetailedServices always wins
-// and the report data ends up untyped in its additional properties. It is
-// decoded from there (or taken from ProjectCostWithReports, should a later
-// SDK fill that).
 func reportData(p costv3.ProjectCost) (projectCost, error) {
 	var pc projectCost
 	var extra map[string]any

@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// costguard cleans up idle and labelled resources in a STACKIT
-// organization and watches its monthly budgets, run by systemd timers on a
-// server that Terraform sets up.
-// See the README for the features and labels.
 package main
 
 import (
@@ -26,15 +22,12 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
-	// The messages show times in the configured zone; the binary must not
-	// depend on the server's zoneinfo.
 	_ "time/tzdata"
 
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/app"
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/config"
 )
 
-// version is set at build time (-ldflags "-X main.version=...").
 var version = ""
 
 func main() {
@@ -71,8 +64,6 @@ func main() {
 	os.Exit(code)
 }
 
-// buildVersion prefers the linker-set version (release images), then the
-// module version (set by "go install ...@vX.Y.Z").
 func buildVersion() string {
 	if version != "" {
 		return version

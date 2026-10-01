@@ -30,20 +30,22 @@ func TestReportToDelete(t *testing.T) {
 
 func TestEstimate(t *testing.T) {
 	items := []Item{
-		{Kind: "publicip"}, {Kind: "publicip"},
-		{Kind: "volume", SizeGB: 100}, {Kind: "volume", SizeGB: 33},
+		{Kind: "publicip", MonthlyEUR: 2.92, Priced: true}, {Kind: "publicip", MonthlyEUR: 2.92, Priced: true},
+		{Kind: "volume", SizeGB: 100, MonthlyEUR: 13.855, Priced: true}, {Kind: "nic", Priced: true},
 		{Kind: "server"}, {Kind: "snapshot", SizeGB: 10},
 	}
-	got := Estimate(items, Prices{PublicIPMonthlyEUR: 4.82, VolumeGBMonthlyEUR: 0.0619})
-	want := Savings{IdleIPs: 2, IdleIPsEUR: 9.64, Volumes: 2, VolumesGB: 133, VolumesEUR: 8.23}
-	if got != want {
+	got := Estimate(items)
+	if want := (Savings{EUR: 19.7, Unpriced: 2}); got != want {
 		t.Errorf("Estimate = %+v, want %+v", got, want)
 	}
-	if got.TotalEUR() != 17.87 {
+	if got.TotalEUR() != 19.7 {
 		t.Errorf("TotalEUR = %v", got.TotalEUR())
 	}
-	if (Estimate(nil, Prices{})) != (Savings{}) {
+	if Estimate(nil) != (Savings{}) {
 		t.Error("no items, no savings")
+	}
+	if SizeGB(items) != 110 {
+		t.Errorf("SizeGB = %d", SizeGB(items))
 	}
 }
 

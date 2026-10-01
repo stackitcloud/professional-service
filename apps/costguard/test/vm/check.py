@@ -13,10 +13,6 @@
 # limitations under the License.
 
 
-"""Evaluates a QEMU test boot: the collector's VMTEST lines on the serial
-console and what the fake webhook received. Exit code 1 on any failure.
-"""
-
 import argparse
 import json
 import os
@@ -46,7 +42,6 @@ def number(value, default=99.0):
 
 
 def texts(webhook_path):
-    """Every text of every posted message, one string per post."""
     posts = []
     if os.path.exists(webhook_path):
         with open(webhook_path, encoding="utf-8") as f:

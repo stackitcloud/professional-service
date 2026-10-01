@@ -53,7 +53,6 @@ func testConfig(mod func(*config.Config)) config.Config {
 		OrganizationID:     org,
 		Regions:            []string{"eu01"},
 		WarnEmptyAfterDays: 30,
-		Prices:             config.Prices{PublicIPMonthlyEUR: 5, VolumeGBMonthlyEUR: 0.1},
 	}
 	if mod != nil {
 		mod(&c)
@@ -705,5 +704,67 @@ func TestVolumesWithSnapshotsPointToTheNewestSnapshot(t *testing.T) {
 	}
 	if len(rep.DetachedVolumes) != 1 || rep.DetachedVolumes[0].ID != "v3" || rep.DetachedVolumes[0].SnapshotID != "" {
 		t.Errorf("a volume without snapshots links to itself: %+v", rep.DetachedVolumes)
+	}
+}
+
+func TestScanPricesWhatItLists(t *testing.T) {
+	flavor := func(f, zone string) opt {
+		return func(r *stackit.Resource) { r.MachineType, r.AvailabilityZone = f, zone }
+	}
+	class := func(c, zone string) opt {
+		return func(r *stackit.Resource) { r.PerformanceClass, r.AvailabilityZone = c, zone }
+	}
+	st := oneProject()
+	st.PriceList.SnapshotGB[stackit.Offer{Region: "eu01", Metro: true}] = 0.03
+	st.Add(
+		r(stackit.KindServer, "s1", "p1", del(), flavor("g2i.4", "eu01-1")),
+		r(stackit.KindServer, "s2", "p1", del(), flavor("g2i.4", "eu01-1"), status(stackit.ServerStatusDeallocated)),
+		r(stackit.KindServer, "s3", "p1", del(), flavor("x9.9", "eu01-1")),
+		r(stackit.KindServer, "s4", "p1"),
+		r(stackit.KindVolume, "v1", "p1", detached(100), class("storage_premium_perf1", "eu01-1")),
+		r(stackit.KindVolume, "v2", "p1", detached(10), class("storage_premium_perf1", "eu01-m")),
+		r(stackit.KindSnapshot, "sn1", "p1", del(), of("v2"), func(r *stackit.Resource) { r.SizeGB = 50 }),
+		r(stackit.KindVolume, "v3", "p1", del(), attachedTo("s4")),
+		r(stackit.KindPublicIP, "ip1", "p1", addr("192.0.2.1")),
+	)
+	rep := scan(t, st, testConfig(nil)).Report
+
+	price := map[string]string{}
+	for _, list := range [][]report.Item{rep.Requested, rep.DetachedVolumes, rep.IdlePublicIPs, rep.WithSnapshots, rep.BackInUse} {
+		for _, it := range list {
+			price[it.ID] = "unpriced"
+			if it.Priced {
+				price[it.ID] = fmt.Sprintf("%.2f", it.MonthlyEUR)
+			}
+		}
+	}
+	want := map[string]string{
+		"s1": "147.30", "s2": "0.00", "s3": "unpriced", "v1": "13.82", "v2": "unpriced",
+		"sn1": "1.50", "v3": "unpriced", "ip1": "2.92",
+	}
+	if !reflect.DeepEqual(price, want) {
+		t.Errorf("prices = %v, want %v", price, want)
+	}
+	eq(t, "price list calls", st.CallsWith("prices"), []string{"prices eu01"})
+	if rep.PricesProblem != "" {
+		t.Errorf("problem = %q", rep.PricesProblem)
+	}
+
+	st.Errs["prices"] = errors.New("HTTP 503")
+	rep = scan(t, st, testConfig(nil)).Report
+	if rep.PricesProblem != "STACKIT's price list could not be read" || len(rep.ScanErrors) != 0 {
+		t.Errorf("problem = %q, scan errors = %v", rep.PricesProblem, rep.ScanErrors)
+	}
+	for _, it := range append(rep.Requested, rep.DetachedVolumes...) {
+		if it.Priced {
+			t.Errorf("%s priced without a price list", it.ID)
+		}
+	}
+
+	sc := newScanner(oneProject(), testConfig(nil))
+	sc.Clients.PriceList = nil
+	res, err := sc.Scan(context.Background())
+	if err != nil || res.Report.PricesProblem == "" {
+		t.Errorf("no price list: %v, %q", err, res.Report.PricesProblem)
 	}
 }

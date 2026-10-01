@@ -13,10 +13,6 @@
 # limitations under the License.
 
 
-# A dedicated project directly under the organization by default: whoever is
-# owner, editor or Service Account User on it (or on a parent folder) can act
-# as costguard's service account, so nobody but the deployer gets a role
-# here. owner_email becomes owner: the deployer service account.
 resource "stackit_resourcemanager_project" "costguard" {
   count = local.create_project ? 1 : 0
 

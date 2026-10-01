@@ -57,25 +57,14 @@ func TestParseAppliesDefaults(t *testing.T) {
 	if cfg.WarnEmptyAfterDays != 30 || cfg.PortalURL != DefaultPortalURL || cfg.TimeZone != "Europe/Berlin" {
 		t.Errorf("defaults not applied: %+v", cfg)
 	}
-	// Delete is off unless the file says otherwise, and has no default time.
 	if cfg.DeleteEnabled || cfg.DeleteRunAt != "" || cfg.ReportRunAt != "" {
 		t.Errorf("delete defaults: %+v", cfg)
 	}
-	if cfg.Prices.PublicIPMonthlyEUR != DefaultPublicIPMonthlyEUR || cfg.Prices.VolumeGBMonthlyEUR != DefaultVolumeGBMonthlyEUR {
-		t.Errorf("price defaults = %+v", cfg.Prices)
-	}
-	if p := cfg.Prices.Report(); p.PublicIPMonthlyEUR != DefaultPublicIPMonthlyEUR || p.VolumeGBMonthlyEUR != DefaultVolumeGBMonthlyEUR {
-		t.Errorf("Report() = %+v", p)
-	}
 }
 
-func TestParseKeepsDefaultsOfPartialNestedBlocks(t *testing.T) {
-	cfg, err := Parse([]byte("prices:\n  publicIpMonthlyEur: 5\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Prices.PublicIPMonthlyEUR != 5 || cfg.Prices.VolumeGBMonthlyEUR != DefaultVolumeGBMonthlyEUR {
-		t.Errorf("prices = %+v", cfg.Prices)
+func TestParseRefusesPrices(t *testing.T) {
+	if _, err := Parse([]byte("prices:\n  publicIpMonthlyEur: 5\n")); err == nil {
+		t.Error("prices come from STACKIT's price list, the config key is gone")
 	}
 }
 
@@ -92,9 +81,9 @@ func TestParseRefusesASecondDocument(t *testing.T) {
 		t.Fatalf("want second-document error, got %v", err)
 	}
 	for _, ok := range []string{
-		"organizationId: " + orgID + "\n---\n",    // trailing separator
-		"---\norganizationId: " + orgID + "\n",    // leading separator
-		"organizationId: " + orgID + "\n---\n~\n", // explicit empty document
+		"organizationId: " + orgID + "\n---\n",
+		"---\norganizationId: " + orgID + "\n",
+		"organizationId: " + orgID + "\n---\n~\n",
 	} {
 		if _, err := Parse([]byte(ok)); err != nil {
 			t.Errorf("%q: %v", ok, err)
@@ -107,7 +96,6 @@ func TestParseRefusesASecondDocument(t *testing.T) {
 
 func TestChatReadsOnlyTheChatSettings(t *testing.T) {
 	webhook := env(map[string]string{EnvWebhookURL: "https://hooks.example.com/x"})
-	// Unknown keys and invalid values elsewhere do not matter.
 	path := writeConfig(t, "output: teams\nskips: [a]\nwarnEmptyAfterDays: nope\n")
 	if out, url, ok := Chat(path, webhook); !ok || out != OutputTeams || url != "https://hooks.example.com/x" {
 		t.Errorf("Chat = %q %q %v", out, url, ok)
@@ -235,7 +223,6 @@ func TestValidateListsAllProblems(t *testing.T) {
 		DeleteEnabled:      true,
 		DeleteRunAt:        " ",
 		TimeZone:           "Mars/Olympus",
-		Prices:             Prices{PublicIPMonthlyEUR: -1},
 		PortalURL:          "portal",
 	}
 	err := cfg.Validate()
@@ -254,7 +241,6 @@ func TestValidateListsAllProblems(t *testing.T) {
 		"warnEmptyAfterDays",
 		"deleteRunAt is required when deleteEnabled is true",
 		`timeZone must be an IANA time zone such as Europe/Berlin (got "Mars/Olympus")`,
-		"prices",
 		"portalUrl",
 	} {
 		if !strings.Contains(err.Error(), want) {

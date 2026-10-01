@@ -28,8 +28,6 @@ import (
 	"time"
 )
 
-// offerOtherLogins puts every credential the SDK would pick up by itself
-// into the environment. A release build must ignore all of them.
 func offerOtherLogins(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
@@ -60,8 +58,6 @@ func TestReleaseBuildNeedsTheServiceAccountEmail(t *testing.T) {
 	}
 }
 
-// A release build logs in with the metadata token and nothing else, even
-// when the environment offers a key, a token and workload identity.
 func TestReleaseBuildLogsInWithTheMetadataTokenOnly(t *testing.T) {
 	offerOtherLogins(t)
 	t.Setenv(EnvServiceAccountEmail, saEmail)
@@ -83,6 +79,9 @@ func TestReleaseBuildLogsInWithTheMetadataTokenOnly(t *testing.T) {
 	set, err := New()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if p, ok := set.PriceList.(*pim); !ok || p.base != pimBase {
+		t.Errorf("price list = %#v", set.PriceList)
 	}
 	if err := set.Login.Ready(context.Background(), 0); err != nil {
 		t.Fatalf("Ready: %v", err)

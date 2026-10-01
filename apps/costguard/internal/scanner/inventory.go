@@ -21,22 +21,15 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// inventory is everything listed in one project and region.
 type inventory struct {
 	projectID   string
 	projectName string
 	region      string
 	res         map[stackit.Kind][]stackit.Resource
-	// failed marks kinds that could not be listed.
-	failed map[stackit.Kind]bool
+	failed      map[stackit.Kind]bool
 
-	// lbAddresses is filled when the project has public IPs without a NIC;
-	// lbFailed means the load balancer lookup failed.
 	lbAddresses map[string]string
 	lbFailed    bool
-	// skeClusters is filled when a detached volume could be flagged, or
-	// later for the empty-project check; skeChecked tells whether it was
-	// asked, skeFailed whether that failed.
 	skeClusters []string
 	skeChecked  bool
 	skeFailed   bool
@@ -46,7 +39,6 @@ func (inv *inventory) key() string {
 	return inv.projectID + "/" + inv.region
 }
 
-// ok reports whether all the kinds were listed.
 func (inv *inventory) ok(kinds ...stackit.Kind) bool {
 	for _, k := range kinds {
 		if inv.failed[k] {
@@ -56,7 +48,6 @@ func (inv *inventory) ok(kinds ...stackit.Kind) bool {
 	return true
 }
 
-// inventory lists every active project in every region.
 func (s *Scanner) inventory(ctx context.Context, projects []*node, errs *errorLog) []*inventory {
 	var mu sync.Mutex
 	var out []*inventory
@@ -91,7 +82,6 @@ func (s *Scanner) list(ctx context.Context, p *node, region string, errs *errorL
 		items, err := s.Clients.IaaS.List(ctx, kind, p.ID, region)
 		switch {
 		case stackit.NotEnabled(err):
-			// IaaS is not enabled for the project in this region.
 		case err != nil:
 			inv.failed[kind] = true
 			errs.add("listing "+kind.Name()+"s", where(p.Name, region), err)
@@ -114,8 +104,6 @@ func (s *Scanner) list(ctx context.Context, p *node, region string, errs *errorL
 	return inv
 }
 
-// checkSKE lists the SKE clusters of the inventory's project and region
-// once.
 func (s *Scanner) checkSKE(ctx context.Context, inv *inventory, errs *errorLog) {
 	if inv.skeChecked {
 		return
@@ -133,13 +121,10 @@ func (s *Scanner) checkSKE(ctx context.Context, inv *inventory, errs *errorLog) 
 	inv.skeClusters = clusters
 }
 
-// where names a project and region for a scan error.
 func where(project, region string) string {
 	return project + " (" + region + ")"
 }
 
-// needsLoadBalancers: only a public IP without a NIC can belong to a load
-// balancer.
 func needsLoadBalancers(inv *inventory) bool {
 	for _, ip := range inv.res[stackit.KindPublicIP] {
 		if ip.NICID == "" && !stackit.Protected(ip.Labels) {
@@ -149,8 +134,6 @@ func needsLoadBalancers(inv *inventory) bool {
 	return false
 }
 
-// needsSKE: only a detached, unlabelled volume without snapshots could be
-// flagged, and SKE projects are excluded from volume cleanup.
 func needsSKE(inv *inventory) bool {
 	if !inv.ok(stackit.KindSnapshot) {
 		return false

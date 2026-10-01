@@ -12,11 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package stackit wraps the official STACKIT SDK clients behind small
-// interfaces, so the rest of costguard never sees SDK types and tests never
-// touch real APIs. Release builds log in with the service account attached
-// to the server only (login.go, metadata.go); the dev build tag allows the
-// SDK's own logins for local runs (login_dev.go).
 package stackit
 
 import (
@@ -35,30 +30,21 @@ import (
 	skev2 "github.com/stackitcloud/stackit-sdk-go/services/ske/v2api"
 )
 
-// ConfigurationOption re-exports the SDK option type for callers and tests.
 type ConfigurationOption = coreconfig.ConfigurationOption
 
-// Login is how the clients authenticate.
 type Login interface {
-	// Ready checks, before the run touches any API, that the login works.
-	// While the service account is not attached yet it keeps trying for up
-	// to wait (0: no waiting).
 	Ready(ctx context.Context, wait time.Duration) error
 }
 
-// Set bundles everything costguard calls.
 type Set struct {
 	ResourceManager ResourceManager
 	IaaS            IaaS
 	Cost            Cost
 	Services        Services
-	// Login is nil in sets that need no login (the fake).
-	Login Login
+	PriceList       PriceList
+	Login           Login
 }
 
-// New builds the client set with the build's login (login.go or
-// login_dev.go). All clients share one login, so there is one token for
-// the whole run.
 func New() (*Set, error) {
 	login, opts, err := newLogin(os.Getenv)
 	if err != nil {
@@ -69,12 +55,10 @@ func New() (*Set, error) {
 		return nil, err
 	}
 	set.Login = login
+	set.PriceList = newPIM()
 	return set, nil
 }
 
-// newSet builds the clients with exactly these options. Tests use it
-// directly: the release login would override WithoutAuthentication, which
-// the SDK checks only after a custom login.
 func newSet(opts ...ConfigurationOption) (*Set, error) {
 	rm, err := resourcemanagerv0.NewAPIClient(opts...)
 	if err != nil {

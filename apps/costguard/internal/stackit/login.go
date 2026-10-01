@@ -18,10 +18,6 @@ package stackit
 
 import coreconfig "github.com/stackitcloud/stackit-sdk-go/core/config"
 
-// newLogin makes every client log in with the service account attached to
-// the server and nothing else: no key file, no token, no workload
-// identity. The SDK's custom login wins over all of its own, even when the
-// environment offers them. Local runs use the dev build tag (login_dev.go).
 func newLogin(getenv func(string) string) (Login, []ConfigurationOption, error) {
 	login, err := NewMetadataLogin(getenv(EnvServiceAccountEmail))
 	if err != nil {

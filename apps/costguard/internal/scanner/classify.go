@@ -30,7 +30,7 @@ var kindOrder = func() map[stackit.Kind]int {
 	return m
 }()
 
-func classify(invs []*inventory, rep *report.Report, errs *errorLog) *Result {
+func classify(invs []*inventory, rep *report.Report, errs *errorLog, prices *stackit.Prices) *Result {
 	sort.Slice(invs, func(i, j int) bool {
 		if invs[i].projectName != invs[j].projectName {
 			return invs[i].projectName < invs[j].projectName
@@ -46,7 +46,7 @@ func classify(invs []*inventory, rep *report.Report, errs *errorLog) *Result {
 	}}
 	var newIPs, newVolumes []candidate
 	for _, inv := range invs {
-		ips, vols := classifyOne(inv, rep, res, errs)
+		ips, vols := classifyOne(inv, rep, res, errs, prices)
 		newIPs = append(newIPs, ips...)
 		newVolumes = append(newVolumes, vols...)
 	}
@@ -77,7 +77,7 @@ func takeNew(cands []candidate, list *[]report.Item, res *Result) int {
 	return 0
 }
 
-func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog) (newIPs, newVolumes []candidate) {
+func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog, prices *stackit.Prices) (newIPs, newVolumes []candidate) {
 	if inv.lbAddresses != nil {
 		res.Context.LoadBalancerAddresses[inv.key()] = inv.lbAddresses
 	}
@@ -94,22 +94,37 @@ func classifyOne(inv *inventory, rep *report.Report, res *Result, errs *errorLog
 			deleting[srv.ID] = srv.Name
 		}
 	}
+	zones := map[string]string{}
+	for _, v := range inv.res[stackit.KindVolume] {
+		zones[v.ID] = v.AvailabilityZone
+	}
 	item := func(r stackit.Resource, detail string, isNew bool) report.Item {
-		return report.Item{
+		it := report.Item{
 			Kind: string(r.Kind), ID: r.ID, Name: r.Name, ProjectID: inv.projectID, ProjectName: inv.projectName,
 			Region: inv.region, Detail: detail, New: isNew, NetworkID: r.NetworkID, VolumeID: r.VolumeID, SizeGB: r.SizeGB,
 		}
+		zone := ""
+		if r.Kind == stackit.KindSnapshot {
+			zone = zones[r.VolumeID]
+		}
+		it.MonthlyEUR, it.Priced = prices.Monthly(r, zone)
+		return it
+	}
+	unpriced := func(r stackit.Resource, detail string) report.Item {
+		it := item(r, detail, false)
+		it.MonthlyEUR, it.Priced = 0, false
+		return it
 	}
 	request := func(r stackit.Resource, detail string) {
 		rep.Requested = append(rep.Requested, item(r, detail, false))
 		res.Delete = append(res.Delete, r)
 	}
 	unflag := func(r stackit.Resource, detail string) {
-		rep.BackInUse = append(rep.BackInUse, item(r, detail, false))
+		rep.BackInUse = append(rep.BackInUse, unpriced(r, detail))
 		res.Unflag = append(res.Unflag, r)
 	}
 	protectedMarked := func(r stackit.Resource) {
-		rep.ProtectedMarked = append(rep.ProtectedMarked, item(r, "", false))
+		rep.ProtectedMarked = append(rep.ProtectedMarked, unpriced(r, ""))
 		if r.Kind == stackit.KindVolume || r.Kind == stackit.KindPublicIP {
 			res.ClearStale = append(res.ClearStale, r)
 		}

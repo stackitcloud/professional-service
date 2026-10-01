@@ -12,17 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Everything goes into terraform.tfvars, including the deployer's key path and
-# the webhook URL, so nothing has to be exported. terraform.tfvars is
-# git-ignored and must never be committed: it holds the webhook URL.
-#
-# Null checks use `x == null ? true : ...`, not `||`: Terraform before 1.12
-# evaluates both sides of || and fails on an attribute of null.
-#
-# Terraform silently drops misspelled keys of object variables, so scope,
-# skip and features are checked key by key: a typo such as
-# skip = { projcts = [...] } must fail, not silently remove a protection.
-
 # ---- Login ----
 
 variable "service_account_key_path" {
@@ -317,20 +306,6 @@ variable "warn_empty_after_days" {
   validation {
     condition     = var.warn_empty_after_days == 0 || var.warn_empty_after_days >= 7
     error_message = "warn_empty_after_days must be 0 (off) or at least 7."
-  }
-}
-
-variable "prices" {
-  description = "Prices for the savings estimate (net EUR, STACKIT price list v1.0.43)."
-  type = object({
-    public_ip_monthly_eur = optional(number, 2.92)
-    volume_gb_monthly_eur = optional(number, 0.065)
-  })
-  default = {}
-
-  validation {
-    condition     = var.prices.public_ip_monthly_eur >= 0 && var.prices.volume_gb_monthly_eur >= 0
-    error_message = "prices must not be negative."
   }
 }
 

@@ -12,13 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Renders the server's cloud-init user data. A pure function (no providers),
-
-# The whole cloud-config is built as an object and yamlencode()d: no value
-# (a skip entry, the webhook URL) can break the YAML. Nothing here may print
-# a secret: cloud-init's output goes to the serial console, which the IaaS
-# API shows to anyone who may read the server.
-
 locals {
   # ---- Features ----
 
@@ -95,10 +88,6 @@ locals {
       reportEnabled      = local.report_enabled
       deleteEnabled      = local.delete_enabled
       timeZone           = var.settings.time_zone
-      prices = {
-        publicIpMonthlyEur = var.settings.prices.public_ip_monthly_eur
-        volumeGbMonthlyEur = var.settings.prices.volume_gb_monthly_eur
-      }
     },
     local.delete_enabled ? { deleteRunAt = local.schedules.delete.text } : {},
     local.report_enabled ? { reportRunAt = local.schedules.report.text } : {},

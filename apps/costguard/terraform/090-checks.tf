@@ -13,8 +13,6 @@
 # limitations under the License.
 
 
-# Rules across several settings. As preconditions they stop the plan before
-# anything is created (the server depends on this resource).
 resource "terraform_data" "settings" {
   lifecycle {
     precondition {
@@ -53,8 +51,6 @@ resource "terraform_data" "settings" {
     }
   }
 }
-
-# Warnings: they show in plan and apply but don't stop anything.
 
 check "project_parent" {
   assert {

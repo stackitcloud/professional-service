@@ -12,23 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Releases costguard when a commit changing the version in its pin
-# (apps/costguard/terraform/000-release.tf, edited by hand) is pushed: runs the
-# tests, builds the binaries (reproducibly) and publishes them with their
-# SHA256SUMS as the Forgejo release of tag apps/costguard/<version>, on that
-# commit. Terraform reads the hashes from that SHA256SUMS when it plans.
-# Nothing happens when the pinned version is released already.
 name: "costguard-release"
 
 on:
   push:
-    # feat/add-app-costguard only until PR #75 is merged: remove it then.
     branches: ["main", "feat/add-app-costguard"]
     paths:
       - "apps/costguard/terraform/000-release.tf"
       - ".github/workflows/costguard-release.yaml"
-  # Retries a release that failed for another reason than the pin (Forgejo
-  # unavailable, a flaky test); the button shows once this file is on main.
   workflow_dispatch:
 
 concurrency:
@@ -38,10 +29,6 @@ concurrency:
 jobs:
   release:
     name: "Release"
-    # Releases run on the internal Forgejo only, never on GitHub (the mirror
-    # is stackitcloud/professional-service on https://github.com): both the
-    # host and the repository must match. startsWith: Forgejo 16 evaluates
-    # this on the server, where server_url ends with "/".
     if: >-
       startsWith(github.server_url, 'https://professional-service.git.onstackit.cloud') &&
       github.repository == 'professional-service-best-practices/professional-service'
@@ -53,7 +40,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v7
         with:
-          # The release notes list the commits since the previous release tag.
           fetch-depth: 0
 
       - name: Set up Go
@@ -84,13 +70,10 @@ jobs:
             echo "release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # The rule of 030-locals.tf (terraform test checks it too).
           if ! printf '%s\n' "${version}" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
             echo "000-release.tf: version ${version} is not vMAJOR.MINOR.PATCH (optionally -pre.release), e.g. v0.2.0" >&2
             exit 1
           fi
-          # Where servers and Terraform download the files: the pinned URL
-          # with the version filled in (the tag's slashes stay escaped).
           url="$(value download_url)"
           base="${url//"{version}"/${version}}"
           tag="apps/costguard/${version}"
@@ -151,7 +134,6 @@ jobs:
             cat dist/SHA256SUMS
             echo '```'
             echo
-            # Before the first tag, the history is the scrapped SKE edition's.
             if [ -n "${last}" ]; then
               echo "Changes since ${last}:"
               echo
@@ -173,16 +155,12 @@ jobs:
           set -euo pipefail
           api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
           auth="Authorization: token ${TOKEN}"
-          # A draft left by an earlier failed run holds the tag name (creating
-          # the release again would answer 409): delete it.
           curl -sS --fail-with-body -H "${auth}" "${api}/releases?draft=true&limit=50" |
             python3 -c 'import json, os, sys; [print(r["id"]) for r in json.load(sys.stdin) if r["tag_name"] == os.environ["TAG"] and r["draft"]]' |
             while read -r id; do
               echo "Deleting the draft ${id} left by an earlier run."
               curl -sS --fail-with-body -X DELETE -H "${auth}" "${api}/releases/${id}"
             done
-          # A draft creates no tag, so a failed upload leaves nothing
-          # installable behind.
           body="$(python3 -c 'import json, os; print(json.dumps({"tag_name": os.environ["TAG"], "target_commitish": os.environ["GITHUB_SHA"], "name": "costguard " + os.environ["VERSION"], "body": open(os.environ["RUNNER_TEMP"] + "/notes.md").read(), "draft": True, "prerelease": os.environ["PRERELEASE"] == "true", "hide_archive_links": True}))')"
           id="$(curl -sS --fail-with-body -X POST -H "${auth}" -H "Content-Type: application/json" -d "${body}" "${api}/releases" |
             python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
@@ -190,14 +168,10 @@ jobs:
             curl -sS --fail-with-body -X POST -H "${auth}" -F "attachment=@${f}" \
               "${api}/releases/${id}/assets?name=$(basename "${f}")" > /dev/null
           done
-          # Publishing creates the tag, on the commit that was tested and built.
           curl -sS --fail-with-body -X PATCH -H "${auth}" -H "Content-Type: application/json" \
             -d '{"draft": false}' "${api}/releases/${id}" > /dev/null
           echo "Released ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
 
-      # What Terraform and every server do: download without logging in,
-      # through the URL the pin names (the tag's slashes escaped), and check
-      # that SHA256SUMS and both binaries are byte for byte what was built here.
       - name: Download check
         if: steps.pin.outputs.release == 'true'
         env:

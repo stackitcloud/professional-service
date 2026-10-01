@@ -13,9 +13,6 @@
 # limitations under the License.
 
 
-# Renders the server's user data for the local QEMU boot (test/vm/run.sh)
-# with the same module the real config uses. No providers, no cloud access.
-
 terraform {
   required_version = ">= 1.9"
 }
@@ -56,7 +53,6 @@ module "cloud_init" {
     regions               = ["eu01"]
     output                = "slack"
     warn_empty_after_days = 30
-    prices                = { public_ip_monthly_eur = 2.92, volume_gb_monthly_eur = 0.065 }
     features              = var.features
     time_zone             = "Europe/Berlin"
     log_level             = "debug"

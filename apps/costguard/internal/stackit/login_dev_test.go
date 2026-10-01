@@ -33,8 +33,6 @@ func clearLogins(t *testing.T) {
 	}
 }
 
-// A dev build takes the SDK's own logins and needs no attached service
-// account.
 func TestDevBuildUsesTheSDKLogin(t *testing.T) {
 	clearLogins(t)
 	t.Setenv("STACKIT_SERVICE_ACCOUNT_TOKEN", "dev-token")

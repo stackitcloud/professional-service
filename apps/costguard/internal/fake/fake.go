@@ -45,6 +45,7 @@ type Store struct {
 	SKE          map[string][]string
 	BucketNames  map[string][]string
 	LB           map[string]map[string]string
+	PriceList    *stackit.Prices
 
 	Errs            map[string]error
 	ErrsOnce        map[string]error
@@ -64,6 +65,7 @@ func New() *Store {
 		SKE:         map[string][]string{},
 		BucketNames: map[string][]string{},
 		LB:          map[string]map[string]string{},
+		PriceList:   DefaultPrices(),
 		Errs:        map[string]error{},
 		ErrsOnce:    map[string]error{},
 		pending:     map[string]int{},
@@ -71,7 +73,17 @@ func New() *Store {
 }
 
 func (s *Store) Set() *stackit.Set {
-	return &stackit.Set{ResourceManager: s, IaaS: s, Cost: s, Services: s}
+	return &stackit.Set{ResourceManager: s, IaaS: s, Cost: s, Services: s, PriceList: s}
+}
+
+func DefaultPrices() *stackit.Prices {
+	p := stackit.NewPrices()
+	p.PublicIP[stackit.Offer{Region: "eu01"}] = 2.92
+	p.VolumeGB[stackit.Offer{Region: "eu01"}] = 0.065
+	p.VolumeClass[stackit.Offer{Region: "eu01", Name: "storage_premium_perf1"}] = 7.32
+	p.SnapshotGB[stackit.Offer{Region: "eu01"}] = 0.0169
+	p.Server[stackit.Offer{Region: "eu01", Name: "g2i.4"}] = 147.3
+	return p
 }
 
 func (s *Store) AddFolder(id, name, parent string, labels map[string]string) {
@@ -425,6 +437,16 @@ func (s *Store) LoadBalancerAddresses(_ context.Context, project, region string)
 		out[k] = v
 	}
 	return out, nil
+}
+
+func (s *Store) Prices(_ context.Context, regions []string) (*stackit.Prices, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.record("prices %s", strings.Join(regions, ","))
+	if err := s.err("prices"); err != nil {
+		return nil, err
+	}
+	return s.PriceList, nil
 }
 
 func clone(r *stackit.Resource) stackit.Resource {

@@ -42,7 +42,6 @@ type Composer struct {
 	ReportRunAt        string
 	BudgetsRunAt       string
 	Location           *time.Location
-	Prices             report.Prices
 	WarnEmptyAfterDays int
 	Version            string
 }
@@ -54,7 +53,7 @@ const (
 
 func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	n := rep.ToDelete()
-	saving := savingPhrase(report.Estimate(toDelete(rep), c.Prices))
+	saving := savingPhrase(report.Estimate(toDelete(rep)))
 	readOnly := mode == ModeReport || mode == ModeBoot
 
 	m := Message{Title: c.title("report"), Subtitle: c.subtitle(rep.Scope, rep.Regions, rep.GeneratedAt)}
@@ -96,11 +95,9 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	if readOnly && c.DeleteEnabled {
 		c.addUpcoming(&m, rep)
 	} else {
-		ips := report.Estimate(rep.IdlePublicIPs, c.Prices)
-		vols := report.Estimate(rep.DetachedVolumes, c.Prices)
-		c.add(&m, fmt.Sprintf("Idle public IPs: %d, about %s/month", ips.IdleIPs, eur(ips.TotalEUR())), rep.IdlePublicIPs, 0, rep.WaitingIdlePublicIPs)
-		c.add(&m, fmt.Sprintf("Detached volumes: %d, %d GB, about %s/month", vols.Volumes, vols.VolumesGB, eur(vols.TotalEUR())), rep.DetachedVolumes, 0, rep.WaitingDetachedVolumes)
-		c.add(&m, fmt.Sprintf("Other resources labelled delete=true: %d", len(rep.Requested)), rep.Requested, 0, 0)
+		c.add(&m, fmt.Sprintf("Idle public IPs: %d%s", len(rep.IdlePublicIPs), monthly(rep.IdlePublicIPs)), rep.IdlePublicIPs, 0, rep.WaitingIdlePublicIPs)
+		c.add(&m, fmt.Sprintf("Detached volumes: %d, %d GB%s", len(rep.DetachedVolumes), report.SizeGB(rep.DetachedVolumes), monthly(rep.DetachedVolumes)), rep.DetachedVolumes, 0, rep.WaitingDetachedVolumes)
+		c.add(&m, fmt.Sprintf("Other resources labelled delete=true: %d%s", len(rep.Requested), monthly(rep.Requested)), rep.Requested, 0, 0)
 	}
 	c.add(&m, fmt.Sprintf("Detached volumes with snapshots, not flagged: %d", len(rep.WithSnapshots)), rep.WithSnapshots, report.ListLimit, 0)
 	backInUse := "In use again, delete label removed"
@@ -124,8 +121,8 @@ func (c Composer) Report(rep *report.Report, mode Mode) Message {
 	if mode != ModeBoot {
 		addScanErrors(&m, rep.ScanErrors)
 	}
-	m.Footer = fmt.Sprintf("Skipped: %s, %s · costguard %s",
-		report.Count(rep.SkippedFolders, "folder"), report.Count(rep.SkippedProjects, "project"), c.Version)
+	m.Footer = fmt.Sprintf("Skipped: %s, %s · %s · costguard %s",
+		report.Count(rep.SkippedFolders, "folder"), report.Count(rep.SkippedProjects, "project"), priceNote(rep.PricesProblem), c.Version)
 	return m
 }
 
@@ -206,7 +203,7 @@ func (c Composer) readOnlyIntro(rep *report.Report, mode Mode, n int, saving str
 	}
 	if len(now) > 0 {
 		fmt.Fprintf(&b, " %s labelled delete=true %s deleted %s", report.Count(len(now), "resource"), isAre(len(now)), c.DeleteRunAt)
-		if s := savingPhrase(report.Estimate(now, c.Prices)); s != "" {
+		if s := savingPhrase(report.Estimate(now)); s != "" {
 			b.WriteString(", saving " + s)
 		}
 		b.WriteString(".")
@@ -220,10 +217,7 @@ func (c Composer) readOnlyIntro(rep *report.Report, mode Mode, n int, saving str
 
 func (c Composer) addUpcoming(m *Message, rep *report.Report) {
 	now, fresh := labelled(rep)
-	title := "Labelled delete=true, deleted " + c.DeleteRunAt
-	if s := report.Estimate(now, c.Prices).TotalEUR(); s > 0 {
-		title += fmt.Sprintf(", about %s/month", eur(s))
-	}
+	title := "Labelled delete=true, deleted " + c.DeleteRunAt + monthly(now)
 	c.add(m, fmt.Sprintf("%s: %d", title, len(now)), now, 0, 0)
 	waiting := rep.WaitingIdlePublicIPs + rep.WaitingDetachedVolumes
 	c.add(m, fmt.Sprintf("New candidates, labelled at the next report run: %d", len(fresh)+waiting), fresh, 0, waiting)
@@ -257,7 +251,7 @@ func (c Composer) Summary(sum *report.DeletionSummary) Message {
 	m := Message{
 		Title:    c.title("deletion"),
 		Subtitle: c.subtitle(sum.Scope, nil, sum.GeneratedAt),
-		Footer:   "costguard " + c.Version,
+		Footer:   priceNote(sum.PricesProblem) + " · costguard " + c.Version,
 	}
 	if len(sum.Blocked) > 0 {
 		m.Alerts = append(m.Alerts, "Nothing was deleted: these skip entries match nothing inside the scope (or it could not be read): "+
@@ -300,7 +294,7 @@ func (c Composer) summaryIntro(sum *report.DeletionSummary) string {
 	switch {
 	case len(byRun) > 0:
 		intro := "This run deleted " + report.Count(len(byRun), "resource")
-		if saving := savingPhrase(report.Estimate(byRun, c.Prices)); saving != "" {
+		if saving := savingPhrase(report.Estimate(byRun)); saving != "" {
 			intro += ", saving " + saving
 		}
 		return intro + "."
@@ -330,7 +324,25 @@ func savingPhrase(s report.Savings) string {
 	if total <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("about %s per month (%s per year)", eur(total), eur(total*12))
+	phrase := fmt.Sprintf("about %s per month (%s per year)", eur(total), eur(total*12))
+	if s.Unpriced > 0 {
+		phrase += fmt.Sprintf(", %s without a price", report.Count(s.Unpriced, "resource"))
+	}
+	return phrase
+}
+
+func monthly(items []report.Item) string {
+	if total := report.Estimate(items).TotalEUR(); total > 0 {
+		return ", about " + eur(total) + "/month"
+	}
+	return ""
+}
+
+func priceNote(problem string) string {
+	if problem != "" {
+		return "no prices: " + problem
+	}
+	return "STACKIT list prices, net"
 }
 
 func (c Composer) FlagProblems(notFlagged, notCleared []report.Item) Message {
@@ -412,6 +424,9 @@ func lineText(it report.Item) string {
 	}
 	if it.Detail != "" {
 		parts = append(parts, it.Detail)
+	}
+	if it.Priced && it.MonthlyEUR >= 0.005 {
+		parts = append(parts, eur(it.MonthlyEUR)+"/month")
 	}
 	if it.New {
 		parts = append(parts, "new")

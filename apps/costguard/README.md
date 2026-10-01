@@ -7,130 +7,116 @@ money but are not used by anything, reports them in a chat channel and, once you
 It also watches monthly budgets and posts when one passes a threshold. It runs on a small server that logs in with
 the service account attached to it, so no key is stored on the server.
 
-You do not need to be a cloud expert to use it. This guide walks you through everything, step by step.
-
-- [What costguard does](#what-costguard-does)
-- [The two labels your team needs to know](#the-two-labels-your-team-needs-to-know)
-- [What you need before you start](#what-you-need-before-you-start)
-- [Install, step by step](#install-step-by-step)
-- [Reading the messages](#reading-the-messages)
-- [Turning on automatic deletion](#turning-on-automatic-deletion)
+- [What it does](#what-it-does)
+- [The two labels](#the-two-labels)
+- [Before you start](#before-you-start)
+- [Install](#install)
+- [Turning on deletion](#turning-on-deletion)
 - [Budgets](#budgets)
-- [Stopping, upgrading, removing](#stopping-upgrading-removing)
-- [How costguard keeps you safe](#how-costguard-keeps-you-safe)
+- [Stop, upgrade, remove](#stop-upgrade-remove)
+- [Safety](#safety)
 - [Security](#security)
-- [Settings](#settings)
-- [What it costs](#what-it-costs)
-- [Questions and problems](#questions-and-problems)
-- [Developing](#developing) and [Releasing](#releasing)
+- [Troubleshooting](#troubleshooting)
 
-## What costguard does
+## What it does
 
-Cloud resources are easy to create and easy to forget. A disk that is no longer attached to any server, or a public
-IP address that nobody uses, keeps costing money every month. costguard finds them, tells your team in a chat channel
-and, once you switch deletion on, deletes them.
+| Feature   | Default                      | What it does                                                                                         |
+| --------- | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `report`  | on, Monday 08:00             | Posts what could be cleaned up.                                                                      |
+| `delete`  | off (Tuesday 08:00 when on)  | Deletes what is labelled `delete=true`, except protected resources and disks or IP addresses in use. |
+| `budgets` | off (Monday to Friday 10:00) | Posts every monthly budget whose spending so far is at or above a threshold.                         |
 
-It has three **features**, each with its own switch and schedule:
+Times are in `time_zone` (default `Europe/Berlin`). Every setting, with its default, is in
+[`terraform.tfvars.example`](terraform/terraform.tfvars.example).
 
-| Feature   | Default                      | What it does                                                                                                                                                                        |
-| --------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `report`  | on, Monday 08:00             | Posts what could be cleaned up. **Changes nothing** while `delete` is off. With `delete` on, it also labels the new finds `delete=true`, so everybody gets a day to object.         |
-| `delete`  | off (Tuesday 08:00 when on)  | Deletes what is labelled `delete=true`, unless it is protected or in use again, and posts what it deleted and what that saves. Needs `report`, and runs at least 20 hours after it. |
-| `budgets` | off (Monday to Friday 10:00) | Posts every monthly budget whose spending so far is at or above a threshold, for example 80 % or 100 %.                                                                             |
+The report looks at every folder and project in `scope` (default: the whole organization) except those in `skip`, in
+the regions in `regions` (default: only `eu01`, so list every region you use):
 
-Times are in `Europe/Berlin` unless you set another `time_zone`.
+| Finding                                              | What happens                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| Public IP addresses that nothing uses                | Listed; with `delete` on, labelled `delete=true` and deleted |
+| Disks (volumes) attached to no server                | Listed; with `delete` on, labelled `delete=true` and deleted |
+| Anything labelled `delete=true`                      | Listed; with `delete` on, deleted at the next delete run     |
+| Disks that have snapshots                            | Only listed                                                  |
+| Empty projects and network areas, older than 30 days | Only a warning                                               |
 
-### What it looks for
+Each message says what every entry costs per month and how much the next delete run saves. The prices come from
+STACKIT's public price list ([PIM API](https://pim.api.stackit.cloud/v2/skus)) at every run: list prices, net, without
+contract discounts or OS licences; a deallocated server counts as €0. If the price list can't be read, the message
+shows no amounts and says so. Each list folds out (_Show more_ in Google Chat and Teams) into entries that link to the
+resource in the STACKIT portal.
+costguard ignores images and networks (a `delete=true` on them does nothing) and never labels disks in projects that
+run Kubernetes (SKE) by itself. An empty project has had no costs for 30 days and holds no servers, disks, IP addresses,
+SKE clusters or buckets; `do-not-delete=true` on it silences the warning.
 
-| What                                           | Why it costs money                                         | What costguard does                                         |
-| ---------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------- |
-| **Unused public IP addresses**                 | A reserved IP address is billed even when nothing uses it. | Cleans it up (with `delete` on), up to 10 new ones per run. |
-| **Disks (volumes) not attached to any server** | Storage is billed per GB, used or not.                     | Cleans it up (with `delete` on), up to 10 new ones per run. |
-| **Anything your team labelled `delete=true`**  | –                                                          | Deletes it (with `delete` on).                              |
-| **Disks that have snapshots**                  | Snapshots are often a deliberate backup.                   | Only lists them. Never labels them itself.                  |
-| **Empty projects older than 30 days**          | Clutter, and a sign that something was forgotten.          | Only warns. Never deletes projects.                         |
-| **Empty network areas older than 30 days**     | Clutter.                                                   | Only warns (when it looks at the whole organization).       |
+### The report run, with and without `delete`
 
-An **empty project** has had no costs in the last 30 days and holds no servers, disks, IP addresses, Kubernetes
-clusters or buckets. Projects that deliberately hold only service accounts, DNS zones or network settings show up
-too; label them `do-not-delete=true` to silence the warning (costguard then ignores the project completely).
+- **`delete` off:** the report run only reads and posts. costguard's service account has no right to change anything.
+- **`delete` on:** the report run posts first, then labels the new finds it listed `delete=true`: only unused IP
+  addresses and detached disks, at most 10 of each per run, the biggest first. It never labels servers, snapshots,
+  network interfaces or security groups; those are only deleted when a person labels them. It also removes
+  `delete=true` from disks and IP addresses that are in use again or carry `do-not-delete=true`.
+- **No message, no labels:** if the message cannot be delivered, nothing is labelled. If a label cannot be written
+  after the message went out, costguard posts a correction.
+- The delete run then deletes, at least 20 hours later, everything labelled `delete=true` and posts what it deleted.
 
-Every message says how many resources the next delete run deletes and how much money that saves per month and per
-year. The amount is an estimate for IP addresses and disks, using the prices in [Settings](#settings); other
-resources, such as servers, are counted but not priced.
+## The two labels
 
-## The two labels your team needs to know
+| Label                | Meaning                                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `do-not-delete=true` | **Keep this.** On a folder or project, costguard ignores everything inside. It always wins.                                                                             |
+| `delete=true`        | **Delete this at the next delete run.** costguard sets it on its finds; anyone can set it on a server, disk, IP address, snapshot, network interface or security group. |
 
-A **label** is a small name tag on a resource in STACKIT, written as `name=value`. costguard understands exactly two:
-
-| Label                | Meaning                                                                                                                                                                                                         |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `do-not-delete=true` | **Keep this.** costguard never deletes it. On a folder or project, costguard ignores everything inside. It always wins.                                                                                         |
-| `delete=true`        | **Delete this at the next delete run.** costguard sets it on the things it found. You can also set it yourself on a server, disk, IP address, snapshot, network interface or security group to have it removed. |
-
-That is all your colleagues need to remember: **if costguard lists something you still need, add
-`do-not-delete=true` to it** (or remove `delete=true`). Labels can be set in the STACKIT portal, in Terraform, or with
-the [STACKIT CLI](https://github.com/stackitcloud/stackit-cli):
+If costguard lists something you still need, add `do-not-delete=true` to it before the next delete run, with the
+[STACKIT CLI](https://github.com/stackitcloud/stackit-cli):
 
 ```bash
 stackit volume update <volume ID> --project-id <project ID> --labels do-not-delete=true
 stackit public-ip update <IP ID> --project-id <project ID> --labels do-not-delete=true
 stackit project update --project-id <project ID> --label do-not-delete=true
+stackit curl -X PATCH https://resource-manager.api.stackit.cloud/v2/folders/<folder ID> \
+  --data '{"labels": {"do-not-delete": "true"}}' --fail
 ```
 
-The same `--labels` flag exists for `server`, `security-group` and `network-interface` (which also needs
-`--network-id`).
+`server`, `security-group` and `network-interface` (with `--network-id`) take `--labels` too. A project or folder
+can only be labelled by someone who may edit it. If it is managed with Terraform, set the label in its `labels`
+there, or the next apply removes it.
 
-## What you need before you start
+## Before you start
 
-- [ ] **A STACKIT organization and its ID** (a UUID such as `a1b2c3d4-…`). After `stackit auth login`,
-      `stackit organization list` shows it.
-- [ ] **A deployer service account** that is **owner of the organization**, and a key file for it. Terraform uses
-      it to create costguard's project, its service account and two custom roles on the organization. See
-      [The deployer](#the-deployer) below.
-- [ ] **Terraform 1.9 or newer**, or OpenTofu, and **git**.
-- [ ] **A chat channel** in Microsoft Teams, Slack or Google Chat, and the right to add a webhook to it:
+- **Your organization ID:** after `stackit auth login`, `stackit organization list` shows it.
+- **A deployer service account that is owner of the organization,** with a short-lived key. Terraform uses it to
+  create costguard's project, its service account and two custom roles on the organization. Service accounts live in
+  a project, so give it a small admin project that nobody else is a member of (landing zone customers often have
+  one):
 
-  - **Teams:** in the channel, open _Workflows_ and use the template _"Post to a channel when a webhook request is
-    received"_; copy the URL it shows at the end.
-  - **Slack:** create an _incoming webhook_ for the channel ([Slack guide](https://api.slack.com/messaging/webhooks)).
-  - **Google Chat:** in the space, open _Apps & integrations_, then _Webhooks_, and add one.
+  ```bash
+  ORG=<organization ID>
+  stackit project create --parent-id "$ORG" --name iac-admin    # note the project ID
+  stackit service-account create --name deployer --project-id <iac-admin project ID>
+  stackit organization member add <deployer email> --organization-id "$ORG" --role owner
+  stackit service-account key create --email <deployer email> --project-id <iac-admin project ID> \
+    --expires-in-days 1 -o json -y > ~/.stackit/deployer-key.json
+  chmod 600 ~/.stackit/deployer-key.json
+  ```
 
-  Treat the webhook URL like a password: anyone who has it can post into your channel.
+  A smaller role would not help: whoever may create and assign custom roles on the organization can give itself any
+  right. Create a new key for each change instead and let it expire.
 
-- [ ] **About half an hour** for the first install.
+- **Terraform 1.9 or newer** (or OpenTofu) and **git**.
+- **A chat webhook.** Treat it like a password: anyone who has it can post into the channel.
+  - Teams: in the channel, _Workflows_, template _"Post to a channel when a webhook request is received"_.
+  - Slack: an [incoming webhook](https://api.slack.com/messaging/webhooks).
+  - Google Chat: in the space, _Apps & integrations_, then _Webhooks_.
 
-costguard runs **once per organization**: its role names (`costguard.reader`, `costguard.cleaner`) are fixed.
+costguard runs once per organization: its role names (`costguard.reader`, `costguard.cleaner`) are fixed. It costs
+about €15.50 per month (net): the server `t2i.1` €10.18, its 10 GB disk €2.42 and the new network's router IP €2.92
+(none with an existing `network_id`).
 
-### The deployer
+## Install
 
-Service accounts live inside a project, so the deployer needs a small admin project of its own. Nobody else should be
-a member of it. With your personal login (`stackit auth login`), once:
-
-```bash
-ORG=<organization ID>
-stackit project create --parent-id "$ORG" --name iac-admin          # note the project ID it prints
-stackit service-account create --name deployer --project-id <iac-admin project ID>
-stackit organization member add <deployer email> --organization-id "$ORG" --role owner
-```
-
-Then create a short-lived key for each install or change, and delete it afterwards:
-
-```bash
-stackit service-account key create --email <deployer email> --project-id <iac-admin project ID> \
-  --expires-in-days 1 -o json -y > ~/.stackit/deployer-key.json
-chmod 600 ~/.stackit/deployer-key.json
-```
-
-Why owner: whoever may create custom roles and role assignments on the organization can give itself any right
-anyway, so a smaller role would not make the deployer less powerful. Keep its key short-lived instead. Landing zone
-customers often have such an admin project already.
-
-## Install, step by step
-
-1. **Get the code of a release.** Releases are the `apps/costguard/v…` entries on the
-   [releases page](https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases);
-   always install from such a tag, never from `main`:
+1. Clone a release, never `main`. Releases are the `apps/costguard/v…` tags on the
+   [releases page](https://professional-service.git.onstackit.cloud/professional-service-best-practices/professional-service/releases).
 
    ```bash
    git clone --depth 1 --branch apps/costguard/<version> \
@@ -138,83 +124,47 @@ customers often have such an admin project already.
    cd professional-service/apps/costguard/terraform
    ```
 
-2. **Fill in your settings.** Copy the example and edit it:
+2. Fill in the required settings at the top. Leave `delete` off for now.
 
    ```bash
    cp terraform.tfvars.example terraform.tfvars
-   chmod 600 terraform.tfvars
+   chmod 600 terraform.tfvars    # it holds the webhook URL: never commit it
    ```
 
-   You need at least `service_account_key_path` (the deployer's key file), `project_owner_email` (the deployer's
-   email), `organization_id`, `output` (`teams`, `slack` or `googlechat`) and `webhook_url`. Nothing needs to be
-   exported. **Never commit `terraform.tfvars`**: it holds the webhook URL (git ignores it in this repository).
-
-   For the first install, leave `delete` off. Start with `report` only, and `budgets` if you want them.
-
-3. **Install:**
+3. Apply:
 
    ```bash
    terraform init
-   terraform plan -out=tfplan
+   terraform plan -out=tfplan    # about 11 to add, and a warning about the "iam" experiment
    terraform apply tfplan
-   rm tfplan    # a saved plan holds the webhook URL in plain text
+   rm tfplan                     # a saved plan holds the webhook URL
    ```
 
-   The plan shows about 11 resources to add and one warning: the role assignments use the provider's `iam`
-   experiment (see [Security](#security)). The apply takes about 5 minutes.
+4. A few minutes later the chat shows _"costguard: vX.Y.Z is running (<your organization>)"_. It proves that login,
+   roles and chat work, shows the first report, where each budget stands and when the next runs are, and changes
+   nothing. The server posts it again whenever it is replaced, which every settings change does.
 
-4. **Wait for the first message** (a few minutes after the apply). It is titled _"costguard: vX.Y.Z is running (<your organization>)"_ and
-   proves that the login, the roles and the chat work. It contains the first report, where every budget stands, and
-   when the next runs are. Nothing is changed by it.
+Let the report run for a few weeks and add `do-not-delete=true` to everything that must stay. **No message on a
+report day means something is wrong** (see [Troubleshooting](#troubleshooting)); with only `budgets` on, silence is
+normal.
 
-Every time the server is created or replaced (every settings change replaces it), it posts this message again.
+## Turning on deletion
 
-## Reading the messages
-
-- The **title** says what the message is (_report_, _deletion_, _budget_, …) and names your organization, for example
-  _"costguard: report (Acme GmbH)"_; the line below it says what was looked at (the scope), the regions and the time.
-- Each **list** shows one line such as _"Idle public IPs: 3, about €8,76/month"_. In Google Chat and Teams, _Show
-  more_ unfolds the entries; each entry names the resource, its project and region, and links to its page in the STACKIT
-  portal. Slack shows the entries right away.
-- **Everything that the next delete run deletes is always listed**, including everything someone labelled
-  `delete=true`.
-- **New finds are limited to 10 per category per run**, the biggest savings first, and costguard only labels the
-  ones it lists. If it found more, the list says how many are waiting; they come up in the following runs.
-- **"Could not be read"** lists what costguard was not allowed to read or what did not answer. It leaves those parts
-  alone.
-- The footer says how many folders and projects were skipped, and the costguard version.
-
-Let the report run for a few weeks. Each time, look at the list and **add `do-not-delete=true` to everything that
-must stay**. When the list only contains things you really want gone, you are ready for deletion.
-
-**No message on a report day means something is wrong**: check the server (see
-[Questions and problems](#questions-and-problems)). With only `budgets` on there is no weekly message, so silence
-is normal there.
-
-## Turning on automatic deletion
-
-Before you switch:
-
-- [ ] You have read a few reports, and everything that must stay has `do-not-delete=true` or is in `skip`.
-- [ ] Your colleagues know the two labels, and they know that the report is their chance to object.
-- [ ] Nobody else in your company uses a label called `delete` for something else.
-
-Then, **at least a day before the next delete run**, add to `terraform.tfvars`:
+When the report only lists things you really want gone, and your colleagues know the two labels, add this to
+`terraform.tfvars` **at least a day before the next delete run** and apply:
 
 ```hcl
 features = {
-  delete = { enabled = true }   # Tuesday 08:00; the report stays on Monday 08:00
+  delete = { enabled = true }    # Tuesday 08:00; the report stays on Monday 08:00
 }
 ```
 
-and run `terraform apply`. This creates the `costguard.cleaner` role (the right to change labels and delete) and
-replaces the server. Its first message lists everything **already** labelled `delete=true`: those go at the next
-delete run, so read it right away. New finds are labelled at the next report run and deleted at the delete run after
-that.
+The apply creates the `costguard.cleaner` role (change labels, delete) and replaces the server. Its first message
+lists everything **already** labelled `delete=true`: that goes at the next delete run, so read it right away.
 
-**Other schedules.** Each feature takes `days` (`Mon` … `Sun`) and a `time` (`HH:MM`). Every delete run must come
-at least 20 hours after the report run before it; Terraform refuses anything else. To clear a big backlog faster (10
-new finds per category per run), run both every working day, the delete run first:
+Each feature takes `days` (`Mon` … `Sun`) and a `time` (`HH:MM`). Every delete run must come at least 20 hours after
+the report run before it; Terraform refuses anything else, including both at the same time. To work off a backlog
+faster, run both every working day, the delete run first:
 
 ```hcl
 features = {
@@ -223,146 +173,93 @@ features = {
 }
 ```
 
-Every morning the delete run then deletes what the report run labelled the working day before, 23½ hours earlier.
-Avoid 03:30 to 04:30: the server installs security updates and reboots at 04:00 when needed.
+Each delete run then deletes what the report run labelled the working day before. Avoid 03:30 to 04:30: the server
+installs security updates and reboots at 04:00 when needed.
 
 ## Budgets
 
-```hcl
-features = {
-  budgets = {
-    enabled    = true
-    days       = ["Mon", "Tue", "Wed", "Thu", "Fri"]   # the default
-    time       = "10:00"
-    thresholds = [80, 100]                              # percent of the limit; the default
-    limits = [
-      { name = "Whole organization", organization = true, monthly_eur = 20000 },
-      { name = "Team A", folder = "team-a", monthly_eur = 2500 },
-      { name = "Sandbox X", project = "<project ID>", monthly_eur = 50, thresholds = [50, 100] },
-    ]
-  }
-}
-```
+Switch on `features.budgets` and add limits, as in the example. Each limit has one target: the whole organization, a
+folder (every project below it) or a project, by ID or exact name.
 
-- Each limit has exactly one target: the whole organization, a folder (every project below it) or a project, by ID
-  or exact name.
-- Each budgets run posts **every budget whose spending this month is at or above one of its thresholds**: the
-  amount so far against the limit (_"Team A: €2.034,12 of €2.500,00 in September (81%)"_), a forecast for the month
-  (from the 7th on), and for organization and folder budgets the five projects that spent the most, numbered. It posts again at every run until the month ends; with nothing at
-  or above a threshold, it posts nothing.
-- The amounts are the ones the STACKIT cost dashboard shows. Months are calendar months in UTC. STACKIT has a day's
-  costs after 07:30 UTC the next day, so an earlier run sees them a day later.
-- **The 1st of a month posts nothing**: none of that month's costs are in yet. A threshold that is first reached on
-  the last day of a month is therefore never posted.
-- Budgets ignore `scope` and `skip`: those protect resources from deletion and must not hide spending.
-- A folder budget counts the projects that are in the folder now; projects moved away or deleted during the month
-  no longer count for it.
+- Each budgets run posts every budget whose spending this month is at or above one of its thresholds, with a forecast
+  (from the 7th) and, for organization and folder budgets, the five projects that spent the most. It posts again at
+  every run until the month ends; with nothing at or above a threshold, it posts nothing.
+- The amounts are the ones the STACKIT cost dashboard shows, per calendar month in UTC. A day's costs come in after
+  07:30 UTC the next day.
+- **The 1st of a month posts nothing** (none of the month's costs are in yet), so a threshold first reached on the
+  last day of a month is never posted.
+- Budgets ignore `scope` and `skip`. A folder budget counts the projects that are in the folder now.
 
-## Stopping, upgrading, removing
+## Stop, upgrade, remove
 
-**Stop it immediately** (for example if a message looks wrong): stop the server.
+- **Stop now:** stop the server. Nothing runs until you start it again or an apply replaces it; after a start it
+  continues its schedule without a new first message.
 
-```bash
-stackit server stop $(terraform output -raw server_id) --project-id $(terraform output -raw project_id)
-```
+  ```bash
+  stackit server stop $(terraform output -raw server_id) --project-id $(terraform output -raw project_id)
+  ```
 
-Nothing runs while it is stopped. It stays stopped until you start it again (`stackit server start …`) or an apply
-replaces it (every settings change does); after a start it continues with its schedule without a new first message.
+- **Stop deleting:** set `delete = { enabled = false }` and apply. The delete role and the delete run are removed;
+  the labels stay.
+- **Upgrade:** keep `terraform.tfvars` and the state (`terraform.tfstate`) in place, then
 
-**Stop deleting for good:** set `delete = { enabled = false }` and apply. This removes the delete role and the delete
-run. The `delete=true` labels stay on the resources.
+  ```bash
+  git fetch --depth 1 origin tag apps/costguard/<new version>
+  git checkout apps/costguard/<new version>
+  terraform init
+  terraform apply
+  ```
 
-**Upgrade** to a newer release:
+- **Remove:** `terraform destroy`. The labels costguard set stay on the resources.
 
-```bash
-git fetch --depth 1 origin tag apps/costguard/<new version>
-git checkout apps/costguard/<new version>
-terraform init
-terraform apply
-```
+## Safety
 
-Keep your `terraform.tfvars` and the state (`terraform.tfstate`) in place. The server is replaced and posts its
-first message with the new version.
-
-**Remove costguard completely:** `terraform destroy`. The labels it set stay on the resources.
-
-## How costguard keeps you safe
-
-- **Without `delete`, nothing is changed.** Its service account then has no right to change anything.
-- **Everybody gets a day's notice.** Things costguard finds itself are announced by the report run and deleted by a
-  delete run at least 20 hours later.
-- **`do-not-delete=true` always wins,** also on whole folders and projects.
-- **A forgotten `delete=true` on a protected resource is cleaned up.** If a disk or IP address carries both labels,
-  the report run removes the old `delete=true`, so lifting the protection later cannot delete it by surprise. Other
-  resources with both labels are listed, and the message asks you to remove the `delete` label by hand.
-- **Nothing is deleted that was not in a message.** Everything labelled `delete=true` is always listed, and costguard
-  only labels the new finds it lists. The one exception: a `delete=true` someone adds after the report run (see
-  below).
-- **Everything is checked again right before it is deleted.** If someone added `do-not-delete=true`, removed
-  `delete=true` or started using the resource again in the meantime, it stays.
-- **Disks and IP addresses in use are never deleted,** even when labelled. If one is used again, costguard removes its
-  label.
-- **It only deletes the labelled item itself.** Deleting a server does not delete its unlabelled disks; they become
-  finds of the next report run.
-- **It never deletes projects, folders or network areas**, and never an IP address that a load balancer uses.
-- **It never labels disks that have snapshots, or disks in projects that run Kubernetes (SKE)** by itself. They are
-  only deleted if someone labels them `delete=true` on purpose.
-- **When in doubt, it does nothing.** If costguard cannot read something, it leaves it alone and says so.
-- **No message, no labels.** If the report cannot be delivered, nothing new is labelled.
-- **Corrections go to the chat too.** If a label cannot be written after the report went out, costguard posts a
-  correction that lists what will _not_ be deleted.
-- **A broken skip list stops everything.** If an entry in `skip` matches nothing (for example because a project was
-  renamed), costguard labels and deletes nothing until you fix it, and says so.
+- **Nothing is deleted that was not in a message,** except a `delete=true` someone adds after the report run: that is
+  deleted at the next delete run without being listed first.
+- **Everything is checked again right before it is deleted.** If it got `do-not-delete=true` or lost `delete=true` in
+  the meantime, it stays. Disks and IP addresses in use are never deleted, even when labelled.
+- **Only the labelled item is deleted.** Deleting a server does not delete its unlabelled disks.
+- **Never deleted:** projects, folders, network areas and IP addresses used by a load balancer.
+- **When in doubt, it does nothing.** What costguard cannot read, it leaves alone and lists under _Could not be read_.
+- **A broken skip list stops everything.** A `skip` entry that matches nothing (for example a renamed project) stops
+  all labelling and deleting until you fix it.
 - **costguard protects itself:** its project and resources carry `do-not-delete=true`.
 
-### Please be aware
+Please be aware:
 
-- **`delete=true` means "delete", no matter who set it or when.** If someone adds it after the report run, the item
-  is deleted at the next delete run without having been listed.
-- **Anyone who can change labels on a resource can have costguard delete it.** Keep permissions tidy.
-- **Images are not handled.** costguard neither lists nor deletes images; a `delete=true` on an image does nothing.
-- **There is no limit on how much one delete run deletes.** Read the report, especially the first one with delete
-  on.
-- **IP addresses held by other STACKIT services.** An IP address that is attached to no network interface and used
-  by no load balancer counts as unused. Whether the addresses of VPN gateways and other managed services look like
-  that is not verified yet. Until it is, protect such addresses with `do-not-delete=true` or keep those projects in
-  `skip`.
-- **Before you lift a skip** (remove a folder or project from `skip`, or its `do-not-delete`), check it for old
-  `delete=true` labels. costguard does not look inside skipped folders and projects; after the skip is lifted, such
-  resources are listed at the next report run and deleted at the delete run after it.
-- **If a great many resources are labelled at once** (someone labels 300 servers), the message can get too big for
-  the chat and not arrive. They are still deleted. Label large amounts in batches.
+- `delete=true` means "delete", whoever set it. Anyone who can change labels on a resource can have costguard delete
+  it, and nobody in your company should use a label called `delete` for something else.
+- There is no limit on how much one delete run deletes. Read the first message with `delete` on carefully.
+- Whether the IP addresses of VPN gateways and other STACKIT services count as unused is not verified yet. Protect
+  them with `do-not-delete=true`, or keep those projects in `skip`.
+- Before you lift a skip, look for old `delete=true` labels inside: they are listed at the next report run and
+  deleted at the delete run after it.
+- A message with hundreds of entries can be too big for the chat and not arrive. Label large amounts in batches.
 
 ## Security
 
-- **No key anywhere on the server.** The server gets short-lived tokens (one hour) for the service account attached
-  to it from STACKIT's metadata service. The deployer's key only lives on your machine.
-- **Nobody can log in to the server:** no SSH, no password, no inbound firewall rule, no public IP, and no STACKIT
-  Server Agent (it would run commands sent through the API as root).
-- **A project of its own.** Terraform creates the project `costguard` directly under the organization, with the
-  deployer as its only owner. Whoever is owner, editor or service account user on that project, or on a folder above
-  it, can act as costguard's service account, so keep it that way (Terraform warns if you choose a folder as parent).
-- **Rights on the whole organization.** costguard's service account has the custom role `costguard.reader` (read
-  resources and costs, 24 permissions) and, only while `delete` is on, `costguard.cleaner` (change labels, delete
-  six resource types, 8 permissions), both on the organization. `scope` and `skip` limit what costguard _does_,
-  not what its service account _may_ do. The permissions are listed in
-  [`terraform/060-identity.tf`](terraform/060-identity.tf).
-- **The webhook URL is stored in the Terraform state and in the server's user data.** The user data can be read by
-  anyone who may read server details in costguard's project. If it leaks, someone can post into your channel: create
-  a new webhook and apply.
-- **Terraform experiments:** the role assignments need the provider's `iam` experiment ("unstable features without
-  official support") and the image lookup a beta data source. Check the plan before you upgrade the provider
-  (`.terraform.lock.hcl` pins the tested version).
-- **The binary:** Terraform reads its SHA-256 hashes from the release's `SHA256SUMS` when it plans, and the server
-  installs only a binary with that hash. The `binary` output shows them. The build is reproducible, so you can
-  compare them with your own build ([Releasing](#releasing)), or pin hashes you checked yourself with
-  `binary_override`.
-- **Audit log:** every deletion by costguard is in the audit log of the project it happened in (portal: _Information
-  → Audit log_, kept for 90 days). The audit log is kept per project; to collect all of them in one place, route them
-  with the Telemetry Router
-  ([example](../../examples/telemetry-router-hub-spoke-setup)).
-- **Terraform state:** local by default. Whoever has the state file controls the install, and every later change
-  needs it. For production, keep it in STACKIT Object Storage:
+- **No key on the server.** It gets one-hour tokens for its attached service account from STACKIT's metadata
+  service and sends them only to STACKIT's APIs, never to the public price list. Nobody can log in: no SSH, no
+  password, no public IP, no inbound rule and no STACKIT Server Agent.
+- **A project of its own,** directly under the organization, with the deployer as its only owner. Whoever is owner,
+  editor or service account user on it, or on a folder above it, can act as costguard; Terraform warns if you choose
+  a folder as parent.
+- **Rights on the whole organization:** the custom role `costguard.reader` (read resources and costs) and, only while
+  `delete` is on, `costguard.cleaner` (change labels, delete). `scope` and `skip` limit what costguard does, not what
+  it may do. The permissions are in [`terraform/060-identity.tf`](terraform/060-identity.tf).
+- **The webhook URL** is in the Terraform state and in the server's user data, which anyone who may read server
+  details in costguard's project can read. If it leaks, create a new webhook and apply.
+- **The binary** is installed only if it matches the SHA-256 hashes Terraform reads from the release's `SHA256SUMS`
+  when it plans (the `binary` output shows them). The build is reproducible: `make dist VERSION=<version>` at the tag
+  builds the same files. To host them yourself, put them on any HTTPS address and set `download_url`;
+  `binary_override` pins hashes you checked yourself.
+- **Provider features:** the role assignments need the provider's experimental `iam` feature and the image lookup a
+  beta data source. `.terraform.lock.hcl` pins the tested provider version; check the plan before you upgrade it.
+- **Audit log:** each deletion is in the audit log of its project (portal: _Information → Audit log_, 90 days). To
+  collect them in one place, use the [Telemetry Router](../../examples/telemetry-router-hub-spoke-setup).
+- **Terraform state** is local by default, and whoever has it controls the install. For production, keep it in
+  STACKIT Object Storage (no locking; for locking use the
+  [PostgreSQL backend](../../examples/terraform-pg-backend-state-locking)):
 
   ```hcl
   terraform {
@@ -379,115 +276,29 @@ first message with the new version.
   }
   ```
 
-  Object Storage offers no state locking; if several people apply, use the
-  [PostgreSQL backend](../../examples/terraform-pg-backend-state-locking) instead.
+## Troubleshooting
 
-## Settings
-
-Everything goes into `terraform.tfvars`; [`terraform.tfvars.example`](terraform/terraform.tfvars.example) shows each
-setting. Misspelled keys in `features`, `scope` and `skip` are refused, not ignored.
-
-| Setting                                       | Default                                 | What it does                                                                                                                                                                |
-| --------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `service_account_key_path`                    | `STACKIT_SERVICE_ACCOUNT_KEY_PATH`      | The deployer's key file.                                                                                                                                                    |
-| `project_owner_email`                         | – (required for a new project)          | The deployer's email; becomes owner of costguard's project.                                                                                                                 |
-| `organization_id`                             | – (required)                            | Your organization.                                                                                                                                                          |
-| `output`, `webhook_url`                       | – (required)                            | The chat (`teams`, `slack` or `googlechat`) and its webhook. Terraform warns if the URL does not look like that chat's.                                                     |
-| `features`                                    | report on Monday 08:00                  | See [What costguard does](#what-costguard-does), [Turning on automatic deletion](#turning-on-automatic-deletion) and [Budgets](#budgets).                                   |
-| `time_zone`                                   | `Europe/Berlin`                         | Time zone of the schedules, the messages and the server.                                                                                                                    |
-| `scope`                                       | the whole organization                  | `{ folders = [...], projects = [...] }`: only look at these, by ID or exact name. Each entry must match exactly one folder or project.                                      |
-| `skip`                                        | none                                    | `{ folders = [...], projects = [...] }`: never look at these. A name used several times skips all of them; an entry that matches nothing blocks all labelling and deleting. |
-| `regions`                                     | `["eu01"]`                              | **List every region your company uses**; others are not looked at.                                                                                                          |
-| `warn_empty_after_days`                       | `30`                                    | Age of an empty project or network area before costguard warns; `0` switches these warnings off.                                                                            |
-| `prices`                                      | 2.92 € per IP, 0.065 € per GB and month | `{ public_ip_monthly_eur, volume_gb_monthly_eur }` for the savings estimate (net, STACKIT price list).                                                                      |
-| `project_id`, `network_id`                    | a new project and network               | Use an existing project (for example a landing zone tooling project) or network (for example one in a STACKIT Network Area).                                                |
-| `parent_container_id`                         | the organization                        | Where the new project is created. A folder works, but its admins could then act as costguard.                                                                               |
-| `region`, `availability_zone`, `machine_type` | `eu01`, `eu01-1`, `t2i.1`               | Where the server runs and its size.                                                                                                                                         |
-| `log_level`                                   | `info`                                  | costguard's log on the server.                                                                                                                                              |
-| `binary_override`, `download_url`             | the release this code pins              | Only for test builds or binaries you host yourself; see [Releasing](#releasing).                                                                                            |
-
-## What it costs
-
-About **€15.50 per month** (STACKIT price list, net): the server `t2i.1` €10.18, its 10 GB disk €2.42, and the
-public IP of the new network's router €2.92 (none with an existing `network_id`).
-
-## Questions and problems
-
-**No message after the install.** Wait five minutes: the first run waits for the login. Then look at the server's
-console, which shows the setup and the download of costguard (never the webhook URL or a token):
+**No message after the install.** Wait five minutes: the first run waits for the login. Then read the server's
+console, which shows the setup and the download (never the webhook URL or a token):
 
 ```bash
 stackit server log $(terraform output -raw server_id) --project-id $(terraform output -raw project_id)
 ```
 
-If costguard could not be downloaded, the server tries four times over about 15 minutes and then posts _"costguard
-vX.Y.Z could not be installed …"_ with the reason. If nothing arrives at all, the chat settings are wrong (`output`
-or `webhook_url`; the plan warns when they don't match).
+A failed download is retried for about 15 minutes, then posted with the reason. If nothing arrives at all, `output`
+or `webhook_url` is wrong (the plan warns when they don't match).
 
-**No message on a report day.** Check that the server runs (`stackit server describe …`). Runs that were missed
-because the server was down are not caught up; the next scheduled run works normally.
+**No message on a report day.** Check that the server runs. Missed runs are not caught up.
 
-**"costguard cannot log in to STACKIT".** The service account is not attached to the server. Run `terraform apply`
-again.
+**"costguard cannot log in to STACKIT" or "cannot read the organization".** Run `terraform apply` again; it restores
+the attached service account and the roles.
 
-**"costguard cannot read the organization".** The `costguard.reader` role is missing on the organization. Run
-`terraform apply` again.
-
-**Something "could not be read".** costguard may not read part of your organization, or a service did not answer.
-It leaves that part alone until it can read it.
-
-**"deletions blocked".** An entry in `skip` matches nothing inside the scope, usually because a folder or project was
-renamed or deleted. Fix it in `terraform.tfvars` and apply.
+**"deletions blocked".** A `skip` entry matches nothing, usually because a folder or project was renamed or deleted.
+Fix it and apply.
 
 **A scope entry matches nothing or several things.** Use the exact name, or better the ID.
 
-**Something was listed that we still need.** Add `do-not-delete=true` to it before the next delete run, or remove its
-`delete=true`.
-
-**Something was deleted that we still needed.** costguard cannot restore it. The delete run's message and the
-project's audit log say what was deleted and when; protect similar resources with `do-not-delete=true`.
+**Something was deleted that was still needed.** costguard cannot restore it. The delete run's message and the
+project's audit log say what was deleted and when.
 
 **A run stopped at 04:00.** The server rebooted after security updates; move the run out of 03:30 to 04:30.
-
-**Does costguard delete projects or folders?** No. It only warns about empty projects and network areas.
-
-## Developing
-
-- `make test`: unit tests with the race detector and an 80 % coverage gate per package.
-- `make lint`: `go vet` for the release build and the dev build.
-- `make dist VERSION=v0.1.0`: the release files in `dist/`, one static binary each for linux/amd64 and linux/arm64
-  plus `SHA256SUMS`. The build is reproducible: it uses the official Go toolchain of `go.mod`'s version (Go
-  downloads it if yours differs; distro builds of the same version build other bytes), so every machine builds the
-  same bytes.
-- `make tf-test`: `terraform fmt`, `validate` and `terraform test` (the STACKIT and http providers are mocked, no
-  cloud access or download) plus the install script's unit tests.
-- `make vmtest`: boots the real cloud-init in a local QEMU VM (Debian 13 cloud image, 1 vCPU / 1 GB) with the
-  `make dist` binary and fakes for the metadata service, the download server and the webhook; checks the install,
-  the boot run, the systemd sandbox, the timers and the hardening. Needs KVM, QEMU, OVMF, socat and openssl; see
-  [`test/vm/run.sh`](test/vm/run.sh). Run it after every change to the cloud-init module.
-- Release binaries log in only with the service account attached to the server. To run costguard on your own
-  machine with a service account key, use the dev build tag:
-
-  ```bash
-  export STACKIT_SERVICE_ACCOUNT_KEY_PATH=~/path/to/key.json
-  export COSTGUARD_WEBHOOK_URL='https://...'
-  go run -tags dev ./cmd/costguard --config config.yaml report
-  ```
-
-## Releasing
-
-1. Set the new `version` in [`terraform/000-release.tf`](terraform/000-release.tf) (`vMAJOR.MINOR.PATCH`, optionally
-   `-pre.release`), commit it and open a pull request.
-2. The push to `main` runs [`costguard-release`](../../.github/workflows/costguard-release.yaml): tests, the release
-   build (`make dist`), then the Forgejo release of tag `apps/costguard/vX.Y.Z` on that commit with both binaries and
-   `SHA256SUMS`, and an anonymous download check of all three through the pinned URL. Nothing happens for a version
-   that is released already; a release that failed needs a new version.
-3. `terraform plan` reads the hashes from that `SHA256SUMS` (so it needs the release to exist and Forgejo to be
-   reachable) and shows them in the `binary` output; the server installs only a binary with that hash. The build is
-   reproducible: `make dist VERSION=vX.Y.Z` at the tag builds the same files, if you want to compare.
-
-`main` keeps the latest release's version until the next one, so a checkout of `main` installs the last release's
-binary with possibly newer Terraform code: install from a tag. Test builds set `binary_override` (with their own
-hashes; nothing is read at plan time) and `download_url` (see
-[`terraform.tfvars.example`](terraform/terraform.tfvars.example)); to host a release yourself, put the files of
-`make dist` on any HTTPS address and set `download_url` to it.

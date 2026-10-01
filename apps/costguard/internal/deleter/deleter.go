@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package deleter performs the writes of the flag and delete runs. Every
-// resource is re-read right before it is deleted, and nothing is deleted
-// when the re-read disagrees with the scan. Deletions are sequential; one
-// failure never stops the run.
 package deleter
 
 import (
@@ -29,7 +25,6 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// Production defaults.
 const (
 	DefaultBetweenDeletions = time.Second
 	DefaultRetryBackoff     = 2 * time.Second
@@ -38,7 +33,6 @@ const (
 	DefaultPollInterval     = 10 * time.Second
 )
 
-// Deleter writes labels and deletes resources.
 type Deleter struct {
 	IaaS   stackit.IaaS
 	Logger *slog.Logger
@@ -46,13 +40,10 @@ type Deleter struct {
 	BetweenDeletions time.Duration
 	RetryBackoff     time.Duration
 	MaxAttempts      int
-	// ServerWait bounds how long the run waits for deleted servers to be
-	// gone, so their volumes and IPs can go in the same run.
-	ServerWait   time.Duration
-	PollInterval time.Duration
+	ServerWait       time.Duration
+	PollInterval     time.Duration
 }
 
-// New builds a Deleter with production defaults.
 func New(iaas stackit.IaaS, logger *slog.Logger) *Deleter {
 	return &Deleter{
 		IaaS:             iaas,
@@ -65,27 +56,16 @@ func New(iaas stackit.IaaS, logger *slog.Logger) *Deleter {
 	}
 }
 
-// FlagResult is what the label writes of a flag run did. Every write
-// happens after the message went out, so failures need a follow-up.
 type FlagResult struct {
 	Flagged, Unflagged, Cleared int
-	// NotFlagged were announced for deletion but could not be marked, so
-	// they are not deleted in the next delete run. Detail holds the reason.
-	NotFlagged []report.Item
-	// NotCleared still carry a delete label the message said was removed.
-	// They are not deleted either way (in use or protected).
-	NotCleared []report.Item
+	NotFlagged                  []report.Item
+	NotCleared                  []report.Item
 }
 
-// Failed reports whether any label write failed.
 func (f FlagResult) Failed() bool {
 	return len(f.NotFlagged)+len(f.NotCleared) > 0
 }
 
-// Flag sets delete=true on the new cleanup candidates and removes it from
-// volumes and public IPs that are in use again or protected by
-// do-not-delete. The caller has already delivered the message and checked
-// that the run is not blocked.
 func (d *Deleter) Flag(ctx context.Context, res *scanner.Result) FlagResult {
 	var out FlagResult
 	item := itemFor(res)
@@ -123,7 +103,6 @@ func (d *Deleter) Flag(ctx context.Context, res *scanner.Result) FlagResult {
 	return out
 }
 
-// writeError is the reason shown for a failed label write.
 func writeError(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return "the run was stopped before this label was written"
@@ -131,8 +110,6 @@ func writeError(err error) string {
 	return stackit.Describe(err)
 }
 
-// itemFor returns a function that finds the message entry of a resource,
-// so failures are shown with the same name and project as in the message.
 func itemFor(res *scanner.Result) func(stackit.Resource) report.Item {
 	items := itemIndex(res.Report)
 	return func(r stackit.Resource) report.Item {
@@ -145,12 +122,10 @@ func itemFor(res *scanner.Result) func(stackit.Resource) report.Item {
 	}
 }
 
-// Delete removes the delete label from volumes and IPs that are in use
-// again, then deletes what the scan found, in its order. A blocked run
-// does nothing.
 func (d *Deleter) Delete(ctx context.Context, res *scanner.Result, now time.Time) *report.DeletionSummary {
 	rep := res.Report
-	sum := &report.DeletionSummary{GeneratedAt: now, Scope: rep.Scope, Blocked: rep.Blocked, ScanErrors: rep.ScanErrors}
+	sum := &report.DeletionSummary{GeneratedAt: now, Scope: rep.Scope, Blocked: rep.Blocked, ScanErrors: rep.ScanErrors,
+		PricesProblem: rep.PricesProblem}
 	if res.Blocked() {
 		return sum
 	}
@@ -204,8 +179,6 @@ func itemIndex(rep *report.Report) map[string]report.Item {
 	return out
 }
 
-// unflag removes the delete label from a volume or IP that the scan saw
-// in use, after checking it still is.
 func (d *Deleter) unflag(ctx context.Context, r stackit.Resource, it report.Item) report.Result {
 	cur, err := d.get(ctx, r)
 	switch {
@@ -237,8 +210,6 @@ func (d *Deleter) removeLabel(ctx context.Context, r stackit.Resource, it report
 	return report.Result{Item: it, Status: report.StatusUnflagged, Reason: why}
 }
 
-// deleteOne re-reads the resource and deletes it if every rule still
-// holds.
 func (d *Deleter) deleteOne(ctx context.Context, r stackit.Resource, it report.Item, deletedServers map[string]stackit.Resource, dc scanner.DeleteContext) report.Result {
 	cur, err := d.get(ctx, r)
 	switch {
@@ -289,12 +260,6 @@ func (d *Deleter) deleteOne(ctx context.Context, r stackit.Resource, it report.I
 
 const serverGoingReason = "still attached to a server that is being deleted or is marked delete=true; next run"
 
-// keepForServer decides whether a volume or public IP that is still
-// attached keeps its delete label and waits for the next run, and why. It
-// does when its server is on its way out (deleted in this run, being
-// deleted, already gone, or itself marked delete=true, e.g. because its
-// delete failed in this run) and when the server cannot be read: a label is
-// only removed when the server is known to stay.
 func (d *Deleter) keepForServer(ctx context.Context, serverID string, attached stackit.Resource, deletedServers map[string]stackit.Resource) (bool, string) {
 	if serverID == "" {
 		return false, ""
@@ -314,8 +279,6 @@ func (d *Deleter) keepForServer(ctx context.Context, serverID string, attached s
 	return false, ""
 }
 
-// get re-reads a resource, retrying rate limiting and server errors like a
-// delete: one hiccup must not cost a week.
 func (d *Deleter) get(ctx context.Context, r stackit.Resource) (*stackit.Resource, error) {
 	var cur *stackit.Resource
 	err := d.withRetry(ctx, func(ctx context.Context) error {
@@ -326,8 +289,6 @@ func (d *Deleter) get(ctx context.Context, r stackit.Resource) (*stackit.Resourc
 	return cur, err
 }
 
-// waitGone polls the deleted servers until they are gone or ServerWait
-// has passed.
 func (d *Deleter) waitGone(ctx context.Context, servers map[string]stackit.Resource) {
 	if len(servers) == 0 {
 		return
@@ -378,7 +339,6 @@ func (d *Deleter) sleep(ctx context.Context, dur time.Duration) {
 	}
 }
 
-// isTransient: rate limiting and server errors are retried.
 func isTransient(err error) bool {
 	code, ok := stackit.StatusCode(err)
 	return ok && (code == 429 || code >= 500)

@@ -24,16 +24,10 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// costWindowDays is the spend window of the empty-project check.
 const costWindowDays = 30
 
-// zeroSpendEUR is the spend below which a project counts as free.
 const zeroSpendEUR = 0.005
 
-// emptyProjects warns about projects older than WarnEmptyAfterDays that
-// had no spend in the last 30 days and hold no servers, volumes, public
-// IPs, SKE clusters or buckets in any scanned region. A project whose
-// facts could not all be read is not reported.
 func (s *Scanner) emptyProjects(ctx context.Context, projects []*node, invs []*inventory, rep *report.Report, errs *errorLog, now time.Time) {
 	cutoff := now.AddDate(0, 0, -s.Config.WarnEmptyAfterDays)
 	var old []*node
@@ -108,9 +102,6 @@ func (s *Scanner) noServices(ctx context.Context, invs []*inventory, errs *error
 	return true
 }
 
-// emptyNetworkAreas warns about network areas older than
-// WarnEmptyAfterDays with no project attached. Network areas belong to the
-// organization, so this only runs when the whole organization is in scope.
 func (s *Scanner) emptyNetworkAreas(ctx context.Context, rep *report.Report, errs *errorLog, now time.Time) {
 	if s.Pacer.Pace(ctx) != nil {
 		return

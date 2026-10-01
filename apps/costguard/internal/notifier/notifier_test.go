@@ -31,17 +31,16 @@ import (
 var at = time.Date(2026, 9, 28, 8, 0, 0, 0, time.UTC)
 
 func composer() Composer {
-	return Composer{PortalURL: "https://portal.example/", DeleteRunAt: "Tuesday 08:00", WarnEmptyAfterDays: 30, Version: "v0.1.0",
-		Prices: report.Prices{PublicIPMonthlyEUR: 4.82, VolumeGBMonthlyEUR: 0.062}}
+	return Composer{PortalURL: "https://portal.example/", DeleteRunAt: "Tuesday 08:00", WarnEmptyAfterDays: 30, Version: "v0.1.0"}
 }
 
 func fullReport() *report.Report {
 	return &report.Report{
 		GeneratedAt: at, Scope: "whole organization", Regions: []string{"eu01"},
 		SkippedFolders: 1, SkippedProjects: 4,
-		IdlePublicIPs:     []report.Item{{Kind: "publicip", ID: "ip1", Name: "192.0.2.1", ProjectID: "p1", ProjectName: "shop", Region: "eu01", New: true}},
-		DetachedVolumes:   []report.Item{{Kind: "volume", ID: "v1", Name: "data", ProjectID: "p1", ProjectName: "shop", Region: "eu01", Detail: "50 GB", SizeGB: 50}},
-		Requested:         []report.Item{{Kind: "server", ID: "s1", Name: "web", ProjectID: "p1", ProjectName: "shop", Region: "eu01"}},
+		IdlePublicIPs:     []report.Item{{Kind: "publicip", ID: "ip1", Name: "192.0.2.1", ProjectID: "p1", ProjectName: "shop", Region: "eu01", New: true, MonthlyEUR: 4.82, Priced: true}},
+		DetachedVolumes:   []report.Item{{Kind: "volume", ID: "v1", Name: "data", ProjectID: "p1", ProjectName: "shop", Region: "eu01", Detail: "50 GB", SizeGB: 50, MonthlyEUR: 3.1, Priced: true}},
+		Requested:         []report.Item{{Kind: "server", ID: "s1", Name: "web", ProjectID: "p1", ProjectName: "shop", Region: "eu01", MonthlyEUR: 147.3, Priced: true}},
 		WithSnapshots:     []report.Item{{Kind: "volume", ID: "v2", Name: "db", ProjectID: "p1", ProjectName: "shop", Region: "eu01", Detail: "10 GB, 1 snapshot"}},
 		BackInUse:         []report.Item{{Kind: "volume", ID: "v3", ProjectID: "p1", ProjectName: "shop", Region: "eu01"}},
 		EmptyProjects:     []report.Item{{Kind: report.KindProject, ID: "p9", Name: "old", ProjectID: "p9", ProjectName: "old", Detail: "created 2026-01-01"}},
@@ -65,20 +64,20 @@ func TestComposeFlagMessage(t *testing.T) {
 	if m.Subtitle != "Scope: whole organization · regions eu01 · 2026-09-28 08:00 UTC" {
 		t.Errorf("subtitle = %q", m.Subtitle)
 	}
-	wantIntro := "3 resources labelled delete=true are deleted Tuesday 08:00, saving about €7,92 per month (€95,04 per year). " +
+	wantIntro := "3 resources labelled delete=true are deleted Tuesday 08:00, saving about €155,22 per month (€1.862,64 per year). " +
 		"To keep a resource, open it and set the label do-not-delete=true (or remove delete=true)."
 	if m.Intro != wantIntro {
 		t.Errorf("intro = %q", m.Intro)
 	}
 	want := "Idle public IPs: 1, about €4,82/month | Detached volumes: 1, 50 GB, about €3,10/month | " +
-		"Other resources labelled delete=true: 1 | Detached volumes with snapshots, not flagged: 1 | " +
+		"Other resources labelled delete=true: 1, about €147,30/month | Detached volumes with snapshots, not flagged: 1 | " +
 		"In use again, delete label removed: 1 | Empty projects older than 30 days (warning only): 1 | " +
 		"Empty network areas older than 30 days (warning only): 1"
 	if got := titles(m); got != want {
 		t.Errorf("sections =\n%s\nwant\n%s", got, want)
 	}
 	ip := m.Sections[0].Lines[0]
-	if ip.Text != "public IP 192.0.2.1 · shop (eu01) · new" || ip.Link != "https://portal.example/public-ip/public-ips/ip1/overview?project=p1" {
+	if ip.Text != "public IP 192.0.2.1 · shop (eu01) · €4,82/month · new" || ip.Link != "https://portal.example/public-ip/public-ips/ip1/overview?project=p1" {
 		t.Errorf("ip line = %+v", ip)
 	}
 	if got := m.Sections[4].Lines[0].Text; got != "volume v3 · shop (eu01)" {
@@ -90,7 +89,7 @@ func TestComposeFlagMessage(t *testing.T) {
 	if got := m.Sections[6].Lines[0].Link; got != "" {
 		t.Errorf("network areas have no link yet: %q", got)
 	}
-	if m.Footer != "Skipped: 1 folder, 4 projects · costguard v0.1.0" {
+	if m.Footer != "Skipped: 1 folder, 4 projects · STACKIT list prices, net · costguard v0.1.0" {
 		t.Errorf("footer = %q", m.Footer)
 	}
 	if len(m.Alerts) != 0 {
@@ -104,7 +103,7 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 	rep.ScanErrors = []string{"e1", "e2", "e3", "e4", "e5"}
 	m := composer().Report(rep, ModeReport)
 	wantIntro := "Automatic deletion is off; nothing was changed. With delete on, 3 resources would be deleted, " +
-		"saving about €7,92 per month (€95,04 per year). To keep a resource once delete is on, set the label do-not-delete=true on it."
+		"saving about €155,22 per month (€1.862,64 per year). To keep a resource once delete is on, set the label do-not-delete=true on it."
 	if m.Title != "costguard: report" || m.Intro != wantIntro {
 		t.Errorf("title/intro = %q / %q", m.Title, m.Intro)
 	}
@@ -129,10 +128,11 @@ func TestComposeReportModeAndBlockedAndErrors(t *testing.T) {
 		t.Errorf("alert = %q", m.Alerts[0])
 	}
 	if m.Title != "costguard: report" ||
-		m.Intro != "Once the skip list is fixed, 3 resources would be deleted, saving about €7,92 per month (€95,04 per year)." {
+		m.Intro != "Once the skip list is fixed, 3 resources would be deleted, saving about €155,22 per month (€1.862,64 per year)." {
 		t.Errorf("blocked title/intro = %q / %q", m.Title, m.Intro)
 	}
 	rep.IdlePublicIPs, rep.DetachedVolumes = nil, nil
+	rep.Requested[0].MonthlyEUR, rep.Requested[0].Priced = 0, false
 	if got := composer().Report(rep, ModeFlag).Intro; got != "Once the skip list is fixed, 1 resource would be deleted." {
 		t.Errorf("blocked intro without prices = %q", got)
 	}
@@ -163,7 +163,7 @@ func TestComposeBootMessage(t *testing.T) {
 		t.Errorf("title = %q", m.Title)
 	}
 	wantIntro := "Login and this chat work. Automatic deletion is off; nothing was changed. With delete on, 3 resources would be deleted, " +
-		"saving about €7,92 per month (€95,04 per year). To keep a resource once delete is on, set the label do-not-delete=true on it. " +
+		"saving about €155,22 per month (€1.862,64 per year). To keep a resource once delete is on, set the label do-not-delete=true on it. " +
 		"Next runs: report Monday 08:00 (Europe/Berlin)."
 	if m.Intro != wantIntro {
 		t.Errorf("intro =\n%s\nwant\n%s", m.Intro, wantIntro)
@@ -184,22 +184,22 @@ func TestComposeReadOnlyWithDeleteOn(t *testing.T) {
 	rep.Blocked = []string{`skip.projects: "gone"`}
 	m := c.Report(rep, ModeBoot)
 	wantIntro := "Login and this chat work. This run changed nothing. 2 resources labelled delete=true are deleted Tuesday 08:00 (Europe/Berlin), " +
-		"saving about €3,10 per month (€37,20 per year). 3 new candidates are labelled at the next report run first. " +
+		"saving about €150,40 per month (€1.804,80 per year). 3 new candidates are labelled at the next report run first. " +
 		"To keep a resource, open it and set the label do-not-delete=true (or remove delete=true). " +
 		"Next runs: report Monday 08:00 (Europe/Berlin) · delete Tuesday 08:00 (Europe/Berlin)."
 	if m.Intro != wantIntro {
 		t.Errorf("intro =\n%s\nwant\n%s", m.Intro, wantIntro)
 	}
-	want := "Labelled delete=true, deleted Tuesday 08:00 (Europe/Berlin), about €3,10/month: 2 | New candidates, labelled at the next report run: 3 | " +
+	want := "Labelled delete=true, deleted Tuesday 08:00 (Europe/Berlin), about €150,40/month: 2 | New candidates, labelled at the next report run: 3 | " +
 		"Detached volumes with snapshots, not flagged: 1 | In use again, the delete label is removed at the next run: 1 | " +
 		"Empty projects older than 30 days (warning only): 1 | Empty network areas older than 30 days (warning only): 1"
 	if got := titles(m); got != want {
 		t.Errorf("sections =\n%s\nwant\n%s", got, want)
 	}
-	if got := m.Sections[0].Lines; len(got) != 2 || got[0].Text != "volume data · shop (eu01) · 50 GB" || got[1].Text != "server web · shop (eu01)" {
+	if got := m.Sections[0].Lines; len(got) != 2 || got[0].Text != "volume data · shop (eu01) · 50 GB · €3,10/month" || got[1].Text != "server web · shop (eu01) · €147,30/month" {
 		t.Errorf("labelled lines = %+v", got)
 	}
-	if got := m.Sections[1]; len(got.Lines) != 1 || got.Lines[0].Text != "public IP 192.0.2.1 · shop (eu01)" || got.Omitted != 2 {
+	if got := m.Sections[1]; len(got.Lines) != 1 || got.Lines[0].Text != "public IP 192.0.2.1 · shop (eu01) · €4,82/month" || got.Omitted != 2 {
 		t.Errorf("new candidates = %+v", got)
 	}
 	if len(m.Alerts) != 1 || !strings.Contains(m.Alerts[0], "which blocks all flagging and deleting until the skip list is fixed") {
@@ -315,12 +315,12 @@ func TestComposeSummary(t *testing.T) {
 	}
 
 	sum.Results = append(sum.Results,
-		report.Result{Item: report.Item{Kind: "publicip", ID: "ip1"}, Status: report.StatusDeleted},
-		report.Result{Item: report.Item{Kind: "volume", ID: "v9", SizeGB: 100}, Status: report.StatusDeleted},
+		report.Result{Item: report.Item{Kind: "publicip", ID: "ip1", MonthlyEUR: 4.82, Priced: true}, Status: report.StatusDeleted},
+		report.Result{Item: report.Item{Kind: "volume", ID: "v9", SizeGB: 100, MonthlyEUR: 6.2, Priced: true}, Status: report.StatusDeleted},
 		report.Result{Item: report.Item{Kind: "volume", ID: "v8", SizeGB: 500}, Status: report.StatusDeleted, Reason: "already gone", AlreadyGone: true},
 		report.Result{Item: report.Item{Kind: "volume", ID: "v7", SizeGB: 500}, Status: report.StatusFailed},
 	)
-	if got := composer().Summary(sum).Intro; got != "This run deleted 3 resources, saving about €11,02 per month (€132,24 per year)." {
+	if got := composer().Summary(sum).Intro; got != "This run deleted 3 resources, saving about €11,02 per month (€132,24 per year), 1 resource without a price." {
 		t.Errorf("saving = %q", got)
 	}
 
@@ -610,5 +610,26 @@ func TestEuroFormat(t *testing.T) {
 		if got := eur(v); got != want {
 			t.Errorf("eur(%v) = %q, want %q", v, got, want)
 		}
+	}
+}
+
+func TestComposeWithoutPrices(t *testing.T) {
+	rep := fullReport()
+	rep.PricesProblem = "STACKIT's price list could not be read"
+	for _, list := range [][]report.Item{rep.IdlePublicIPs, rep.DetachedVolumes, rep.Requested} {
+		for i := range list {
+			list[i].MonthlyEUR, list[i].Priced = 0, false
+		}
+	}
+	m := composer().Report(rep, ModeFlag)
+	if strings.Contains(m.Intro, "saving") || strings.Contains(titles(m), "€") {
+		t.Errorf("no amounts without prices: %q / %s", m.Intro, titles(m))
+	}
+	if m.Footer != "Skipped: 1 folder, 4 projects · no prices: STACKIT's price list could not be read · costguard v0.1.0" {
+		t.Errorf("footer = %q", m.Footer)
+	}
+	sum := &report.DeletionSummary{GeneratedAt: at, Scope: "whole organization", PricesProblem: rep.PricesProblem}
+	if f := composer().Summary(sum).Footer; f != "no prices: STACKIT's price list could not be read · costguard v0.1.0" {
+		t.Errorf("summary footer = %q", f)
 	}
 }

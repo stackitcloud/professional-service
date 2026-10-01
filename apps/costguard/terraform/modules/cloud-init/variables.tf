@@ -12,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The root config validates every input; this module only derives and
-# renders. It is a pure function (no providers), so test/vm renders exactly
-# the same user data for the local QEMU boot.
-
 variable "settings" {
   description = "costguard's settings, as the root config's variables of the same names."
   type = object({
@@ -25,7 +21,6 @@ variable "settings" {
     regions               = list(string)
     output                = string
     warn_empty_after_days = number
-    prices                = object({ public_ip_monthly_eur = number, volume_gb_monthly_eur = number })
     features              = any
     time_zone             = string
     log_level             = string

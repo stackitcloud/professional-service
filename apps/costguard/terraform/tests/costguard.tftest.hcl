@@ -74,7 +74,6 @@ variables {
   skip                          = {}
   regions                       = ["eu01"]
   warn_empty_after_days         = 30
-  prices                        = {}
   log_level                     = "info"
   binary_override = {
     version = "v0.1.0-test"

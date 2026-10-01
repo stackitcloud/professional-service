@@ -12,18 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Downloads the costguard binary, checks it against the pinned hash and
-installs it to /usr/local/bin. Run by costguard-install.service.
-
-A failed download is retried (first try plus 3 retries, 5 minutes apart); a
-hash mismatch fails at once, because retrying can't fix it. When the install
-fails, a minimal message goes to the chat, because without the binary
-nothing else can post. Nothing secret is printed: the output goes to the
-serial console, which the IaaS API shows to anyone who may read the server.
-
-Standard library only: python3 is on every Debian cloud image (cloud-init
-needs it), so the VM installs no packages.
-"""
 
 import hashlib
 import json
@@ -49,7 +37,7 @@ ARCHITECTURES = {"x86_64": "amd64", "aarch64": "arm64"}
 
 
 class InstallError(Exception):
-    """An install failure; the message goes to the chat as the reason."""
+    pass
 
 
 def log(message):
@@ -66,14 +54,11 @@ def file_name(version, arch):
 
 
 def download_url(template, version, arch):
-    """The download_url with {version} filled in, plus the file name."""
     base = template.replace("{version}", urllib.parse.quote(version, safe=""))
     return base.rstrip("/") + "/" + file_name(version, arch)
 
 
 def secure_url(raw):
-    """https, or http on the local machine (tests); the same rule as the
-    binary uses for the webhook."""
     u = urllib.parse.urlsplit(raw)
     if u.scheme == "https":
         return bool(u.hostname)
@@ -82,7 +67,6 @@ def secure_url(raw):
 
 def fetch(url, timeout=DOWNLOAD_TIMEOUT):
     with urllib.request.urlopen(url, timeout=timeout) as resp:
-        # A redirect must not downgrade to plain http.
         if not secure_url(resp.geturl()):
             raise InstallError("the download was redirected to a non-https address")
         data = resp.read(MAX_BYTES + 1)
@@ -92,7 +76,6 @@ def fetch(url, timeout=DOWNLOAD_TIMEOUT):
 
 
 def describe(err):
-    """A short reason without URLs or response bodies."""
     if isinstance(err, urllib.error.HTTPError):
         return f"HTTP {err.code}"
     if isinstance(err, urllib.error.URLError):
@@ -110,7 +93,6 @@ def install(
     sleep=time.sleep,
     get=fetch,
 ):
-    """Downloads, verifies and installs the binary; raises InstallError."""
     version = cfg["version"]
     arch = architecture(machine)
     want = cfg["sha256"].get(arch)
@@ -130,7 +112,7 @@ def install(
             break
         except InstallError:
             raise
-        except Exception as err:  # every network error is worth a retry
+        except Exception as err:
             last = describe(err)
             log(f"downloading {name} failed (attempt {attempt} of {ATTEMPTS}): {last}")
             if attempt < ATTEMPTS:
@@ -159,7 +141,6 @@ def install(
 
 
 def payload(output, text):
-    """The minimal message in the chat's format."""
     if output == "teams":
         return {
             "type": "message",
@@ -176,12 +157,10 @@ def payload(output, text):
                 }
             ],
         }
-    return {"text": text}  # slack and googlechat
+    return {"text": text}
 
 
 def notify(output, webhook, text, sleep=time.sleep, opener=urllib.request.urlopen):
-    """Posts text to the chat; best effort, never raises. The webhook URL is
-    a secret, so it never appears in the log."""
     if not webhook or not secure_url(webhook):
         log("no usable webhook URL, so the failure is not posted to the chat")
         return False

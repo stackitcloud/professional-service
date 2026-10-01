@@ -24,23 +24,12 @@ import (
 	skev2 "github.com/stackitcloud/stackit-sdk-go/services/ske/v2api"
 )
 
-// Services probes the managed services costguard needs to know about. A
-// service that is not enabled in a project (see NotEnabled) counts as
-// "nothing there".
 type Services interface {
-	// SKEClusters returns the names of the SKE clusters in a project and
-	// region.
 	SKEClusters(ctx context.Context, projectID, region string) ([]string, error)
-	// Buckets returns the names of the object storage buckets in a project
-	// and region.
 	Buckets(ctx context.Context, projectID, region string) ([]string, error)
-	// LoadBalancerAddresses maps the external address of every network and
-	// application load balancer in a project and region to a description
-	// such as "network load balancer web".
 	LoadBalancerAddresses(ctx context.Context, projectID, region string) (map[string]string, error)
 }
 
-// lbMaxPages bounds load balancer pagination.
 const lbMaxPages = 100
 
 type services struct {

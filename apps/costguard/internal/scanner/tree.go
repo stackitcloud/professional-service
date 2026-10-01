@@ -24,20 +24,15 @@ import (
 	"github.com/stackitcloud/professional-service/apps/costguard/internal/stackit"
 )
 
-// node is a folder or project of the walked tree.
 type node struct {
 	stackit.Container
 	folder   bool
 	parent   *node
 	children []*node
-	// skipRoot: this folder or project is skipped itself (skip list or
-	// do-not-delete label), which skips everything below it.
 	skipRoot bool
-	// inScope: the node is inside the configured scope.
-	inScope bool
+	inScope  bool
 }
 
-// skipped reports whether the node or any folder above it is a skip root.
 func (n *node) skipped() bool {
 	for c := n; c != nil; c = c.parent {
 		if c.skipRoot {
@@ -47,7 +42,6 @@ func (n *node) skipped() bool {
 	return false
 }
 
-// tree is the resolved scope.
 type tree struct {
 	folders  []*node
 	projects []*node
@@ -77,10 +71,6 @@ func (t *tree) add(c stackit.Container, folder bool, parent *node) *node {
 	return n
 }
 
-// relink attaches every node to the parent the API reports for it, when
-// that parent is in the tree. The nesting of the walk is only the fallback:
-// it would be wrong if a listing ever returned more than direct children,
-// and then a project could escape the skip of its folder.
 func (t *tree) relink() {
 	nodes := append(append([]*node{}, t.folders...), t.projects...)
 	for _, n := range nodes {
@@ -96,7 +86,6 @@ func (t *tree) relink() {
 	}
 }
 
-// active returns the in-scope projects that are not skipped.
 func (t *tree) active() []*node {
 	var out []*node
 	for _, p := range t.projects {
@@ -107,7 +96,6 @@ func (t *tree) active() []*node {
 	return out
 }
 
-// resolve walks the scope, marks skips and finds dangling skip entries.
 func (s *Scanner) resolve(ctx context.Context, errs *errorLog) (*tree, error) {
 	cfg := s.Config
 	t := &tree{byID: map[string]*node{}, wholeOrg: cfg.Scope.Empty()}
@@ -125,9 +113,6 @@ func (s *Scanner) resolve(ctx context.Context, errs *errorLog) (*tree, error) {
 			return nil, err
 		}
 		if rootErr != nil {
-			// Nothing below the organization could be read: a report now
-			// would say "nothing found". The login was checked before the
-			// scan, so usually the service account's roles are missing.
 			return nil, fmt.Errorf("costguard cannot read the organization %s. Check that its service account has the costguard.reader role on this organization (Terraform assigns it; run terraform apply).\n  - %s",
 				cfg.OrganizationID, stackit.Describe(rootErr))
 		}
@@ -148,10 +133,6 @@ func (s *Scanner) resolve(ctx context.Context, errs *errorLog) (*tree, error) {
 	return t, nil
 }
 
-// walk lists everything below parentID. A listing error deeper down is a
-// scan error: that subtree is simply not scanned. walk returns the error of
-// listing parentID itself, so callers can refuse a scope root that cannot
-// be read at all.
 func (s *Scanner) walk(ctx context.Context, t *tree, parentID string, parent *node, errs *errorLog) error {
 	if s.Pacer.Pace(ctx) != nil {
 		return nil
@@ -179,13 +160,11 @@ func (s *Scanner) walk(ctx context.Context, t *tree, parentID string, parent *no
 	}
 	for _, f := range folders {
 		n := t.add(f, true, parent)
-		_ = s.walk(ctx, t, f.ID, n, errs) // already recorded as a scan error
+		_ = s.walk(ctx, t, f.ID, n, errs)
 	}
 	return projectsErr
 }
 
-// matches returns the nodes an entry names: by ID, or by name ignoring
-// case.
 func matches(nodes []*node, entry string) []*node {
 	entry = strings.TrimSpace(entry)
 	var out []*node
@@ -201,8 +180,6 @@ func matches(nodes []*node, entry string) []*node {
 	return out
 }
 
-// selectScope resolves named scope entries in a whole-org walk. Each entry
-// must match exactly one container.
 func (t *tree) selectScope(scope config.Selection) error {
 	var problems, parts []string
 	pick := func(field string, entries []string, nodes []*node) {
@@ -235,9 +212,6 @@ func markScope(n *node) {
 	}
 }
 
-// fetchScope resolves a scope given only by IDs without reading the whole
-// organization, so an install with folder-level rights works. Folders above
-// a scope root are added (for skip names and labels) but are not in scope.
 func (s *Scanner) fetchScope(ctx context.Context, t *tree, errs *errorLog) error {
 	var problems, parts []string
 	var roots []*node
@@ -291,9 +265,6 @@ func (s *Scanner) fetchScope(ctx context.Context, t *tree, errs *errorLog) error
 	return nil
 }
 
-// ancestors adds the folders above a scope root, top first, and returns
-// the nearest one. Their labels are read when the service account may;
-// otherwise a do-not-delete on them cannot be seen, which is logged.
 func (s *Scanner) ancestors(ctx context.Context, t *tree, chain []stackit.Ancestor) *node {
 	var parent *node
 	for i := len(chain) - 1; i >= 0; i-- {
@@ -314,8 +285,6 @@ func (s *Scanner) ancestors(ctx context.Context, t *tree, chain []stackit.Ancest
 	return parent
 }
 
-// applySkips marks skip roots, collects dangling skip entries and counts
-// what is skipped inside the scope.
 func (t *tree) applySkips(skip config.Selection) {
 	for _, n := range t.byID {
 		if stackit.Protected(n.Labels) {
@@ -349,8 +318,6 @@ func (t *tree) applySkips(skip config.Selection) {
 	}
 }
 
-// isAboveScope reports whether an out-of-scope folder contains a scope
-// root, so skipping it skips part of the scope.
 func isAboveScope(n *node) bool {
 	for _, c := range n.children {
 		if c.inScope || isAboveScope(c) {

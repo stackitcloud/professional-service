@@ -1,54 +1,64 @@
-# costguard settings. Copy to terraform.tfvars and fill in; nothing needs to
-# be exported. terraform.tfvars is git-ignored: never commit it, it holds the
-# webhook URL (chmod 600 terraform.tfvars).
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars: it holds the webhook URL.
 
-# The deployer: a service account allowed to create the project and the
-# custom roles on the organization. Keep the key file outside the repository.
-service_account_key_path = "~/.stackit/deployer-key.json"
-project_owner_email      = "deployer@sa.stackit.cloud" # its email; becomes owner of the new project
+# ---- Required ----
 
-organization_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+service_account_key_path = "~/.stackit/deployer-key.json" # the deployer's key file
+project_owner_email      = "deployer@sa.stackit.cloud"    # the deployer's email; owner of costguard's project
+organization_id          = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+output                   = "googlechat" # teams | slack | googlechat
+webhook_url              = "https://..."
 
-# The chat: its type and webhook. The URL is a secret.
-output      = "teams" # teams | slack | googlechat
-webhook_url = "https://..."
 
-# What costguard does. Every feature has its own switch and schedule
-# (days Mon..Sun, time HH:MM in time_zone); keys left out keep the default.
-# features = {
-#   report = { enabled = true, days = ["Mon"], time = "08:00" }  # the default
-#   delete = { enabled = true, days = ["Tue"], time = "08:00" }  # default: off
-#   # Monthly budgets (default: off). Each run posts every budget whose month
-#   # to date is at or above a threshold (percent of the limit), again in
-#   # every run until the month ends; the 1st posts nothing. Each limit has
-#   # exactly one target; folders and projects by ID or exact name. Budgets
-#   # ignore scope and skip.
-#   budgets = {
-#     enabled    = true
-#     days       = ["Mon", "Tue", "Wed", "Thu", "Fri"] # the default
-#     time       = "10:00"
-#     thresholds = [80, 100] # the default for every limit
-#     limits = [
-#       { name = "Whole organization", organization = true, monthly_eur = 20000 },
-#       { name = "Team A", folder = "team-a", monthly_eur = 2500 }, # every project below the folder
-#       { name = "Sandbox X", project = "<project UUID>", monthly_eur = 50, thresholds = [50, 100] },
-#     ]
-#   }
-# }
-# time_zone = "Europe/Berlin"
+# ---- Features to en-/disable ----
 
-# Where it looks: folders and projects by ID or exact name.
-# scope = { folders = ["team-a"], projects = [] }  # default: the whole organization
-# skip  = { projects = ["prod-core"] }              # never scanned
-# regions = ["eu01"]
+features = {
+  report = { enabled = true, days = ["Mon"], time = "08:00" } # with delete enabled this also tags resources with delete=true
+  delete = { enabled = false, days = ["Tue"], time = "08:00" } # at least 20 h after the report run
+  budgets = {
+    enabled    = false
+    days       = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    time       = "10:00"
+    thresholds = [80, 100] # percent of the limit, for every limit without its own
+    limits = [             # one target each: organization, folder or project (ID or exact name)
+      { name = "Whole organization", organization = true, monthly_eur = 20000 },
+      { name = "Team A", folder = "team-a", monthly_eur = 2500 },
+      { name = "Sandbox X", project = "<project ID>", monthly_eur = 50, thresholds = [50, 100] },
+    ]
+  }
+}
 
-# Where it runs (defaults: a new project "costguard" under the organization
-# and a new small network).
-# project_id          = "<existing project UUID>"
-# network_id          = "<existing network UUID>"
-# parent_container_id = "<folder>"  # warns: folder admins could act as costguard
-# availability_zone   = "eu01-1"
+# can also report empty projects or networks
+warn_empty_after_days = 30 # 0: no warnings about empty projects
 
-# Only for test builds (a checkout of a release tag pins its own binary):
-# binary_override = { version = "pr-75", sha256 = { amd64 = "<64 hex>" } }
+
+# ---- Where it looks ----
+# Folders and projects by ID or exact name.
+
+scope                 = { folders = [], projects = [] } # empty: the whole organization
+skip                  = { folders = [], projects = [] }
+regions               = ["eu01"] # list every region you use
+
+
+# ---- Where it runs ----
+# Default: a new project "costguard" with a new network, directly under the organization.
+
+# project_id                    = "<existing project ID>"
+# network_id                    = "<existing network ID>"
+# parent_container_id           = "<folder ID>" # Terraform warns: the folder's admins could act as costguard
+# network_ipv4_prefix           = "10.64.0.0/28"
+# dns_nameservers               = ["9.9.9.9"]
+# region                        = "eu01"
+# availability_zone             = "eu01-1"
+# machine_type                  = "t2i.1"
+# image_name                    = "Debian 13"
+# boot_volume_gb                = 10
+# boot_volume_performance_class = "storage_premium_perf0"
+# time_zone                     = "Europe/Berlin" # schedules, messages and server
+# log_level                     = "info"          # debug | info | warn | error
+
+
+# ---- Your own binary ----
+# Only for a binary you host yourself or a test build; a release checkout pins its own.
+
 # download_url    = "https://<host>/<path>/{version}/"
+# binary_override = { version = "v1.2.3", sha256 = { amd64 = "<64 hex>", arm64 = "<64 hex>" } }

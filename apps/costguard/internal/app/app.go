@@ -105,7 +105,6 @@ func Run(ctx context.Context, opts Options) int {
 			ReportRunAt:        cfg.ReportRunAt,
 			BudgetsRunAt:       cfg.BudgetsRunAt(),
 			Location:           cfg.Location(),
-			Prices:             cfg.Prices.Report(),
 			WarnEmptyAfterDays: cfg.WarnEmptyAfterDays,
 			Version:            opts.Version,
 		},
@@ -186,7 +185,7 @@ func (r *run) execute(ctx context.Context) int {
 
 	default:
 		sum := newDeleter(clients.IaaS, r.logger).Delete(ctx, res, now().UTC())
-		saved := report.Estimate(sum.DeletedByThisRun(), r.cfg.Prices.Report())
+		saved := report.Estimate(sum.DeletedByThisRun())
 		r.logger.Info("delete run complete",
 			"deleted", sum.Count(report.StatusDeleted), "failed", sum.Count(report.StatusFailed),
 			"unflagged", sum.Count(report.StatusUnflagged), "deferred", sum.Count(report.StatusDeferred),

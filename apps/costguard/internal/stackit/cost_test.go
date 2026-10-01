@@ -24,7 +24,6 @@ import (
 	costv3 "github.com/stackitcloud/stackit-sdk-go/services/cost/v3api"
 )
 
-// day is one entry of reportData as the Cost API sends it (cents).
 func day(date string, cents float64) map[string]any {
 	return map[string]any{"charge": cents, "discount": 0.0, "quantity": 1, "quantityDecimal": "1",
 		"timePeriod": map[string]any{"start": date, "end": date}}
@@ -105,8 +104,6 @@ func TestCostDailyCostsRefusesWhatItCannotRead(t *testing.T) {
 	}
 }
 
-// The SDK normally fills ProjectCostWithDetailedServices; the other
-// variants are read the same way.
 func TestReportDataFromEveryVariant(t *testing.T) {
 	days := []costv3.ReportData{{Charge: 250, TimePeriod: costv3.ReportDataTimePeriod{Start: ptr("2026-09-03")}}}
 	extra := map[string]any{"reportData": []any{day("2026-09-03", 250)}}

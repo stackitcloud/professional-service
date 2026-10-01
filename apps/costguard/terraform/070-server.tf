@@ -32,7 +32,6 @@ module "cloud_init" {
     regions               = var.regions
     output                = var.output
     warn_empty_after_days = var.warn_empty_after_days
-    prices                = var.prices
     features              = var.features
     time_zone             = var.time_zone
     log_level             = var.log_level

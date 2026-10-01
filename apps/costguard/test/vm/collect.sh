@@ -13,15 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-# Runs inside the QEMU test VM (added by run.sh as a second cloud-config
-# part, never part of the real user data). Waits until the costguard jobs
-# have settled, prints "VMTEST key=value" lines to the serial console, then
-# powers the VM off. check.py evaluates them.
 set -u
 
-# agetty hangs up ttyS0 when it starts (vhangup), which kills descriptors
-# opened before; so wait for it, and open the port for every write.
 for _ in $(seq 1 30); do
 	systemctl is-active --quiet serial-getty@ttyS0.service && break
 	sleep 2
@@ -29,7 +22,6 @@ done
 say() { printf 'VMTEST %s\n' "$*" >/dev/ttyS0; }
 log() { sed 's/^/VMTEST-LOG /' >/dev/ttyS0; }
 
-# The boot run waits for the install, which may retry; give both time.
 for _ in $(seq 1 180); do
 	busy=$(systemctl list-jobs --no-legend 2>/dev/null | grep -c costguard)
 	state=$(systemctl show -p ActiveState --value costguard-install.service costguard@boot.service | tr '\n' ' ')
@@ -65,7 +57,6 @@ say "exposure_install=$(exposure costguard-install.service)"
 say "mem_available_mb=$(free -m | awk '/^Mem:/ {print $7}')"
 say "failed_units=$(systemctl --failed --no-legend --plain | awk '{print $1}' | tr '\n' ' ')"
 
-# One run at a time: while another process holds the lock, a run waits.
 if [ -x /usr/local/bin/costguard ]; then
 	systemd-run --quiet --unit=vmtest-lock-holder -p User=costguard -p Group=costguard \
 		-p RuntimeDirectory=costguard -p RuntimeDirectoryPreserve=yes /usr/bin/flock /run/costguard/lock sleep 20

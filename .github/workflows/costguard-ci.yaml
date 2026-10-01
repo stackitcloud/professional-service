@@ -134,7 +134,6 @@ jobs:
           tmp=$(mktemp -d)
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/key.pem" 2>/dev/null
           python3 -c 'import json, sys; print(json.dumps({"id": "00000000-0000-4000-8000-000000000009", "publicKey": "unused", "createdAt": "2026-01-01T00:00:00Z", "validUntil": "2099-01-01T00:00:00Z", "keyType": "USER_MANAGED", "keyOrigin": "GENERATED", "keyAlgorithm": "RSA_2048", "active": True, "credentials": {"kid": "00000000-0000-4000-8000-000000000009", "iss": "ci-offline-plan@sa.stackit.cloud", "sub": "00000000-0000-4000-8000-000000000008", "aud": "https://stackit-service-account-prod.apps.01.cf.eu01.stackit.cloud", "privateKey": open(sys.argv[1]).read()}}))' "$tmp/key.pem" >"$tmp/key.json"
-          # Everything in the tfvars, nothing exported: like an install.
           cat >"$tmp/ci.tfvars" <<TFVARS
           service_account_key_path = "$tmp/key.json"
           project_owner_email      = "deployer@sa.stackit.cloud"

@@ -42,8 +42,9 @@ func (k Kind) Name() string {
 var Kinds = []Kind{KindServer, KindPublicIP, KindNIC, KindSnapshot, KindVolume, KindSecurityGroup}
 
 const (
-	VolumeStatusAvailable = "AVAILABLE"
-	ServerStatusDeleting  = "DELETING"
+	VolumeStatusAvailable   = "AVAILABLE"
+	ServerStatusDeleting    = "DELETING"
+	ServerStatusDeallocated = "DEALLOCATED"
 )
 
 type Resource struct {
@@ -62,6 +63,10 @@ type Resource struct {
 	Address   string
 	VolumeID  string
 	SizeGB    int64
+
+	MachineType      string
+	AvailabilityZone string
+	PerformanceClass string
 }
 
 type NetworkArea struct {
@@ -270,13 +275,15 @@ func (a *iaas) ListNetworkAreas(ctx context.Context, organizationID string) ([]N
 
 func fromServer(v *iaasv2.Server, p, r string) Resource {
 	return Resource{Kind: KindServer, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
-		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt()}
+		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt(),
+		MachineType: v.GetMachineType(), AvailabilityZone: v.GetAvailabilityZone()}
 }
 
 func fromVolume(v *iaasv2.Volume, p, r string) Resource {
 	return Resource{Kind: KindVolume, ID: v.GetId(), Name: v.GetName(), ProjectID: p, Region: r,
 		Labels: stringLabels(v.GetLabels()), Status: v.GetStatus(), CreatedAt: v.GetCreatedAt(),
-		ServerID: v.GetServerId(), SizeGB: v.GetSize()}
+		ServerID: v.GetServerId(), SizeGB: v.GetSize(),
+		AvailabilityZone: v.GetAvailabilityZone(), PerformanceClass: v.GetPerformanceClass()}
 }
 
 func fromPublicIP(v *iaasv2.PublicIp, p, r string) Resource {

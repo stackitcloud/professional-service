@@ -65,39 +65,38 @@ type Item struct {
 	VolumeID    string
 	SnapshotID  string
 	SizeGB      int64
-}
-
-type Prices struct {
-	PublicIPMonthlyEUR float64
-	VolumeGBMonthlyEUR float64
+	MonthlyEUR  float64
+	Priced      bool
 }
 
 type Savings struct {
-	IdleIPs    int
-	IdleIPsEUR float64
-	Volumes    int
-	VolumesGB  int64
-	VolumesEUR float64
+	EUR      float64
+	Unpriced int
 }
 
 func (s Savings) TotalEUR() float64 {
-	return round2(s.IdleIPsEUR + s.VolumesEUR)
+	return round2(s.EUR)
 }
 
-func Estimate(items []Item, p Prices) Savings {
+func Estimate(items []Item) Savings {
 	var s Savings
 	for _, it := range items {
-		switch it.Kind {
-		case "publicip":
-			s.IdleIPs++
-		case "volume":
-			s.Volumes++
-			s.VolumesGB += it.SizeGB
+		if it.Priced {
+			s.EUR += it.MonthlyEUR
+		} else {
+			s.Unpriced++
 		}
 	}
-	s.IdleIPsEUR = round2(float64(s.IdleIPs) * p.PublicIPMonthlyEUR)
-	s.VolumesEUR = round2(float64(s.VolumesGB) * p.VolumeGBMonthlyEUR)
+	s.EUR = round2(s.EUR)
 	return s
+}
+
+func SizeGB(items []Item) int64 {
+	var n int64
+	for _, it := range items {
+		n += it.SizeGB
+	}
+	return n
 }
 
 func round2(v float64) float64 {
@@ -112,6 +111,8 @@ type Report struct {
 
 	Blocked    []string
 	ScanErrors []string
+
+	PricesProblem string
 
 	SkippedFolders  int
 	SkippedProjects int
@@ -152,12 +153,13 @@ type Result struct {
 }
 
 type DeletionSummary struct {
-	GeneratedAt time.Time
-	Scope       string
-	Blocked     []string
-	ScanErrors  []string
-	Results     []Result
-	Interrupted bool
+	GeneratedAt   time.Time
+	Scope         string
+	Blocked       []string
+	ScanErrors    []string
+	PricesProblem string
+	Results       []Result
+	Interrupted   bool
 }
 
 func (s *DeletionSummary) DeletedByThisRun() []Item {

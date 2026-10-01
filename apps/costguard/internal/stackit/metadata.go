@@ -29,56 +29,29 @@ import (
 	"time"
 )
 
-// EnvServiceAccountEmail names the service account attached to the server.
-// Terraform writes it; the login only uses this account, whatever else
-// might be attached.
 const EnvServiceAccountEmail = "COSTGUARD_SERVICE_ACCOUNT_EMAIL"
 
 const (
-	// metadataTimeout bounds one request to the metadata service. STACKIT
-	// documents that such requests "may occasionally take up to 30 seconds".
 	metadataTimeout = 40 * time.Second
-	// refreshMargin: a token is replaced this long before it expires, so a
-	// request never starts with a token that runs out on the way. Tokens
-	// live one hour.
-	refreshMargin = 5 * time.Minute
-	// refreshBackoff: after a failed refresh, the old token is used without
-	// asking again for this long, so an outage of the metadata service does
-	// not slow down every request.
-	refreshBackoff = 30 * time.Second
-	// maxMetadataBody caps what is read from the metadata service. The real
-	// answers are about 1.5 KB.
+	refreshMargin   = 5 * time.Minute
+	refreshBackoff  = 30 * time.Second
 	maxMetadataBody = 64 << 10
-	// attachPoll is the pause between checks while Ready waits for the
-	// service account to be attached.
-	attachPoll = 5 * time.Second
+	attachPoll      = 5 * time.Second
 )
 
-// Replaced in tests.
 var (
-	metadataURL                    = "http://169.254.169.254"
-	apiTransport http.RoundTripper = http.DefaultTransport
-	// metadataPauses are the waits between attempts at the metadata
-	// service. Only network errors, 429 and 5xx are retried.
-	metadataPauses = []time.Duration{2 * time.Second, 5 * time.Second}
+	metadataURL                      = "http://169.254.169.254"
+	apiTransport   http.RoundTripper = http.DefaultTransport
+	metadataPauses                   = []time.Duration{2 * time.Second, 5 * time.Second}
 )
 
 var emailPattern = regexp.MustCompile(`^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+$`)
 
-// errNotAttached and errUnreachable are what Ready waits out: right after
-// the server was created, its service account is attached a few seconds
-// later.
 var (
 	errNotAttached = errors.New("no service account is attached to this server")
 	errUnreachable = errors.New("the metadata service did not answer")
 )
 
-// MetadataLogin logs in with the service account attached to the server.
-// It gets short-lived tokens from the STACKIT metadata service
-// (169.254.169.254) and adds them to the requests of every SDK client, so
-// no key or token is stored anywhere. It never calls the metadata
-// service's S3 credentials endpoint, which would create an Object Storage
-// identity mapping.
 type MetadataLogin struct {
 	email  string
 	base   string
@@ -94,8 +67,6 @@ type MetadataLogin struct {
 	retryAfter time.Time
 }
 
-// NewMetadataLogin returns the login for the attached service account
-// with this email.
 func NewMetadataLogin(email string) (*MetadataLogin, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -109,8 +80,6 @@ func NewMetadataLogin(email string) (*MetadataLogin, error) {
 		base:  metadataURL,
 		client: &http.Client{
 			Timeout: metadataTimeout,
-			// Never through a proxy: HTTP(S)_PROXY would otherwise apply
-			// to 169.254.169.254 too (Go only exempts loopback).
 			Transport: &http.Transport{
 				Proxy:                 nil,
 				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
@@ -118,8 +87,6 @@ func NewMetadataLogin(email string) (*MetadataLogin, error) {
 				MaxIdleConns:          1,
 				IdleConnTimeout:       30 * time.Second,
 			},
-			// The metadata service does not redirect; a redirect is an
-			// error, not something to follow.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		next:   apiTransport,
@@ -129,14 +96,10 @@ func NewMetadataLogin(email string) (*MetadataLogin, error) {
 	}, nil
 }
 
-// Email is the service account this login uses.
 func (m *MetadataLogin) Email() string {
 	return m.email
 }
 
-// RoundTrip adds the token to a request for a STACKIT API. It refuses
-// every other destination, so a redirect or a wrong endpoint can never
-// carry the token elsewhere.
 func (m *MetadataLogin) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !stackitAPI(req.URL) {
 		closeBody(req)
@@ -156,9 +119,6 @@ func (m *MetadataLogin) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-// Ready checks that a token can be had. While the service account is not
-// attached yet, or the metadata service does not answer, it keeps trying
-// for up to wait.
 func (m *MetadataLogin) Ready(ctx context.Context, wait time.Duration) error {
 	deadline := m.now().Add(wait)
 	for {
@@ -184,9 +144,6 @@ func (m *MetadataLogin) Ready(ctx context.Context, wait time.Duration) error {
 	}
 }
 
-// Token returns a valid token, from the cache while it has more than
-// refreshMargin left. Every call to the metadata service mints a new token,
-// so caching matters.
 func (m *MetadataLogin) Token(ctx context.Context) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -198,8 +155,6 @@ func (m *MetadataLogin) Token(ctx context.Context) (string, error) {
 	token, until, err := m.fetch(ctx)
 	if err != nil {
 		if stillValid {
-			// The old token works for a few more minutes; the next
-			// request after the backoff tries again.
 			m.retryAfter = now.Add(refreshBackoff)
 			return m.token, nil
 		}
@@ -209,7 +164,6 @@ func (m *MetadataLogin) Token(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-// forget drops a token the API refused, so the next request gets a new one.
 func (m *MetadataLogin) forget(token string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -244,9 +198,6 @@ func (m *MetadataLogin) fetch(ctx context.Context) (string, time.Time, error) {
 	return answer.Token, until, nil
 }
 
-// explain turns the token endpoint's 404, which is the same for "nothing
-// attached" and "a different service account attached", into a readable
-// error by reading the list of attached service accounts.
 func (m *MetadataLogin) explain(ctx context.Context) error {
 	var list struct {
 		ServiceAccountMails []string `json:"serviceAccountMails"`
@@ -269,8 +220,6 @@ func (m *MetadataLogin) explain(ctx context.Context) error {
 		strings.Join(list.ServiceAccountMails, ", "), m.email)
 }
 
-// get reads path from the metadata service and decodes a 200 answer into
-// out. Network errors, 429 and 5xx are retried with m.pauses in between.
 func (m *MetadataLogin) get(ctx context.Context, path string, out any) (int, error) {
 	for attempt := 0; ; attempt++ {
 		status, retry, err := m.getOnce(ctx, path, out)
@@ -313,7 +262,6 @@ func (m *MetadataLogin) getOnce(ctx context.Context, path string, out any) (stat
 	return resp.StatusCode, false, nil
 }
 
-// waited renders a wait such as "5 minutes" or "30 seconds".
 func waited(d time.Duration) string {
 	if d >= time.Minute && d%time.Minute == 0 {
 		if d == time.Minute {
@@ -324,15 +272,11 @@ func waited(d time.Duration) string {
 	return fmt.Sprintf("%d seconds", int(d.Round(time.Second).Seconds()))
 }
 
-// stackitAPI reports whether u is a STACKIT API: https on stackit.cloud or
-// one of its subdomains.
 func stackitAPI(u *url.URL) bool {
 	host := strings.ToLower(u.Hostname())
 	return u.Scheme == "https" && (host == "stackit.cloud" || strings.HasSuffix(host, ".stackit.cloud"))
 }
 
-// closeBody honours the RoundTripper contract: the request body is closed
-// even when the request is not sent.
 func closeBody(req *http.Request) {
 	if req.Body != nil {
 		_ = req.Body.Close()

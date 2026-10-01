@@ -13,8 +13,6 @@
 # limitations under the License.
 
 
-# tflint for the root config and the cloud-init module. Only the bundled
-# terraform ruleset: there is no STACKIT ruleset.
 config {
   call_module_type = "local"
 }
@@ -24,7 +22,6 @@ plugin "terraform" {
   preset  = "all"
 }
 
-# The repo names root config files 010-provider.tf, 020-variables.tf, ...
 rule "terraform_standard_module_structure" {
   enabled = false
 }

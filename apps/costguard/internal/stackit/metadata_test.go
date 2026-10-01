@@ -31,25 +31,18 @@ import (
 
 const saEmail = "costguard-a1b2c3d4@sa.stackit.cloud"
 
-// notFoundBody is what the real metadata service answers for an unknown
-// path, an unknown service account and a detached one (spike, 2026-09-29).
 const notFoundBody = `{"code": "404 Not Found", "message": "The resource could not be found.<br /><br />\n\n\n", "title": "Not Found"}`
 
-// fakeMetadata answers like STACKIT's metadata service: every token call
-// mints a new token.
 type fakeMetadata struct {
-	mu       sync.Mutex
-	attached []string
-	now      func() time.Time
-	lifetime time.Duration
-	// tokenStatus is answered to the next token requests, one per request,
-	// before normal service resumes.
+	mu          sync.Mutex
+	attached    []string
+	now         func() time.Time
+	lifetime    time.Duration
 	tokenStatus []int
 	listStatus  int
-	// tokenBody replaces the token answer when set.
-	tokenBody string
-	minted    int
-	requests  []string
+	tokenBody   string
+	minted      int
+	requests    []string
 }
 
 func newFakeMetadata(now func() time.Time) *fakeMetadata {
@@ -127,7 +120,6 @@ func (f *fakeMetadata) count(prefix string) int {
 	return n
 }
 
-// apiRecorder stands in for the STACKIT APIs behind the login.
 type apiRecorder struct {
 	mu      sync.Mutex
 	auth    []string
@@ -161,7 +153,6 @@ func (a *apiRecorder) seen() []string {
 	return append([]string(nil), a.auth...)
 }
 
-// clock is a settable time source.
 type clock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -257,7 +248,6 @@ func TestMetadataLoginKeepsTheOldTokenWhileARefreshFails(t *testing.T) {
 	if _, err := e.call(t, iaasURL); err != nil {
 		t.Fatalf("the old token is still valid for 2 minutes: %v", err)
 	}
-	// Within the backoff, the metadata service is not asked again.
 	before := e.meta.count("GET")
 	if _, err := e.call(t, iaasURL); err != nil {
 		t.Fatal(err)
@@ -268,7 +258,6 @@ func TestMetadataLoginKeepsTheOldTokenWhileARefreshFails(t *testing.T) {
 	if got := e.api.seen(); got[1] != "Bearer metadata-token-1" || got[2] != "Bearer metadata-token-1" {
 		t.Errorf("Authorization = %v", got)
 	}
-	// After the backoff it tries again and gets a fresh token.
 	e.clock.add(refreshBackoff)
 	if _, err := e.call(t, iaasURL); err != nil {
 		t.Fatal(err)
@@ -544,7 +533,6 @@ func TestReadyWaitsForTheAttachment(t *testing.T) {
 	e.meta.attached = nil
 	calls := 0
 	e.login.now = func() time.Time {
-		// Attach the account on the third check, as right after boot.
 		calls++
 		if calls == 3 {
 			e.meta.mu.Lock()

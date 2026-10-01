@@ -117,7 +117,6 @@ func TestValidateBudgetProblems(t *testing.T) {
 }
 
 func TestAnyBudgetsTimeWorks(t *testing.T) {
-	// Before 07:30 UTC the run sees the costs a day later; nothing is lost.
 	for _, clock := range []string{"00:00", "06:00", "23:59"} {
 		cfg := budgetConfig(Budget{Name: "A", Organization: true, MonthlyEUR: 1, Thresholds: []int{80}})
 		cfg.Budgets.Time = clock
