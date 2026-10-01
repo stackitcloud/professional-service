@@ -97,12 +97,12 @@ The OTel Collector scrapes metrics from:
 
 ## Debugging
 
-View live scrape data in the collector logs:
+View live scrape data in the collector logs. `--timestamps` prefixes every line with the time the container wrote it:
 
 ```bash
 eval "$(terraform output -raw kubeconfig_command)"
 kubectl config use-context "$(terraform output -raw ske_cluster_name)"
-kubectl logs deploy/otel-collector -n monitoring -f
+kubectl logs deploy/otel-collector -n monitoring -f --timestamps
 ```
 
 ## Clean up
