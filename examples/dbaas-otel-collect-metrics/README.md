@@ -83,7 +83,7 @@ The key is valid for 180 days. `time_rotating` replaces it on the first `terrafo
 
 ## Verify
 
-Open the Grafana URL and query `pg_up` in Explore. A series there shows that the collector scrapes the prom-proxy and pushes to Observability; the value `1` means the exporter reaches the database.
+Open the Grafana URL, select the data source `Thanos` in Explore and query `pg_up`. A series there shows that the collector scrapes the prom-proxy and pushes to Observability; the value `1` means the exporter reaches the database.
 
 ```bash
 terraform output -raw grafana_url
