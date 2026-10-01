@@ -12,22 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "stackit_project_id" {
-  type    = string
-  default = "d75e6aab-b616-4b42-ae3b-aaf161ad626d"
+variable "stackit_parent_container_id" {
+  type        = string
+  description = "Container ID of the organization or folder the project is created in"
+}
+
+variable "stackit_admin_email" {
+  type        = string
+  description = "Email address that becomes the owner of the created project"
+}
+
+variable "project_name" {
+  type        = string
+  description = "Name of the project that holds the cluster, the database and the Observability instance"
+  default     = "dbaas-otel-metrics"
 }
 
 variable "stackit_region" {
-  type    = string
-  default = "eu01"
+  type        = string
+  description = "STACKIT region"
+  default     = "eu01"
+}
+
+variable "observability_plan_name" {
+  type        = string
+  description = "Plan of the Observability instance, for example Observability-Starter-EU01 for a smaller one"
+  default     = "Observability-Large-EU01"
 }
 
 variable "stackit_service_account_key_path" {
-  type    = string
-  default = "../../keys/stackit-sa.json"
-}
-
-resource "stackit_key_pair" "admin_keypair" {
-  name       = "admin-keypair-12345"
-  public_key = chomp(file("~/.ssh/id_rsa.pub"))
+  type        = string
+  description = "Path to the service account key file. Unset falls back to the STACKIT_SERVICE_ACCOUNT_KEY_PATH environment variable, then to that entry in the credentials file ($HOME/.stackit/credentials.json, or STACKIT_CREDENTIALS_PATH)."
+  default     = null
 }

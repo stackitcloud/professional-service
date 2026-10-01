@@ -12,32 +12,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+data "stackit_postgresflex_flavors" "this" {
+  project_id = local.project_id
+}
+
 resource "stackit_postgresflex_instance" "this" {
-  project_id      = var.stackit_project_id
+  project_id      = local.project_id
   name            = "example-instance"
-  backup_schedule = "00 00 * * *"
-  flavor = {
-    cpu = 2
-    ram = 4
-  }
-  replicas = 3
+  backup_schedule = "0 0 * * *"
+  retention_days  = 32
+  flavor_id       = one([for f in data.stackit_postgresflex_flavors.this.flavors : f.id if f.cpu == 2 && f.memory == 4 && f.node_type == "Replica"])
   storage = {
     class = "premium-perf2-stackit"
     size  = 15
   }
   version = 15
-  acl     = ["0.0.0.0/0"]
+  network = {
+    acl = ["0.0.0.0/0"]
+  }
 }
 
 resource "stackit_postgresflex_user" "this" {
-  project_id  = var.stackit_project_id
+  project_id  = local.project_id
   instance_id = stackit_postgresflex_instance.this.instance_id
   username    = "test"
   roles       = ["createdb", "login"]
 }
 
 resource "stackit_postgresflex_database" "this" {
-  project_id  = var.stackit_project_id
+  project_id  = local.project_id
   instance_id = stackit_postgresflex_instance.this.instance_id
   name        = "test"
   owner       = stackit_postgresflex_user.this.username

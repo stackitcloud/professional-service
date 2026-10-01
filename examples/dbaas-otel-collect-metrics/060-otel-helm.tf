@@ -15,39 +15,40 @@
 locals {
   sa_json = jsondecode(stackit_service_account_key.this.json)
   otel_helm_values = templatefile("${path.module}/helm-values/otel-collector-values.tftpl", {
-    stackit_project_id             = var.stackit_project_id
+    stackit_project_id             = local.project_id
     stackit_region                 = var.stackit_region
     stackit_postgres_instance_id   = stackit_postgresflex_instance.this.instance_id
     observability_metrics_endpoint = stackit_observability_instance.example.metrics_push_url
-    secret_name                    = kubernetes_secret.otel_secret.metadata[0].name
+    secret_name                    = kubernetes_secret_v1.otel_secret.metadata[0].name
     sa_client_id                   = local.sa_json.credentials.sub
     sa_issuer                      = local.sa_json.credentials.iss
     sa_key_id                      = local.sa_json.credentials.kid
+    sa_audience                    = local.sa_json.credentials.aud
+    sa_token_url                   = try(local.sa_json.credentials.tokenEndpoint, "https://service-account.api.stackit.cloud/token")
   })
 }
 
 
 resource "stackit_observability_credential" "otel" {
-  project_id  = var.stackit_project_id
+  project_id  = local.project_id
   instance_id = stackit_observability_instance.example.instance_id
 }
 
-resource "kubernetes_namespace" "monitoring" {
+resource "kubernetes_namespace_v1" "monitoring" {
   metadata {
     name = "monitoring"
   }
 }
 
-resource "kubernetes_secret" "otel_secret" {
+resource "kubernetes_secret_v1" "otel_secret" {
   metadata {
     name      = "otel-secrets"
-    namespace = kubernetes_namespace.monitoring.metadata[0].name
+    namespace = kubernetes_namespace_v1.monitoring.metadata[0].name
   }
 
   data = {
     OBSERVABILITY_AUTHORIZATION_HEADER = "Basic ${base64encode("${stackit_observability_credential.otel.username}:${stackit_observability_credential.otel.password}")}"
-    JSON                               = stackit_service_account_key.this.json
-    PRIVATE_KEY                        = jsondecode(stackit_service_account_key.this.json).credentials.privateKey
+    PRIVATE_KEY                        = local.sa_json.credentials.privateKey
   }
 }
 
@@ -56,10 +57,11 @@ resource "helm_release" "opentelemetry_collector" {
   repository = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart      = "opentelemetry-collector"
   version    = "0.152.0"
-  namespace  = kubernetes_namespace.monitoring.metadata[0].name
-  timeout    = 30
+  namespace  = kubernetes_namespace_v1.monitoring.metadata[0].name
 
   values = [
     local.otel_helm_values
   ]
+
+  depends_on = [stackit_authorization_project_role_assignment.this]
 }

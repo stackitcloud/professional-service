@@ -12,36 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_ske_kubeconfig" "this" {
-  project_id   = var.stackit_project_id
-  cluster_name = stackit_ske_cluster.this.name
-  refresh      = true
-
-  depends_on = [stackit_ske_cluster.this]
-}
-
-data "stackit_ske_kubernetes_versions" "this" {
-  version_state = "SUPPORTED"
-}
-
-data "stackit_ske_machine_image_versions" "this" {
-  version_state = "SUPPORTED"
-}
-
-locals {
-  flatcar_supported_version = one(flatten([
-    for mi in data.stackit_ske_machine_image_versions.this.machine_images : [
-      for v in mi.versions :
-      v.version
-      if mi.name == "flatcar"
-    ]
-  ]))
+# The cluster ID condition defers the kubeconfig request until the cluster exists.
+ephemeral "stackit_ske_kubeconfig" "this" {
+  project_id   = local.project_id
+  cluster_name = stackit_ske_cluster.this.id != "" ? stackit_ske_cluster.this.name : ""
+  # Two hours cover a first apply in which the database finishes long after the cluster.
+  expiration = 7200
 }
 
 resource "stackit_ske_cluster" "this" {
-  project_id             = var.stackit_project_id
-  name                   = "dbaas-otel"
-  kubernetes_version_min = data.stackit_ske_kubernetes_versions.this.kubernetes_versions.0.version
+  project_id = local.project_id
+  name       = "dbaas-otel"
 
   node_pools = [
     {
@@ -50,8 +31,7 @@ resource "stackit_ske_cluster" "this" {
       minimum            = "3"
       maximum            = "9"
       max_surge          = "3"
-      availability_zones = ["eu01-1", "eu01-2", "eu01-3"]
-      os_version_min     = local.flatcar_supported_version
+      availability_zones = [for z in [1, 2, 3] : "${var.stackit_region}-${z}"]
       os_name            = "flatcar"
       volume_size        = 150
       volume_type        = "storage_premium_perf6"

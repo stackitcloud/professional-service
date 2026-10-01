@@ -102,8 +102,8 @@ Fetch only the files relevant to the task. A typical example contains
   A collection of STACKIT Application Load Balancer (ALB) showcases with different TLS strategies — from self-signed to Let's Encrypt, from a single VM to Kubernetes
 - **`cdn-s3-static-website`** `[cdn, s3, object-storage, static-website, waf]`  
   A reference implementation showing how to deploy a static website using [STACKIT CDN](https://stackit.com/en/products/network/stackit-cdn) with [STACKIT Object Storage](http://stackit.com/en/products/storage/stackit-object-storage) as the origin
-- **`dbaas-otel-collect-metrics`** `[dbaas, postgresql, mongodb, otel, observability, metrics, monitoring]`  
-  Collect metrics from STACKIT PostgreSQL Flex and MongoDB instances using OpenTelemetry (OTel) and export them to STACKIT Observability
+- **`dbaas-otel-collect-metrics`** `[dbaas, postgresql, otel, observability, metrics, monitoring]`  
+  Collect metrics from STACKIT PostgreSQL Flex instances using OpenTelemetry (OTel) and export them to STACKIT Observability
 - **`dbaas-postgresql-kms-encryption`** `[dbaas, postgresql, kms, encryption, backup, key-management]`  
   Deploys a STACKIT PostgreSQL Flex instance whose volume **and backup storage** are encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/), together with the keyring, the key and the service account the database service uses to unwrap that key
 - **`iaas-cross-az-layer4-loadbalancer`** `[iaas, load-balancer, layer4, ha, networking, cross-az]`  

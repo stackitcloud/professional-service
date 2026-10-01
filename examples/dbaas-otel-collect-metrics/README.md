@@ -1,8 +1,8 @@
-<!-- tags: dbaas, postgresql, mongodb, otel, observability, metrics, monitoring -->
+<!-- tags: dbaas, postgresql, otel, observability, metrics, monitoring -->
 
 # DBaaS OpenTelemetry Metrics Collection
 
-Collect metrics from STACKIT PostgreSQL Flex and MongoDB instances using OpenTelemetry (OTel) and export them to STACKIT Observability.
+Collect metrics from STACKIT PostgreSQL Flex instances using OpenTelemetry (OTel) and export them to STACKIT Observability.
 
 ## Architecture
 
@@ -29,7 +29,7 @@ sequenceDiagram
     API->>PG: fetch Prometheus metrics
     PG-->>API: metrics data
     API-->>OT: metrics (prometheus format)
-    OT->>OBS: push metrics (prometheus exporter)
+    OT->>OBS: push metrics (Prometheus remote write)
 ```
 
 ```mermaid
@@ -61,36 +61,58 @@ flowchart LR
 
 ## Prerequisites
 
-- STACKIT Project ID and Service Account key.
-- Terraform, `kubectl`, and `helm` installed.
+- A service account key for Terraform, see `stackit_service_account_key_path` in `020-variables.tf`. The service account needs a role on the parent container that includes `resource-manager.project.create` and applies to the new project, for example `owner`: the example creates the project, and in it a service account and a role assignment.
+- Terraform 1.10 or later and STACKIT provider 0.117.0 or later.
+- An authenticated `stackit` CLI (`stackit auth login` or `stackit auth activate-service-account`) and `kubectl` for debugging.
+
+The provider block enables the experiments `iam` for the role assignment and `ske` for the ephemeral kubeconfig.
 
 ## Usage
 
-1. **Configure**: Update `stackit_project_id` and `stackit_service_account_key_path` in `01-variables.tf`.
+1. **Configure**: `cp terraform.tfvars.example terraform.tfvars` and set `stackit_parent_container_id` (organization or folder) and `stackit_admin_email`.
 2. **Deploy**:
    ```bash
    terraform init
    terraform apply
    ```
 
+> [!WARNING]
+> The service account API generates the private key, and Terraform stores it in plain text in the state and in the Kubernetes Secret `otel-secrets`. Anyone who can read the state can read the key. This setup is only an example and should not be used this way in production.
+
+The key is valid for 180 days. `time_rotating` replaces it on the first `terraform apply` after day 150, so run `terraform apply` between day 150 and 180, or the collector stops scraping.
+
+## Verify
+
+Open the Grafana URL, select the data source `Thanos` in Explore and query `pg_up`. A series there shows that the collector scrapes the prom-proxy and pushes to Observability; the value `1` means the exporter reaches the database.
+
+```bash
+terraform output -raw grafana_url
+```
+
 ## Scrape Configuration
 
 The OTel Collector scrapes metrics from:
 
 - **PostgreSQL**: `https://postgres-prom-proxy.api.stackit.cloud/v2/...`
-- **MongoDB**: `https://mongodb-prom-proxy.api.stackit.cloud/v2/...`
-
-_Note: MSSQL is not supported._
 
 ## Debugging
 
-View live scrape data in the collector logs:
+View live scrape data in the collector logs. `--timestamps` prefixes every line with the time the container wrote it:
 
 ```bash
-kubectl logs -l app.kubernetes.io/name=otel-collector -n monitoring -f
+eval "$(terraform output -raw kubeconfig_command)"
+kubectl config use-context "$(terraform output -raw ske_cluster_name)"
+kubectl logs deploy/otel-collector -n monitoring -f --timestamps
 ```
+
+## Clean up
+
+```bash
+terraform destroy
+```
+
+`terraform destroy` removes everything the example created, including the project.
 
 ## Documentation
 
 - [PostgreSQL Flex Metrics](https://docs.stackit.cloud/products/databases/postgresql-flex/reference/observability-metrics-in-postgresql-flex/)
-- [MongoDB Flex Metrics](https://docs.stackit.cloud/products/databases/mongodb-flex/reference/observability-metrics/)

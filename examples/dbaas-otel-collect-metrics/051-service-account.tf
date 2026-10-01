@@ -14,25 +14,32 @@
 
 resource "stackit_service_account" "this" {
   name       = "prom-proxy"
-  project_id = var.stackit_project_id
+  project_id = local.project_id
 }
 
 resource "time_rotating" "rotate" {
   rotation_days = 150
 }
 
+# The service account API generates the private key, and Terraform stores it in
+# plain text in the state. This is only an example and should not be used this
+# way in production.
 resource "stackit_service_account_key" "this" {
-  project_id            = var.stackit_project_id
+  project_id            = local.project_id
   service_account_email = stackit_service_account.this.email
   ttl_days              = 180
 
   rotate_when_changed = {
     rotation = time_rotating.rotate.id
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "stackit_authorization_project_role_assignment" "this" {
-  resource_id = var.stackit_project_id
+  resource_id = local.project_id
   role        = "prometheus-proxy.reader"
   subject     = stackit_service_account.this.email
 }
