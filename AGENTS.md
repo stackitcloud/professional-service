@@ -233,6 +233,8 @@ Fetch only the files relevant to the task. A typical example contains
 
 - **`costguard`** `[cost, cleanup, budgets, automation, iaas, terraform]`  
   **costguard keeps your STACKIT cloud tidy and installs with one `terraform apply`.** It looks for things that cost money but are not used by anything, reports them in a chat channel and, once you switch deletion on, deletes them. It also watches monthly budgets and posts when one passes a threshold. It runs on a small server that logs in with the service account attached to it, so no key is stored on the server
+- **`whisper-fn`** `[functions, serverless, object-storage, s3, ai-ml, scale-to-zero]`  
+  Rebuilds an always-on VM transcription demo as a **STACKIT Function**: a container that only runs while it's handling a request and scales to zero afterwards, instead of a VM that runs (and costs) 24/7
 
 ---
 
