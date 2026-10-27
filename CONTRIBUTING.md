@@ -62,6 +62,7 @@ To maintain a clean and secure codebase, we enforce a strict CI pipeline on all 
 - **Terraform file naming:** All `.tf` files in examples **must** be prefixed with exactly 3 digits to enforce consistent ordering (e.g., `010-provider.tf`, `020-variables.tf`, `030-resources.tf`, `100-outputs.tf`). Files inside `modules/` directories are exempt from this rule. This check is enforced automatically by pre-commit.
 - **Tags:** Every example and module `README.md` must have a tag comment as its **very first line**. Scripts must have a Tags column entry in the `scripts/README.md` overview table. The `check-readme-tags` pre-commit hook and CI job enforce this automatically — see [the tagging rules](#tagging) below.
 - **AGENTS.md is auto-generated:** Do not edit `AGENTS.md` by hand. The `generate-agents-md` pre-commit hook regenerates it automatically whenever you change an example, module, or script. The `agents-md-check` CI job fails if the file is stale.
+- **MAINTAINERS.md and lock file:** Every example needs a `MAINTAINERS.md`, and every example with Terraform code a committed `.terraform.lock.hcl`. The `example-files-check` CI job checks this for all examples changed in a pull request.
 - **No TODO comments:** The CI `todo-check` job rejects open TODO markers in code (prefixed with `#` or `//`) anywhere in the repository. Resolve all TODOs before opening a PR.
 - **Scan for Secrets:** Never commit credentials. We use `gitleaks` in the CI pipeline. Ensure you have no hardcoded tokens or passwords in your code.
 
@@ -128,9 +129,11 @@ Examples live in `examples/<example-name>/` and should be complete, deployable T
    stackit_service_account_key_path = "/path/to/stackit-sa.json"
    ```
 
-5. **Do not commit** `terraform.tfvars`, `terraform.tfstate`, `terraform.tfstate.backup`, `.terraform.lock.hcl`, or the `.terraform/` directory.
-6. **Test it locally:** `terraform init && terraform plan` must succeed before opening a PR.
-7. **AGENTS.md updates automatically** — the `generate-agents-md` pre-commit hook regenerates it from your README tags. No manual edit needed.
+5. **Commit the `.terraform.lock.hcl`** created by `terraform init`, so the provider versions are pinned. To make it valid on other platforms as well, run `terraform providers lock -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64 -platform=windows_amd64`.
+6. **Add a `MAINTAINERS.md`** with the maintainers of the example (see an existing example for the format).
+7. **Do not commit** `terraform.tfvars`, `terraform.tfstate`, `terraform.tfstate.backup`, or the `.terraform/` directory.
+8. **Test it locally:** `terraform init && terraform plan` must succeed before opening a PR.
+9. **AGENTS.md updates automatically** — the `generate-agents-md` pre-commit hook regenerates it from your README tags. No manual edit needed.
 
 ### Adding a new Terraform Module
 

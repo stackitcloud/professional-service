@@ -67,6 +67,25 @@ jobs:
       - name: Check tags in examples, modules, and scripts
         run: python3 .github/scripts/check_readme_tags.py
 
+  example-files-check:
+    name: "Check MAINTAINERS.md and Terraform lock file"
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history to diff against the base commit
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Check changed examples
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python3 .github/scripts/check_example_files.py --changed-from "$BASE"
+
   pre-commit-checks:
     name: "Pre-Commit Hooks"
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-latest' || 'stackit-ubuntu-22' }}
