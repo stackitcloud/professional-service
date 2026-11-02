@@ -60,7 +60,6 @@ Two kinds of users, so that the application cannot change the structure of the d
   </tbody>
 </table>
 
-
 ## Without 01-source
 
 Set both variables and the state of `01-source` is not read:

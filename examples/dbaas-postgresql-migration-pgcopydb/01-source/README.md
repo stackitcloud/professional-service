@@ -39,7 +39,6 @@ firewall that only allows what a database server typically may do. Run before
   </tbody>
 </table>
 
-
 ## Check the source
 
 ```bash

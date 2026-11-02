@@ -47,7 +47,7 @@ Two gates sit on the path, one per side, as in a real migration:
 - **Source side, the enterprise firewall.** A STACKIT security group on the NIC of the
   VM. It starts with default deny in both directions and only lets the VM resolve names,
   reach package mirrors and registries, and sync its clock (which stands for typical firewall
-  restrictions). `03-migration` adds the one rule the migration needs: egress to the addresses 
+  restrictions). `03-migration` adds the one rule the migration needs: egress to the addresses
   of PostgreSQL Flex on port 5432. In a real world scenario this is the change request to the firewall team.
 - **Target side, the ACL of PostgreSQL Flex.** `02-postgres-flex` lets in the public IP
   of the source VM and nothing else.
@@ -159,7 +159,6 @@ cd /opt/migration/scripts
     </tr>
   </tbody>
 </table>
-
 
 ### Demo
 
@@ -297,8 +296,8 @@ The example is intended to represent a slightly more complex Postgres setup.
 - An authenticated `stackit` CLI and `jq` on the machine that runs `01-source`: it
   removes the allow-all egress rules STACKIT puts into every new security group, which
   Terraform cannot manage.
-    - If not possible: This is just for demoing that FW rules are needed to be adjusted.
-      It is fine to skip this in `01-source/040-network.tf` under `resource "terraform_data" "remove_default_egress"`
+  - If not possible: This is just for demoing that FW rules are needed to be adjusted.
+    It is fine to skip this in `01-source/040-network.tf` under `resource "terraform_data" "remove_default_egress"`
 - An SSH key pair. `03-migration` uploads the runner over SSH.
 
 ## Tear down

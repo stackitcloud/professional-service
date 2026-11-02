@@ -48,7 +48,6 @@ source VM. It does not start the migration, see the runbook in the
 PostgreSQL Flex hands out a DNS name, a security group rule needs addresses. The `dns`
 provider resolves the name at plan time and creates one `/32` rule per address.
 
-
 ## pgcopydb settings which will be written into `migration.env`
 
 <table>

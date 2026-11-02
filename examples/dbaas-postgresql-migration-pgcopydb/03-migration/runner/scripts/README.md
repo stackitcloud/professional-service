@@ -395,6 +395,7 @@ sudo ALLOW_WRITES=1 ./40-clone.sh appdb   # test run without freeze
    pgcopydb copies the schema without indexes and constraints first, then the data,
    then builds indexes and constraints, resets the sequences, and runs
    `VACUUM ANALYZE`.
+
 7. Prints exit code, duration and the number of `ERROR`/`FATAL` lines in the log. Exits
    with 1 if pgcopydb failed.
 
@@ -430,8 +431,9 @@ sudo ./50-post.sh appdb
    alone.
 2. **Grants.** The clone ran with `--no-acl`, so the application users have no rights
    yet. For every statement in `source-grants.sql`:
+
    - grantee is an application user (`APP_USERS`): kept. `ALTER DEFAULT PRIVILEGES FOR
-     ROLE <source owner>` becomes `FOR ROLE <owner user>`, because on the target the
+ROLE <source owner>` becomes `FOR ROLE <owner user>`, because on the target the
      owner user creates new tables.
    - any other grantee, `PUBLIC` included: skipped and listed.
 

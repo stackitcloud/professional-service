@@ -106,6 +106,8 @@ Fetch only the files relevant to the task. A typical example contains
   Collect metrics from STACKIT PostgreSQL Flex instances using OpenTelemetry (OTel) and export them to STACKIT Observability
 - **`dbaas-postgresql-kms-encryption`** `[dbaas, postgresql, kms, encryption, backup, key-management]`  
   Deploys a STACKIT PostgreSQL Flex instance whose volume **and backup storage** are encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/), together with the keyring, the key and the service account the database service uses to unwrap that key
+- **`dbaas-postgresql-migration-pgcopydb`** `[dbaas, postgresql, migration, pgcopydb, on-premises, firewall, podman]`  
+  Moves the databases of a self-managed PostgreSQL (e.g. onprem, but in this demo from a STACKIT VM) into STACKIT PostgreSQL Flex with [pgcopydb](https://github.com/dimitri/pgcopydb): one consistent copy during a write freeze, then a check that source and target are identical
 - **`iaas-cross-az-layer4-loadbalancer`** `[iaas, load-balancer, layer4, ha, networking, cross-az]`  
   A classic highly-available architecture: provisioning multiple VMs across different Availability Zones (AZs) and putting them behind a STACKIT L4 Load Balancer
 - **`iaas-cross-az-layer7-loadbalancer-waf`** `[iaas, alb, load-balancer, layer7, ha, networking, waf, cross-az]`  
