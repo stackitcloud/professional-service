@@ -1,0 +1,9 @@
+# stackit_region defaults to "eu01"
+
+stackit_service_account_key_path = "/path/to/serviceaccount"
+stackit_parent_container_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" # org or folder id
+stackit_admin_email         = "admin@example.com"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+machine_type        = "g2i.2"
+disk_size_gb        = 50
+postgres_image      = "docker.io/library/postgres:18-bookworm"
