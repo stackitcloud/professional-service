@@ -214,7 +214,7 @@ Fetch only the files relevant to the task. A typical example contains
 ## Scripts
 
 - **`check-stackit-ip.sh`** `[networking, ip, iaas]`  
-  Check whether a given IP address belongs to STACKIT's public IP ranges
+  Check whether a given IP address, or every address a hostname resolves to, belongs to STACKIT's public IP ranges
 - **`create-kubeconfig-multiple-projects.sh`** `[ske, kubernetes, kubeconfig, multi-project]`  
   Generate kubeconfig entries for every SKE cluster across one or more STACKIT projects
 - **`delete-unused-volumes.sh`** `[iaas, volume, compute]`  
