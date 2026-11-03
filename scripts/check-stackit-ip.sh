@@ -14,60 +14,144 @@
 # limitations under the License.
 
 
-# check-ip: Checks if a given IP address is in the STACKIT public IP ranges.
-# Usage: ./check-ip <ip-address>
-# Example: ./check-ip 45.129.40.1
+# check-stackit-ip.sh: Checks whether an IP address, or every address a hostname
+# resolves to, is in the STACKIT public IP ranges.
+# Usage: ./check-stackit-ip.sh <ip-address-or-hostname>
+# Example: ./check-stackit-ip.sh 45.129.40.1
+# Example: ./check-stackit-ip.sh object.storage.eu01.onstackit.cloud
 
-# Check if an IP address was provided as an argument
-if [ -z "$1" ]; then
-    echo "Usage: $0 <ip-address-to-check>"
+# The v2 endpoint lists the ranges of all regions; the deprecated v1 endpoint only lists eu01.
+RANGES_URL="https://iaas.api.stackit.cloud/v2/networks/public-ip-ranges"
+
+usage() {
+    echo "Usage: $0 <ip-address-or-hostname-to-check>"
     echo "Example: $0 45.129.40.1"
-    exit 1
-fi
+    echo "Example: $0 object.storage.eu01.onstackit.cloud"
+    echo
+    echo "For a hostname, the script checks the addresses DNS returns now."
+    echo "STACKIT publishes ranges, not addresses per host, so use the ranges for firewall rules."
+}
 
-IP_TO_CHECK="$1"
+require_commands() {
+    for cmd in "$@"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            echo "Error: Required command '$cmd' is not installed." >&2
+            echo "Please install it and ensure it's in your PATH." >&2
+            exit 1
+        fi
+    done
+}
 
-# Check for required commands.
-# We need 'stackit', 'jq', and 'grepcidr'.
-for cmd in stackit jq grepcidr; do
-    if ! command -v $cmd &> /dev/null; then
-        echo "Error: Required command '$cmd' is not installed." >&2
-        echo "Please install it and ensure it's in your PATH." >&2
+# Loads the published ranges into RANGES, one "<cidr> <region>" per line.
+fetch_ranges() {
+    echo "Fetching STACKIT IP ranges..." >&2
+    RANGES=$(stackit curl "$RANGES_URL" | jq -r '.items[] | "\(.cidr) \(.region)"')
+    if [ -z "$RANGES" ]; then
+        echo "Error: Failed to fetch or parse IP ranges from STACKIT API." >&2
         exit 1
     fi
-done
+}
 
-echo "Fetching STACKIT IP ranges..." >&2
+# Prints "<cidr> <region>" of the published range that contains the address.
+range_of() {
+    local range region
+    while read -r range region; do
+        if [ -n "$range" ] && grepcidr -s "$range" <<< "$1" > /dev/null; then
+            echo "$range $region"
+            return 0
+        fi
+    done <<< "$RANGES"
+    return 1
+}
 
-FOUND=0
-RANGES_CHECKED=0
+is_ip_address() {
+    [[ "$1" == *:* || "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]
+}
 
-while read -r RANGE; do
-    # Skip empty lines, just in case
-    if [ -z "$RANGE" ]; then
-        continue
+check_ip_address() {
+    local ip="$1" match
+    require_commands stackit jq grepcidr
+    fetch_ranges
+    if match=$(range_of "$ip"); then
+        # Earlier versions let grepcidr print the matching address; keep that line.
+        echo "$ip"
+        echo "Found: $ip is in the range ${match% *} (region ${match#* })"
+        exit 0
+    fi
+    echo "Not found: $ip is not in any of the STACKIT ranges."
+    exit 1
+}
+
+# Prints the answer section of a dig query; exits if no DNS server replied.
+dig_answer() {
+    local answer
+    if ! answer=$(dig +noall +answer "$1" "$2"); then
+        echo "Error: The DNS query for $1 ($2) failed." >&2
+        exit 1
+    fi
+    echo "$answer"
+}
+
+check_hostname() {
+    local host="$1" a_answer aaaa_answer addresses chain status ip match all_found=1
+    require_commands dig
+
+    # Resolve first, so an unknown name fails before the API call.
+    a_answer=$(dig_answer "$host" A) || exit 1
+    aaaa_answer=$(dig_answer "$host" AAAA) || exit 1
+    addresses=$(awk '$4 == "A" || $4 == "AAAA" { print $5 }' <<< "$a_answer"$'\n'"$aaaa_answer")
+    if [ -z "$addresses" ]; then
+        status=$(dig +noall +comments "$host" A | sed -n 's/.*status: \([A-Z]*\).*/\1/p')
+        echo "Error: $host has no A or AAAA records (DNS status: ${status:-unknown})." >&2
+        exit 1
     fi
 
-    RANGES_CHECKED=$((RANGES_CHECKED + 1))
-
-    if echo "$IP_TO_CHECK" | grepcidr -s "$RANGE"; then
-        echo "Found: $IP_TO_CHECK is in the range $RANGE"
-        FOUND=1
-        break
+    chain=$(awk '$4 == "CNAME" { sub(/\.$/, "", $5); print $5 }' <<< "$a_answer")
+    if [ -z "$chain" ]; then
+        chain=$(awk '$4 == "CNAME" { sub(/\.$/, "", $5); print $5 }' <<< "$aaaa_answer")
     fi
-done < <(stackit curl "https://iaas.api.eu01.stackit.cloud/v1/networks/public-ip-ranges" | jq -r '.items[].cidr')
 
-# Check if we processed any ranges at all
-if [ $RANGES_CHECKED -eq 0 ]; then
-    echo "Error: Failed to fetch or parse IP ranges from STACKIT API." >&2
+    require_commands stackit jq grepcidr
+    fetch_ranges
+
+    if [ -n "$chain" ]; then
+        echo "CNAME chain: $host -> ${chain//$'\n'/ -> }"
+    fi
+    echo "$host resolves now to:"
+    while read -r ip; do
+        if match=$(range_of "$ip"); then
+            printf '  %-16s in the range %s (region %s)\n' "$ip" "${match% *}" "${match#* }"
+            continue
+        fi
+        all_found=0
+        if [[ "$ip" == *:* && "$RANGES" != *:* ]]; then
+            printf '  %-16s not checked, the API publishes no IPv6 ranges\n' "$ip"
+        else
+            printf '  %-16s not in the published ranges\n' "$ip"
+        fi
+    done <<< "$addresses"
+
+    if [ "$all_found" -eq 1 ]; then
+        echo "Found: every address of $host is in the STACKIT ranges."
+        exit 0
+    fi
+    echo "Not found: not every address of $host is in the STACKIT ranges."
     exit 1
-fi
+}
 
-# Check the flag after the loop
-if [ $FOUND -eq 0 ]; then
-    # If the loop finished without finding anything, print a "not found" message
-    echo "Not found: $IP_TO_CHECK is not in any of the STACKIT ranges."
-    exit 1
-fi
+case "$1" in
+    "")
+        usage
+        exit 1
+        ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+esac
 
-exit 0
+if is_ip_address "$1"; then
+    check_ip_address "$1"
+else
+    check_hostname "$1"
+fi

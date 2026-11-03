@@ -9,7 +9,7 @@ Helper scripts for working with STACKIT services.
 | Script                                                                             | Purpose                                                                                                                                   | Required tools                                             | Tags                                                             |
 | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
 | [`s3-ssec.sh`](#s3-ssec)                                                           | Upload and Download Files to a STACKIT S3 Bucket (Object Storage) and enable Server Side Encryption with Custom Keys.                     | `awscli`, `python3-awscrt`                                 | `object-storage, s3, encryption, ssec`                           |
-| [`check-stackit-ip.sh`](#check-stackit-ipsh)                                       | Check whether a given IP address belongs to STACKIT's public IP ranges.                                                                   | `stackit`, `jq`, `grepcidr`                                | `networking, ip, iaas`                                           |
+| [`check-stackit-ip.sh`](#check-stackit-ipsh)                                       | Check whether a given IP address, or every address a hostname resolves to, belongs to STACKIT's public IP ranges.                         | `stackit`, `jq`, `grepcidr`, `dig` (hostnames only)        | `networking, ip, iaas`                                           |
 | [`create-kubeconfig-multiple-projects.sh`](#create-kubeconfig-multiple-projectssh) | Generate kubeconfig entries for every SKE cluster across one or more STACKIT projects.                                                    | `stackit`, `yq`                                            | `ske, kubernetes, kubeconfig, multi-project`                     |
 | [`delete-unused-volumes.sh`](#delete-unused-volumessh)                             | Delete all STACKIT volumes whose status is `AVAILABLE` (i.e. not attached).                                                               | `stackit`, `yq`                                            | `iaas, volume, compute`                                          |
 | [`list-project-resources.sh`](#list-project-resourcessh)                           | Render a Markdown inventory of resources (DNS, SKE, databases, storage, …) for one or more STACKIT projects.                              | `stackit`, `jq`                                            | `dns, ske, dbaas, object-storage, inventory, multi-project`      |
@@ -90,9 +90,11 @@ Credential Rotation: Never commit the script to public repositories while it con
 
 ## `check-stackit-ip.sh`
 
-Looks up the STACKIT public IP ranges (via `stackit curl https://iaas.api.eu01.stackit.cloud/v1/networks/public-ip-ranges`) and tells you whether a given IP falls inside any of them. Useful to verify whether a public-facing address actually originates from STACKIT.
+Looks up the STACKIT public IP ranges of all regions (via `stackit curl https://iaas.api.stackit.cloud/v2/networks/public-ip-ranges`) and tells you whether a given IP falls inside any of them, and in which region. Useful to verify whether a public-facing address actually originates from STACKIT.
 
-Exits `0` if the IP is found, `1` otherwise.
+Given a hostname instead of an IP, the script resolves its A and AAAA records with `dig`, prints the CNAME chain if there is one, and checks every address. DNS only shows the addresses the name resolves to now. STACKIT publishes ranges, not addresses per host, so firewall rules should use the ranges. The API publishes no IPv6 ranges, so the script reports IPv6 addresses as not checked.
+
+Exits `0` if the IP is found, or if every address of the hostname is found. Exits `1` otherwise, and also for a hostname without A or AAAA records.
 
 ### Example
 
@@ -105,7 +107,23 @@ Sample output:
 
 ```
 Fetching STACKIT IP ranges...
-Found: 45.129.40.1 is in the range 45.129.40.0/22
+45.129.40.1
+Found: 45.129.40.1 is in the range 45.129.40.0/21 (region eu01)
+```
+
+```bash
+# Check every address a hostname resolves to
+./check-stackit-ip.sh iaas.api.eu01.stackit.cloud
+```
+
+Sample output:
+
+```
+Fetching STACKIT IP ranges...
+CNAME chain: iaas.api.eu01.stackit.cloud -> ipn948fgj5.api.eu01.stackit.cloud
+iaas.api.eu01.stackit.cloud resolves now to:
+  193.148.160.37   in the range 193.148.160.0/20 (region eu01)
+Found: every address of iaas.api.eu01.stackit.cloud is in the STACKIT ranges.
 ```
 
 ---
