@@ -90,7 +90,7 @@ Credential Rotation: Never commit the script to public repositories while it con
 
 ## `check-stackit-ip.sh`
 
-Looks up the STACKIT public IP ranges (via `stackit curl https://iaas.api.eu01.stackit.cloud/v1/networks/public-ip-ranges`) and tells you whether a given IP falls inside any of them. Useful to verify whether a public-facing address actually originates from STACKIT.
+Looks up the STACKIT public IP ranges of all regions (via `stackit curl https://iaas.api.stackit.cloud/v2/networks/public-ip-ranges`) and tells you whether a given IP falls inside any of them, and in which region. Useful to verify whether a public-facing address actually originates from STACKIT.
 
 Exits `0` if the IP is found, `1` otherwise.
 
@@ -105,7 +105,8 @@ Sample output:
 
 ```
 Fetching STACKIT IP ranges...
-Found: 45.129.40.1 is in the range 45.129.40.0/22
+45.129.40.1
+Found: 45.129.40.1 is in the range 45.129.40.0/21 (region eu01)
 ```
 
 ---

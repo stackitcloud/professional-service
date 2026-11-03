@@ -42,7 +42,8 @@ echo "Fetching STACKIT IP ranges..." >&2
 FOUND=0
 RANGES_CHECKED=0
 
-while read -r RANGE; do
+# The v2 endpoint lists the ranges of all regions; the deprecated v1 endpoint only lists eu01.
+while read -r RANGE REGION; do
     # Skip empty lines, just in case
     if [ -z "$RANGE" ]; then
         continue
@@ -51,11 +52,11 @@ while read -r RANGE; do
     RANGES_CHECKED=$((RANGES_CHECKED + 1))
 
     if echo "$IP_TO_CHECK" | grepcidr -s "$RANGE"; then
-        echo "Found: $IP_TO_CHECK is in the range $RANGE"
+        echo "Found: $IP_TO_CHECK is in the range $RANGE (region $REGION)"
         FOUND=1
         break
     fi
-done < <(stackit curl "https://iaas.api.eu01.stackit.cloud/v1/networks/public-ip-ranges" | jq -r '.items[].cidr')
+done < <(stackit curl "https://iaas.api.stackit.cloud/v2/networks/public-ip-ranges" | jq -r '.items[] | "\(.cidr) \(.region)"')
 
 # Check if we processed any ranges at all
 if [ $RANGES_CHECKED -eq 0 ]; then
