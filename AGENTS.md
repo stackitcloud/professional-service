@@ -144,6 +144,8 @@ Fetch only the files relevant to the task. A typical example contains
   A reference implementation of a **hub-and-spoke network topology** on [STACKIT](https://www.stackit.de/), provisioned with Terraform
 - **`s3-aws-terraform-provider`** `[s3, object-storage, terraform, aws-provider]`  
   Demonstrates how to use the HashiCorp `aws` provider to interact with STACKIT's S3-compatible Object Storage
+- **`secretsmanager-kms-encryption`** `[secrets-manager, kms, encryption, key-management, dbaas, postgresql, vault]`  
+  Deploys a [STACKIT Secrets Manager](https://docs.stackit.cloud/products/security/secrets-manager/) instance whose secrets are encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/). The keyring, the key and the service account the instance uses to unwrap the key are created in the same project as the instance. On top of that, the example creates a small [PostgreSQL Flex](https://docs.stackit.cloud/products/database/postgresql-flex/) instance with a database user, stores the database credentials in the instance as a secret, and ships a script that reads the credentials back from Secrets Manager and creates a table in the database — a full round trip
 - **`secretsmanager-vault-terraform-provider`** `[secrets-manager, vault, secrets, terraform]`  
   This guide outlines the process of utilizing the [HashiCorp Vault provider](https://registry.terraform.io/providers/hashicorp/vault) alongside the STACKIT provider to write secrets in the STACKIT Secrets Manager
 - **`ske-alb-controller-waf-extension`** `[ske, alb, waf, kubernetes, ingress, load-balancer, managed]`  
