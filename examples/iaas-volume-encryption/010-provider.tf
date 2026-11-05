@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Define required providers
 terraform {
-  required_version = ">= 0.14.0"
+  required_version = ">= 1.0.0"
   required_providers {
     stackit = {
       source  = "stackitcloud/stackit"
-      version = "0.80.0"
+      version = ">= 0.118.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.6.0"
     }
   }
 }
 
 provider "stackit" {
-  default_region           = "eu01"
-  service_account_key_path = "secrets.json"
+  default_region           = var.stackit_region
+  service_account_key_path = var.stackit_service_account_key_path
   experiments              = ["iam"]
+  enable_beta_resources    = true
 }
