@@ -1,5 +1,5 @@
 #cloud-config
 users:
   - name: Administrator
-    passwd: "Start1234567890!"
+    passwd: ${jsonencode(admin_password)}
     groups: Administrators

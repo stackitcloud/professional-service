@@ -12,22 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Copy this file to terraform.tfvars and fill in your own values.
+# Required: stackit_project_id
 
-#
-# Custom User Settings
-#
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_region                   = "eu01"
+stackit_service_account_key_path = "./keys/stackit-sa.json"
 
-# STACKIT Availability Zone
-variable "zone" {
-  type        = string
-  description = "Availability Zone"
-  default     = "eu01-3"
-}
+network_cidr        = "10.0.0.138/24"
 
+name_prefix       = "iaas-vol-enc"
+availability_zone = "eu01-3"
 
-# STACKIT ProjectID
-variable "STACKIT_PROJECT_ID" {
-  type        = string
-  description = "STACKIT Project ID"
-  default     = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-}
+kms_role = "kms.reader"
+kek_key_version = 1
+
+image_name_regex         = "^Windows Server 2025"
+volume_size              = 64
+volume_performance_class = "storage_premium_perf6"
+machine_type             = "g2i.4"

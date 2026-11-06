@@ -13,15 +13,16 @@
 # limitations under the License.
 
 resource "stackit_kms_keyring" "volume" {
-  project_id   = var.STACKIT_PROJECT_ID
-  display_name = "iaas-volume"
-  description  = "example description"
+  project_id   = var.stackit_project_id
+  display_name = "${var.name_prefix}-keyring"
+  description  = "Keyring for the encrypted block storage volumes of ${var.name_prefix}"
 }
 
-resource "stackit_kms_key" "volume-key" {
-  project_id   = var.STACKIT_PROJECT_ID
+resource "stackit_kms_key" "volume" {
+  project_id   = var.stackit_project_id
   keyring_id   = stackit_kms_keyring.volume.keyring_id
-  display_name = "volume-key-01"
+  display_name = "${var.name_prefix}-key"
+  description  = "Key encryption key for the volumes of ${var.name_prefix}"
   protection   = "software"
   algorithm    = "aes_256_gcm"
   purpose      = "symmetric_encrypt_decrypt"
