@@ -31,4 +31,3 @@ image_name_regex         = "^Windows Server 2025"
 volume_size              = 64
 volume_performance_class = "storage_premium_perf6"
 machine_type             = "g2i.4"
-
