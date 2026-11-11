@@ -29,7 +29,7 @@ resource "stackit_network_area_region" "sna" {
   organization_id = var.stackit_organization_id
   network_area_id = stackit_network_area.sna.network_area_id
   ipv4 = {
-    transfer_network = "172.3.0.0/16"
+    transfer_network = "172.16.0.0/16"
     network_ranges = [
       {
         prefix = "10.28.0.0/16"
