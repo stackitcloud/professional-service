@@ -1,10 +1,7 @@
 {
   "uid": "vpn-telemetry",
   "title": "VPN Telemetry",
-  "tags": [
-    "vpn",
-    "telemetry"
-  ],
+  "tags": ["vpn", "telemetry"],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
@@ -43,9 +40,7 @@
         "colorMode": "value",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       },
       "fieldConfig": {
@@ -84,9 +79,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       },
       "fieldConfig": {
@@ -138,9 +131,7 @@
         "colorMode": "value",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       },
       "fieldConfig": {
@@ -180,9 +171,7 @@
         "colorMode": "background",
         "graphMode": "none",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       },
       "fieldConfig": {

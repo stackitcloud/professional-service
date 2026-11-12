@@ -8,10 +8,10 @@ You run a VPN between your own network (on-premises) and STACKIT and want to kno
 
 ## Which way fits you?
 
-| I want to... | Go to |
-|---|---|
-| Build the example VPN and see what arrives | [Path A: example VPN](#path-a-build-the-example-vpn) |
-| Use it with a VPN I already run | [Path B: my own VPN](#path-b-use-it-with-your-own-vpn) |
+| I want to...                               | Go to                                                  |
+| ------------------------------------------ | ------------------------------------------------------ |
+| Build the example VPN and see what arrives | [Path A: example VPN](#path-a-build-the-example-vpn)   |
+| Use it with a VPN I already run            | [Path B: my own VPN](#path-b-use-it-with-your-own-vpn) |
 
 ## What you get
 
@@ -29,10 +29,10 @@ flowchart LR
     style Router fill:#f9f,stroke:#333,stroke-width:3px,color:#000
 ```
 
-| Log type | What it tells you | Examples |
-|---|---|---|
-| `AUDIT` | Who changed what in the VPN | Gateway created, connection created, with e-mail of the user and the settings |
-| `SERVICE` | What the tunnels are doing | Connection started, established, key renewal (rekeying), errors |
+| Log type  | What it tells you           | Examples                                                                      |
+| --------- | --------------------------- | ----------------------------------------------------------------------------- |
+| `AUDIT`   | Who changed what in the VPN | Gateway created, connection created, with e-mail of the user and the settings |
+| `SERVICE` | What the tunnels are doing  | Connection started, established, key renewal (rekeying), errors               |
 
 - **Telemetry Router:** a STACKIT service, not a network router. It collects the logs of linked projects and passes them on to one or more targets. It has nothing to do with the routing of your VPN traffic.
 - **Telemetry Link:** connects a project to the Telemetry Router. Without a link the Telemetry Router gets nothing.
@@ -58,10 +58,10 @@ Without metrics there is no tunnel graph yet. What you can use today is the **co
 
 Two projects are created. The Telemetry Router and Grafana go into the STACKIT project, next to the VPN gateway:
 
-| Project | Role | Created by |
-|---|---|---|
+| Project                     | Role                                                                          | Created by   |
+| --------------------------- | ----------------------------------------------------------------------------- | ------------ |
 | **On-premises (simulated)** | Plays your own network. It is only a second Network Area with its own project | This example |
-| **STACKIT** | Your STACKIT side of the VPN, with Telemetry Router and Grafana | This example |
+| **STACKIT**                 | Your STACKIT side of the VPN, with Telemetry Router and Grafana               | This example |
 
 ```mermaid
 flowchart LR
@@ -113,7 +113,7 @@ Then import the ready-made dashboard: **Dashboards**, **New**, **Import**, uploa
 
 **4. Look at the logs yourself**
 
-For your own questions use **Explore** and the data source **Loki**. Loki is the log store of Grafana. Paste a query into the field, choose a time range such as *Last 3 hours* and click **Run query**:
+For your own questions use **Explore** and the data source **Loki**. Loki is the log store of Grafana. Paste a query into the field, choose a time range such as _Last 3 hours_ and click **Run query**:
 
 ```
 {service_name="vpn"}
@@ -195,11 +195,11 @@ flowchart LR
     style Router fill:#f9f,stroke:#333,stroke-width:3px,color:#000
 ```
 
-| Destination | Setting | Checked |
-|---|---|---|
-| STACKIT Observability | `config_type = "OpenTelemetry"` | Yes, this is what the example does |
-| Any OTLP endpoint | `config_type = "OpenTelemetry"`, `uri`, Basic Auth or bearer token | No |
-| S3 bucket | `config_type = "S3"`, bucket, endpoint, access key | Yes, in an earlier run |
+| Destination           | Setting                                                            | Checked                            |
+| --------------------- | ------------------------------------------------------------------ | ---------------------------------- |
+| STACKIT Observability | `config_type = "OpenTelemetry"`                                    | Yes, this is what the example does |
+| Any OTLP endpoint     | `config_type = "OpenTelemetry"`, `uri`, Basic Auth or bearer token | No                                 |
+| S3 bucket             | `config_type = "S3"`, bucket, endpoint, access key                 | Yes, in an earlier run             |
 
 An additional OTLP destination in `040-observability.tf` looks like this:
 
@@ -239,9 +239,9 @@ What is **not** certain:
 
 ## Settings
 
-| Variable | Meaning |
-|---|---|
-| `stackit_org_id` | Your organization (Path A) |
-| `stackit_admin_email` | Owner of the two example projects (Path A) |
-| `stackit_service_account_key_path` | Service account key, optional |
-| `name_prefix` | Prefix for all names, default `vpn-telemetry` |
+| Variable                           | Meaning                                       |
+| ---------------------------------- | --------------------------------------------- |
+| `stackit_org_id`                   | Your organization (Path A)                    |
+| `stackit_admin_email`              | Owner of the two example projects (Path A)    |
+| `stackit_service_account_key_path` | Service account key, optional                 |
+| `name_prefix`                      | Prefix for all names, default `vpn-telemetry` |
