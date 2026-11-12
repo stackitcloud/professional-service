@@ -1,0 +1,3 @@
+stackit_org_id                   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_admin_email              = "you@example.com"
+stackit_service_account_key_path = "/path/to/stackit-sa.json"
