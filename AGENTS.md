@@ -210,6 +210,8 @@ Fetch only the files relevant to the task. A typical example contains
   This example establishes a policy-based IPsec VPN connection between two separate STACKIT Network Areas (SNAs)
 - **`vpn-route-stackit-stackit`** `[vpn, networking, ipsec, site-to-site, route-based, sna]`  
   This example establishes a route-based IPsec VPN connection between two separate STACKIT Network Areas (SNAs)
+- **`vpn-telemetry`** `[vpn, telemetry, otel, observability, logging, terraform]`  
+  You run a VPN between your own network (on-premises) and STACKIT and want to know what the VPN reports about itself. This example shows which records the VPN sends and how you get them into Grafana
 
 ## Scripts
 
