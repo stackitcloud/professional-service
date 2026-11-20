@@ -196,6 +196,8 @@ Fetch only the files relevant to the task. A typical example contains
   For the full Terraform Landing Zone implementation, please visit: [STACKIT Terraform Landing Zone Repository](https://github.com/stackitcloud/stackit-landing-zone)
 - **`telemetry-router-hub-spoke-setup`** `[telemetry, otel, observability, metrics, logging, routing, multi-project]`  
   This example demonstrates how to use the **STACKIT Telemetry Router** to centralize observability data across multiple projects, folders, and even the entire organization
+- **`terraform-backend-git-state-locking`** `[terraform, git, state, backend, remote-state, locking, encryption, sops, age]`  
+  This example stores Terraform state in a repository on a [STACKIT Git](https://docs.stackit.cloud/products/developer-platform/git/) instance, with state locking, state history and encryption at rest. It uses the community tool [plumber-cd/terraform-backend-git](https://github.com/plumber-cd/terraform-backend-git), a small wrapper around Terraform that implements the Terraform `http` backend protocol on top of plain `git` operations
 - **`terraform-pg-backend-state-locking`** `[terraform, postgresql, state, backend, remote-state, locking]`  
   This repository demonstrates how to configure STACKIT PostgreSQL Flex as a Terraform backend to enable remote state storage and native state locking
 - **`vpn-bgp-stackit-azure`** `[vpn, networking, ipsec, site-to-site, azure, cross-cloud, ha, bgp]`  
