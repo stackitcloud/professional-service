@@ -19,17 +19,16 @@ To resolve the circular dependency of provisioning a state backend using Terrafo
 
 ![architecture](architecture.drawio.png)
 
-| Terraform operation | What happens in the state repository                                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Terraform operation | What happens in the state repository                                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Lock**            | A branch `locks/<state path>` with a `<state path>.lock` file is pushed. If the branch already exists, the push is rejected and the lock fails. |
 | **Read state**      | The state file is read from the configured branch (`main`) and decrypted with sops/age.                                                         |
-| **Write state**     | The state is encrypted with sops/age and committed to `main`. Every `apply` becomes one commit, so you get a full, diffable state history.       |
+| **Write state**     | The state is encrypted with sops/age and committed to `main`. Every `apply` becomes one commit, so you get a full, diffable state history.      |
 | **Unlock**          | The `locks/<state path>` branch is deleted.                                                                                                     |
-
 
 ## Security considerations
 
-- **Encrypt the state.** Without encryption, every secret in your state (passwords, keys, tokens) ends up in plain text in the Git history and cannot be removed easily. `terraform-backend-git` only encrypts when the sops/age variables are set (see [`.env.example`](.env.example)); otherwise it silently stores plain text. 
+- **Encrypt the state.** Without encryption, every secret in your state (passwords, keys, tokens) ends up in plain text in the Git history and cannot be removed easily. `terraform-backend-git` only encrypts when the sops/age variables are set (see [`.env.example`](.env.example)); otherwise it silently stores plain text.
 - **Use a dedicated, private repository** for state files only.
 - **Restrict the Git instance ACL.** The bootstrap takes the allowed CIDRs as a variable. This applies if you use STACKIT Git dedicated for this use case.
 

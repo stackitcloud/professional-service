@@ -78,7 +78,6 @@ alias tfg='terraform-backend-git git terraform'
 
 6. Check the state file in the repository after the first `apply`: it must contain a `sops` section and encrypted values (`ENC[AES256_GCM,...]`).
 
-
 ## What you see in the repository
 
 - On `main`: one commit per state change
