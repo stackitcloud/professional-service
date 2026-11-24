@@ -4,7 +4,7 @@
 
 This example stores Terraform state in a repository on a [STACKIT Git](https://docs.stackit.cloud/products/developer-platform/git/) instance, with state locking, state history and encryption at rest. It uses the community tool [plumber-cd/terraform-backend-git](https://github.com/plumber-cd/terraform-backend-git), a small wrapper around Terraform that implements the Terraform `http` backend protocol on top of plain `git` operations.
 
-You run `terraform-backend-git git terraform <command>` instead of `terraform <command>`. Each Terraform directory only needs a small `terraform-backend-git.hcl` that names the state repository and the state path.
+You run `terraform-backend-git git terraform <command>` instead of `terraform <command>`. Each Terraform directory only needs a `.env` with environment variables that name the state repository and the state path and hold the Git credentials and the sops/age settings.
 
 It needs no additional infrastructure besides the Git instance and no feature on the Forgejo side: everything runs over normal `git clone`, `git push` and branch deletes.
 
@@ -28,13 +28,13 @@ To resolve the circular dependency of provisioning a state backend using Terrafo
 
 ## Security considerations
 
-- **Encrypt the state.** Without encryption, every secret in your state (passwords, keys, tokens) ends up in plain text in the Git history and cannot be removed easily. `terraform-backend-git` only encrypts when the sops/age variables are set (see [`.env.example`](.env.example)); otherwise it silently stores plain text.
+- **Encrypt the state.** Without encryption, every secret in your state (passwords, keys, tokens) ends up in plain text in the Git history and cannot be removed easily. `terraform-backend-git` only encrypts when the sops/age variables are set (see [`.env.example`](01-example-project/.env.example)); otherwise it silently stores plain text.
 - **Use a dedicated, private repository** for state files only.
 - **Restrict the Git instance ACL.** The bootstrap takes the allowed CIDRs as a variable. This applies if you use STACKIT Git dedicated for this use case.
 
 ## Limitations
 
-- **Community tool.** `terraform-backend-git` is maintained by a open source community.
+- **Community tool.** `terraform-backend-git` is maintained by an open source community.
 - **Repository growth.** Every `apply` stores the full (encrypted) state as a new commit.
 
 ## Alternatives
