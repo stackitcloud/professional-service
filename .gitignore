@@ -87,3 +87,6 @@ dist/
 
 ### Build output (e.g. Terraform local_file resources)
 build/
+
+# terraform-backend-git: generated backend config
+git_http_backend.auto.tf
