@@ -1,0 +1,4 @@
+stackit_project_id               = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_region                   = "eu01"
+stackit_service_account_key_path = "./keys/sa-key.json"
+bucket_name                      = "default-deny-example-bucket"

@@ -134,6 +134,8 @@ Fetch only the files relevant to the task. A typical example contains
   This repository provides an automated setup for **Authentik** on STACKIT SKE, pre-configured as an Identity Provider (IdP) for STACKIT with both **OIDC** and **SCIM** support
 - **`nlb-alb-nginx`** `[load-balancer, alb, layer4, layer7, nginx, tls, cert, iaas, terraform, ha]`  
   Terraform code for a two-tier load balancing setup on STACKIT: a public **Network Load Balancer (Layer 4)** distributes the connections across **two private Application Load Balancers (Layer 7)**. Each ALB terminates TLS and balances across **three nginx servers** in different availability zones. The service is reachable via a **STACKIT DNS** name
+- **`object-storage-default-deny`** `[object-storage, s3, access-control, iam, security, terraform]`  
+  Demonstrates how to enforce a **default-deny** access policy on a STACKIT Object Storage bucket for all credentials within the same STACKIT project and control permissions exclusively through S3 bucket policies
 - **`object-storage-write-only-access`** `[object-storage, s3, access-control, secrets-manager, object-lock, iam]`  
   Demonstrates how to create a STACKIT Object Storage bucket with Object Lock enabled, configure write-only access credentials, and store all credentials securely in STACKIT Secrets Manager using the HashiCorp Vault provider
 - **`opa-policy-reactive-agent`** `[opa-policy-reactive-agent, iaas, observability, iam, opa, rego, compliance, security]`  
