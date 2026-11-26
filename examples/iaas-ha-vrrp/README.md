@@ -1,4 +1,4 @@
-<!-- tags: iaas, ha, vrrp, networking -->
+<!-- tags: iaas, ha, vrrp, keepalived, networking -->
 
 # Basic High Availability Setup Using VRRP
 
