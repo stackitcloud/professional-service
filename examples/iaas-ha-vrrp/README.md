@@ -19,9 +19,30 @@ Network), which enforces strict MAC anti-spoofing: any packet with a source MAC 
 the port's registered MAC is dropped. The standard VRRP virtual MAC is not registered on the port
 and therefore gets blocked.
 
-The keepalived option `no_virtual_mac` instructs keepalived to use the real NIC MAC in all GARP
-(Gratuitous ARP) packets instead of the virtual MAC. OVN allows this because the MAC matches the
-registered port MAC.
+keepalived only uses a virtual MAC if `use_vmac` is set in the `vrrp_instance`. **Do not set
+`use_vmac` on STACKIT.** Without it (the default), keepalived sends all GARP (Gratuitous ARP)
+packets with the real NIC MAC. OVN accepts them because the MAC matches the registered port MAC.
+
+> **Note:** Earlier versions of this example contained the line `no_virtual_mac`. This is not a
+> keepalived keyword: keepalived logs `Unknown keyword 'no_virtual_mac'` and ignores it. You can
+> remove it from existing configurations.
+
+## Why a Separate NIC for the VIP
+
+The VIP has its own network interface (`vip01` in [060-ha.tf](060-ha.tf)) that is not attached to
+any VM. Both node NICs list the VIP in their `allowed_addresses`. The separate NIC is needed for
+two reasons:
+
+- **Public IP:** A STACKIT public IP can only be attached to a network interface (1:1 NAT). If it
+  were attached to the NIC of a node, it would stay with that node and not move on failover. On
+  the separate VIP NIC, the 1:1 NAT follows the GARP to whichever node currently holds the VIP.
+- **Address reservation:** The NIC reserves the VIP in the subnet. An address that is only listed
+  in `allowed_addresses` still counts as free and could later be assigned to a new VM, which would
+  cause an IP conflict.
+
+For an internal-only VIP without a public IP, `allowed_addresses` on both node NICs is enough to
+make the failover work. In that case, either choose a VIP outside the DHCP range or still create a
+NIC to reserve the address.
 
 > **Note on HA approaches across cloud platforms:**
 > Other hyperscalers typically solve active-passive HA either via native cloud API integration
@@ -95,7 +116,7 @@ any action by a node.
 
 ### Measured values
 
-Measured in November 2026 in `eu01` with keepalived 2.3.3 (unicast, `no_virtual_mac`), 91
+Measured in November 2026 in `eu01` with keepalived 2.3.3 (unicast, without `use_vmac`), 91
 inbound and 29 egress failovers. Scenarios: `systemctl stop keepalived`, interface down on the
 active node, and VM stop. A failover counts as delayed if more than 5 s pass between the first
 GARP and the first packet reaching the new node.
