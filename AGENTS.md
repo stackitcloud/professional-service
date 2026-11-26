@@ -114,7 +114,7 @@ Fetch only the files relevant to the task. A typical example contains
   A classic highly-available architecture: provisioning multiple VMs across different Availability Zones (AZs) and putting them behind a STACKIT L7 Load Balancer. This example also includes a Web Application Firewall (WAF) configuration to secure the backend workloads against malicious traffic
 - **`iaas-edge-k8s-cluster`** `[iaas, edge, kubernetes, talos, compute]`  
   Deploys a STACKIT Edge Cloud (STEC) management plane and a Talos Linux Kubernetes cluster on STACKIT Compute Engine VMs: three control plane nodes and three worker nodes
-- **`iaas-ha-vrrp`** `[iaas, ha, vrrp, networking]`  
+- **`iaas-ha-vrrp`** `[iaas, ha, vrrp, keepalived, networking]`  
   This guide provides a comprehensive, step-by-step process for setting up a Basic High Availability (HA) cluster using the Virtual Router Redundancy Protocol (VRRP). In this HA configuration, one virtual machine (VM) functions as the active primary node while the secondary remains on standby
 - **`iaas-image-upload`** `[iaas, image, compute, upload, custom-image]`  
   Upload a custom VM image to STACKIT using Terraform
