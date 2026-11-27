@@ -1,0 +1,23 @@
+[project]
+name = "whisper-fn"
+description = "STACKIT Function that transcribes a video from S3 with openai-whisper and writes the transcript back to S3."
+version = "0.1.0"
+requires-python = ">=3.9"
+readme = "README.md"
+license = "MIT"
+dependencies = [
+  "httpx",
+  "pytest",
+  "pytest-asyncio",
+  "boto3",
+  "openai-whisper",
+  "imageio-ffmpeg",
+  "uvicorn"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "fn"
+
+[tool.setuptools]
+py-modules = ["handler"]
