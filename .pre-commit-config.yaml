@@ -97,3 +97,12 @@ repos:
         language: system
         types: [terraform]
         pass_filenames: true
+
+      - id: example-files
+        name: Examples Must Have MAINTAINERS.md and Lock Files
+        description: Ensures every example has a MAINTAINERS.md with at least one maintainer and a .terraform.lock.hcl in every Terraform root directory.
+        entry: python3 .github/scripts/check_example_files.py
+        language: system
+        files: ^examples/
+        pass_filenames: true
+        require_serial: true
