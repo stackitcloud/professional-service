@@ -1,14 +1,45 @@
-<!-- tags: iaas, volume, encryption, kms, block-storage -->
+<!-- tags: iaas, encryption, kms, block-storage, compute, migration, backup -->
 
-# IaaS Volume Encryption (Terraform)
+# IaaS Volume Encryption with KMS (Terraform)
 
-## Terraform Examples
+## Terraform Example
 
-KMS & IaaS Resources to deploy a encrypted Block Storage Volume
+Deploys a STACKIT block storage volume that is encrypted with a customer-managed key from
+[STACKIT KMS](https://docs.stackit.cloud/products/security/kms/), and a server that boots
+from it. Terraform also creates the keyring, the key, the service account that IaaS uses
+to access the key, and a network for the server. A second part shows how to move data from
+an existing unencrypted volume to an encrypted one.
 
-### Migrations Steps to move data von non encrypted Volumes to a encrypted Volume
+## How it works
 
-1. Create Backup of non encrypted Volume
+```mermaid
+flowchart LR
+    KR["Keyring"] --> KEY["Key<br/>aes_256_gcm, software"] --> VER["Key version 1"]
+    SA["Service account<br/>role kms.reader"] -->|"accesses"| VER
+    VOL["Volume<br/>encryption_parameters"] -->|"via"| SA
+    VOL -->|"data key wrapped with"| VER
+    SRV["Server"] -->|"boots from"| VOL
+```
+
+## Deploy
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+
+terraform init
+terraform plan
+terraform apply
+```
+
+## Verify
+
+```bash
+terraform output volume_encrypted  # true
+```
+
+## Migrate an unencrypted volume
+
+### 1. Create Backup of non encrypted Volume
 
 There are two options to perform a Backup the first one is to reference a volume directly:
 
@@ -24,11 +55,13 @@ Another Option is to first create a Snapshot and make a Backup von this Snapshot
 stackit volume backup create --source-type snapshot --source-id <snapshotId> --name backup01
 ```
 
-2. Create new encrypted Volume
-   Use the provided Terraform to deploy a new encrypted Volume with the same size (or larger) then the original Volume.
+### 2. Create new encrypted Volume
 
-3. Create new encrypted Volume from Backup
-   Use the Backup as a source for a new encrypted Volume.
+Use the provided Terraform to deploy a new encrypted Volume with the same size (or larger) then the original Volume.
+
+### 3. Create new encrypted Volume from Backup
+
+Use the Backup as a source for a new encrypted Volume.
 
 ```hcl
 resource "stackit_volume" "encrypted" {
@@ -50,8 +83,14 @@ resource "stackit_volume" "encrypted" {
 }
 ```
 
-4. Recreate VM or attach volume to existing VM
+### 4. Recreate VM or attach volume to existing VM
 
 ```bash
 stackit server create --availability-zone eu01-3 --machine-type c2i.2 --boot-volume-source-type volume --boot-volume-source-id <volumeId> --network-id <networkId> -n server1
+```
+
+## Cleanup
+
+```bash
+terraform destroy
 ```

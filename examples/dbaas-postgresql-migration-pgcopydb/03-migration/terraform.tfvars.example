@@ -1,0 +1,2 @@
+ssh_private_key_path = "/path/to/sshkey"
+stackit_service_account_key_path = "/path/to/serviceaccount"

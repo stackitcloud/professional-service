@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-resource "stackit_service_account" "iaas-kms" {
-  project_id = var.STACKIT_PROJECT_ID
-  name       = "iaas-kms-sa"
+# IaaS unwraps the volume key through this service account. It is referenced
+# in the encryption_parameters of the volume.
+resource "stackit_service_account" "volume_kms" {
+  project_id = var.stackit_project_id
+  name       = "${var.name_prefix}-kms"
 }
 
-resource "stackit_authorization_project_role_assignment" "role-assign" {
-  resource_id = var.STACKIT_PROJECT_ID
-  role        = "kms.reader"
-  subject     = stackit_service_account.iaas-kms.email
-  depends_on = [
-    stackit_service_account.iaas-kms,
-  ]
+resource "stackit_authorization_project_role_assignment" "volume_kms" {
+  resource_id = var.stackit_project_id
+  role        = var.kms_role
+  subject     = stackit_service_account.volume_kms.email
 }

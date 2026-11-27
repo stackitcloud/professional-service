@@ -1,0 +1,8 @@
+stackit_parent_id = "<organization-or-folder-id>"
+
+# Name of the example project
+stackit_project_name = "01-example-project"
+stackit_org_admin = "<your-admin@mail.com>"
+
+stackit_service_account_key_path = "./keys/service-account.json"
+stackit_region = "eu01"

@@ -1,0 +1,19 @@
+# pgcopydb runner: PostgreSQL client tools, pgcopydb and the system CA bundle.
+
+ARG PG_MAJOR=18
+FROM docker.io/library/postgres:${PG_MAJOR}-bookworm
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pgcopydb ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /var/lib/pgcopydb \
+ && chown postgres:postgres /var/lib/pgcopydb
+
+# Logs, schema dumps and reports. lib.sh mounts the host directory of the same
+# path here, so they survive the throwaway containers every step runs in.
+VOLUME /var/lib/pgcopydb
+
+USER postgres
+WORKDIR /var/lib/pgcopydb
+ENTRYPOINT []
+CMD ["pgcopydb", "--version"]

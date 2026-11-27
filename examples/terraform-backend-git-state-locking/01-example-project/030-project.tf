@@ -12,22 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-#
-# Custom User Settings
-#
-
-# STACKIT Availability Zone
-variable "zone" {
-  type        = string
-  description = "Availability Zone"
-  default     = "eu01-3"
-}
-
-
-# STACKIT ProjectID
-variable "STACKIT_PROJECT_ID" {
-  type        = string
-  description = "STACKIT Project ID"
-  default     = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# Placeholder workload
+resource "stackit_resourcemanager_project" "this" {
+  parent_container_id = var.stackit_parent_id
+  name                = var.stackit_project_name
+  owner_email         = var.stackit_org_admin
 }

@@ -1,0 +1,15 @@
+# The public IP of the source VM and the list of databases are read from
+# ../01-source/terraform.tfstate.
+
+stackit_service_account_key_path = "/path/to/serviceaccount"
+stackit_parent_container_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+stackit_admin_email         = "admin@example.com"
+
+# Optional overrides (defaults shown)
+# extra_acl        = []
+# postgres_version = "18"
+# flavor_id        = "2.4"
+# storage_size_gb  = 10
+# backup_schedule  = "0 2 * * *"
+# owner_user       = "app_owner"
+# app_users        = ["app_rw", "app_ro"]

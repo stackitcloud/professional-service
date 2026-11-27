@@ -1,0 +1,79 @@
+#cloud-config
+# Source VM: PostgreSQL in a Podman container, run by systemd through a Quadlet
+# unit. The DBMS listens on 127.0.0.1 only. The pgcopydb runner from
+# 03-migration runs on the same VM, like a migration host next to the database
+# in a real data center scenario
+
+ssh_pwauth: false
+disable_root: true
+
+package_update: true
+packages:
+  - podman
+  - jq
+
+write_files:
+  - path: /etc/pg-source/postgres.env
+    permissions: "0600"
+    content: |
+      POSTGRES_PASSWORD=${postgres_password}
+
+  - path: /opt/pg-source/initdb/00-init.sh
+    permissions: "0755"
+    encoding: gz+b64
+    content: ${init_sh}
+
+  - path: /opt/pg-source/initdb/sql/appdb.sql
+    permissions: "0644"
+    encoding: gz+b64
+    content: ${appdb_sql}
+
+  - path: /opt/pg-source/initdb/sql/analyticsdb.sql
+    permissions: "0644"
+    encoding: gz+b64
+    content: ${analyticsdb_sql}
+
+  - path: /opt/pg-source/load-data.sh
+    permissions: "0755"
+    encoding: gz+b64
+    content: ${load_data_sh}
+
+  - path: /opt/pg-source/size-report.sh
+    permissions: "0755"
+    encoding: gz+b64
+    content: ${size_report_sh}
+
+  # Quadlet: systemd generates pg-source.service from this file.
+  - path: /etc/containers/systemd/pg-source.container
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Source PostgreSQL (simulated on-premises DBMS)
+      Wants=network-online.target
+      After=network-online.target
+
+      [Container]
+      ContainerName=pg-source
+      Image=${postgres_image}
+      Environment=POSTGRES_USER=postgres POSTGRES_DB=postgres
+      EnvironmentFile=/etc/pg-source/postgres.env
+      # The image keeps PGDATA below /var/lib/postgresql, so the volume goes there.
+      Volume=pg-source-data:/var/lib/postgresql
+      Volume=/opt/pg-source/initdb:/docker-entrypoint-initdb.d:ro
+      PublishPort=127.0.0.1:5432:5432
+      PodmanArgs=--shm-size=512m
+      HealthCmd=pg_isready -h 127.0.0.1 -U postgres -d postgres
+      HealthInterval=10s
+      Exec=-c shared_buffers=1GB -c work_mem=32MB -c maintenance_work_mem=256MB -c max_wal_size=4GB -c checkpoint_timeout=15min -c password_encryption=scram-sha-256
+
+      [Service]
+      Restart=always
+      TimeoutStartSec=900
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - systemctl daemon-reload
+  - systemctl start pg-source.service
+  - for i in $(seq 1 120); do podman exec pg-source pg_isready -h 127.0.0.1 -U postgres -d appdb && break; sleep 5; done

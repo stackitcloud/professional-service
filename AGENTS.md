@@ -106,6 +106,8 @@ Fetch only the files relevant to the task. A typical example contains
   Collect metrics from STACKIT PostgreSQL Flex instances using OpenTelemetry (OTel) and export them to STACKIT Observability
 - **`dbaas-postgresql-kms-encryption`** `[dbaas, postgresql, kms, encryption, backup, key-management]`  
   Deploys a STACKIT PostgreSQL Flex instance whose volume **and backup storage** are encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/), together with the keyring, the key and the service account the database service uses to unwrap that key
+- **`dbaas-postgresql-migration-pgcopydb`** `[dbaas, postgresql, migration, pgcopydb, on-premises, firewall, podman]`  
+  Moves the databases of a self-managed PostgreSQL (e.g. onprem, but in this demo from a STACKIT VM) into STACKIT PostgreSQL Flex with [pgcopydb](https://github.com/dimitri/pgcopydb): one consistent copy during a write freeze, then a check that source and target are identical
 - **`iaas-cross-az-layer4-loadbalancer`** `[iaas, load-balancer, layer4, ha, networking, cross-az]`  
   A classic highly-available architecture: provisioning multiple VMs across different Availability Zones (AZs) and putting them behind a STACKIT L4 Load Balancer
 - **`iaas-cross-az-layer7-loadbalancer-waf`** `[iaas, alb, load-balancer, layer7, ha, networking, waf, cross-az]`  
@@ -118,10 +120,12 @@ Fetch only the files relevant to the task. A typical example contains
   Upload a custom VM image to STACKIT using Terraform
 - **`iaas-k3s-self-managed`** `[iaas, k3s, kubernetes, self-managed]`  
   Deploys a 6-node k3s + Cilium cluster on STACKIT VMs and validates: L4 NLB, L7 ALB, CSI block storage, Cilium NetworkPolicy, and egress connectivity
+- **`iaas-paloalto-ha`** `[iaas, ha, firewall, paloalto, networking, sna, image, custom-image, vip, terraform]`  
+  Terraform code for two **Palo Alto VM-Series firewalls** in an **active/passive High Availability (HA)** setup on STACKIT IaaS. The firewalls run in different availability zones and share a **floating IP (VIP)** with a public IP on the WAN side. The code creates a **STACKIT Network Area (SNA)** with a new project, uploads the PA-VM image and deploys both firewalls with management, HA, WAN and two LAN interfaces
 - **`iaas-server-agent-restricted-egress`** `[iaas, compute, networking, sna, security-group, egress, cloud-init, server-agent, jump-host, ssh]`  
   This example deploys a Linux VM, the target. Its security group allows outbound traffic only to an allow-list. The platform installs the STACKIT Server Agent on the target. A jump host is the only way to reach the target over SSH. The example adds the two egress rules that cloud-init, the Server Agent and Run Command need: DHCP and the metadata service. Every new security group also carries two default egress rules that allow all outbound traffic. The STACKIT provider cannot remove them, so Terraform deletes them through the IaaS API
-- **`iaas-volume-encryption`** `[iaas, volume, encryption, kms, block-storage]`  
-  KMS & IaaS Resources to deploy a encrypted Block Storage Volume
+- **`iaas-volume-encryption`** `[iaas, encryption, kms, block-storage, compute, migration, backup]`  
+  Deploys a STACKIT block storage volume that is encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/), and a server that boots from it. Terraform also creates the keyring, the key, the service account that IaaS uses to access the key, and a network for the server. A second part shows how to move data from an existing unencrypted volume to an encrypted one
 - **`iaas-windows-byol-stackit-migration`** `[iaas, windows, byol, migration, compute]`  
   This document provides a migration path for your custom-built Windows Server VM (Bring Your Own License) from a local virtualization environment (e.g., Hyper-V / VirtualBox) to the STACKIT cloud platform
 - **`iam-custom-roles`** `[iam, rbac, access-control, service-account, terraform]`  
@@ -130,6 +134,8 @@ Fetch only the files relevant to the task. A typical example contains
   This repository provides an automated setup for **Authentik** on STACKIT SKE, pre-configured as an Identity Provider (IdP) for STACKIT with both **OIDC** and **SCIM** support
 - **`nlb-alb-nginx`** `[load-balancer, alb, layer4, layer7, nginx, tls, cert, iaas, terraform, ha]`  
   Terraform code for a two-tier load balancing setup on STACKIT: a public **Network Load Balancer (Layer 4)** distributes the connections across **two private Application Load Balancers (Layer 7)**. Each ALB terminates TLS and balances across **three nginx servers** in different availability zones. The service is reachable via a **STACKIT DNS** name
+- **`object-storage-default-deny`** `[object-storage, s3, access-control, iam, security, terraform]`  
+  Demonstrates how to enforce a **default-deny** access policy on a STACKIT Object Storage bucket for all credentials within the same STACKIT project and control permissions exclusively through S3 bucket policies
 - **`object-storage-write-only-access`** `[object-storage, s3, access-control, secrets-manager, object-lock, iam]`  
   Demonstrates how to create a STACKIT Object Storage bucket with Object Lock enabled, configure write-only access credentials, and store all credentials securely in STACKIT Secrets Manager using the HashiCorp Vault provider
 - **`opa-policy-reactive-agent`** `[opa-policy-reactive-agent, iaas, observability, iam, opa, rego, compliance, security]`  
@@ -140,6 +146,8 @@ Fetch only the files relevant to the task. A typical example contains
   A reference implementation of a **hub-and-spoke network topology** on [STACKIT](https://www.stackit.de/), provisioned with Terraform
 - **`s3-aws-terraform-provider`** `[s3, object-storage, terraform, aws-provider]`  
   Demonstrates how to use the HashiCorp `aws` provider to interact with STACKIT's S3-compatible Object Storage
+- **`secretsmanager-kms-encryption`** `[secrets-manager, kms, encryption, key-management, dbaas, postgresql, vault]`  
+  Deploys a [STACKIT Secrets Manager](https://docs.stackit.cloud/products/security/secrets-manager/) instance whose secrets are encrypted with a customer-managed key from [STACKIT KMS](https://docs.stackit.cloud/products/security/kms/). The keyring, the key and the service account the instance uses to unwrap the key are created in the same project as the instance. On top of that, the example creates a small [PostgreSQL Flex](https://docs.stackit.cloud/products/database/postgresql-flex/) instance with a database user, stores the database credentials in the instance as a secret, and ships a script that reads the credentials back from Secrets Manager and creates a table in the database — a full round trip
 - **`secretsmanager-vault-terraform-provider`** `[secrets-manager, vault, secrets, terraform]`  
   This guide outlines the process of utilizing the [HashiCorp Vault provider](https://registry.terraform.io/providers/hashicorp/vault) alongside the STACKIT provider to write secrets in the STACKIT Secrets Manager
 - **`ske-alb-controller-waf-extension`** `[ske, alb, waf, kubernetes, ingress, load-balancer, managed]`  
@@ -190,6 +198,8 @@ Fetch only the files relevant to the task. A typical example contains
   For the full Terraform Landing Zone implementation, please visit: [STACKIT Terraform Landing Zone Repository](https://github.com/stackitcloud/stackit-landing-zone)
 - **`telemetry-router-hub-spoke-setup`** `[telemetry, otel, observability, metrics, logging, routing, multi-project]`  
   This example demonstrates how to use the **STACKIT Telemetry Router** to centralize observability data across multiple projects, folders, and even the entire organization
+- **`terraform-backend-git-state-locking`** `[terraform, git, state, backend, remote-state, locking, encryption, sops, age]`  
+  This example stores Terraform state in a repository on a [STACKIT Git](https://docs.stackit.cloud/products/developer-platform/git/) instance, with state locking, state history and encryption at rest. It uses the community tool [plumber-cd/terraform-backend-git](https://github.com/plumber-cd/terraform-backend-git), a small wrapper around Terraform that implements the Terraform `http` backend protocol on top of plain `git` operations
 - **`terraform-pg-backend-state-locking`** `[terraform, postgresql, state, backend, remote-state, locking]`  
   This repository demonstrates how to configure STACKIT PostgreSQL Flex as a Terraform backend to enable remote state storage and native state locking
 - **`vpn-bgp-stackit-azure`** `[vpn, networking, ipsec, site-to-site, azure, cross-cloud, ha, bgp]`  
@@ -204,11 +214,13 @@ Fetch only the files relevant to the task. A typical example contains
   This example establishes a policy-based IPsec VPN connection between two separate STACKIT Network Areas (SNAs)
 - **`vpn-route-stackit-stackit`** `[vpn, networking, ipsec, site-to-site, route-based, sna]`  
   This example establishes a route-based IPsec VPN connection between two separate STACKIT Network Areas (SNAs)
+- **`vpn-telemetry`** `[vpn, telemetry, otel, observability, logging, terraform]`  
+  You run a VPN between your own network (on-premises) and STACKIT and want to know what the VPN reports about itself. This example shows which records the VPN sends and how you get them into Grafana
 
 ## Scripts
 
 - **`check-stackit-ip.sh`** `[networking, ip, iaas]`  
-  Check whether a given IP address belongs to STACKIT's public IP ranges
+  Check whether a given IP address, or every address a hostname resolves to, belongs to STACKIT's public IP ranges
 - **`create-kubeconfig-multiple-projects.sh`** `[ske, kubernetes, kubeconfig, multi-project]`  
   Generate kubeconfig entries for every SKE cluster across one or more STACKIT projects
 - **`delete-unused-volumes.sh`** `[iaas, volume, compute]`  

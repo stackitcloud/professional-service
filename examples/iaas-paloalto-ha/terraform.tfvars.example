@@ -1,0 +1,5 @@
+organization_id          = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+owner_email              = "owner@example.com"
+service_account_key_path = "~/.stackit/credentials.json"
+image_file               = "./PA-VM-KVM-11.2.5.qcow2"
+mgmt_allowed_cidr        = "203.0.113.10/32"
